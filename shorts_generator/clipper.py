@@ -121,8 +121,10 @@ def generate_ass_file(words: list, start_time: float, end_time: float, out_path:
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
-    lines = [header]
+       lines = [header]
+
     for i in range(0, len(clip_words), WORDS_PER_LINE):
+
         chunk = clip_words[i : i + WORDS_PER_LINE]
         if not chunk:
             continue
