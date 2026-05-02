@@ -1,54 +1,32 @@
-"""End-to-end orchestrator.
+import json
+import re
+from llama_cpp import Llama
 
-YouTube URL  →  MuAPI download  →  MuAPI /openai-whisper transcript
-             →  MuAPI gpt-5-4 highlights  →  MuAPI autocrop clips
-"""
-from typing import Dict, List, Optional
+def get_viral_clips(transcript, llm_path, gpu_layers):
+    llm = Llama(model_path=llm_path, n_gpu_layers=gpu_layers, n_ctx=8192, verbose=False)
+    
+    prompt = f"""
+    Analyze this transcript for high-retention viral segments (30-60s).
+    Grade each clip on Hook, Flow, and Payoff. 
+    
+    Transcript: {transcript[:8000]}
 
-from .clipper import crop_highlights
-from .downloader import download_youtube
-from .highlights import get_highlights
-from .transcriber import transcribe
-
-
-def generate_shorts(
-    youtube_url: str,
-    num_clips: int = 3,
-    aspect_ratio: str = "9:16",
-    download_format: str = "720",
-    language: Optional[str] = None,
-) -> Dict:
-    """Run the full pipeline and return a structured result.
-
-    Returns:
-        {
-          "source_video_url": str,   # MuAPI-hosted mp4
-          "transcript": {...},
-          "highlights": [...],       # all candidates ranked
-          "shorts": [...],           # top `num_clips` with clip_url
-        }
+    Return ONLY a JSON array:
+    [{{
+      "start": int, 
+      "end": int, 
+      "title": "string", 
+      "score": int, 
+      "reason": "string"
+    }}]
     """
-    source_url = download_youtube(youtube_url, fmt=download_format)
-
-    transcript = transcribe(source_url, language=language)
-    if not transcript["segments"]:
-        raise RuntimeError(
-            "Whisper produced no segments. The video may have no detectable speech."
-        )
-
-    highlights_result = get_highlights(transcript, num_clips=num_clips)
-    all_highlights: List[Dict] = highlights_result.get("highlights", [])
-    if not all_highlights:
-        raise RuntimeError("Highlight generator returned zero clips.")
-
-    top = sorted(all_highlights, key=lambda h: int(h.get("score", 0)), reverse=True)[:num_clips]
-    print(f"[pipeline] cropping {len(top)} of {len(all_highlights)} candidates", flush=True)
-
-    shorts = crop_highlights(source_url, top, aspect_ratio=aspect_ratio)
-
-    return {
-        "source_video_url": source_url,
-        "transcript": transcript,
-        "highlights": all_highlights,
-        "shorts": shorts,
-    }
+    
+    resp = llm.create_chat_completion(
+        messages=[{"role": "system", "content": "You are a viral strategist. Output raw JSON."},
+                  {"role": "user", "content": prompt}],
+        temperature=0.3
+    )
+    
+    raw = resp["choices"][0]["message"]["content"].strip()
+    match = re.search(r'\[.*\]', raw, re.DOTALL)
+    return json.loads(match.group()) if match else []
