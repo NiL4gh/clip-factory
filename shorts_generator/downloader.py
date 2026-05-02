@@ -1,36 +1,30 @@
-"""YouTube source video download via MuAPI /youtube-download."""
-from typing import Dict
+import yt_dlp
+import subprocess
+import os
+import glob
 
-from . import muapi
+def download_video(url, work_dir, cookie_path=None):
+    output_mp4 = f"{work_dir}/source.mp4"
+    
+    # Cascade: Best MP4 -> Best Video+Audio -> Best Single File
+    ydl_opts = {
+        'format': 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b',
+        'outtmpl': f'{work_dir}/source.%(ext)s',
+        'cookiefile': cookie_path if cookie_path and os.path.exists(cookie_path) else None,
+        'quiet': True,
+        'merge_output_format': 'mp4',
+        'postprocessors': [{'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}],
+    }
 
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
 
-def _extract_video_url(result: Dict) -> str:
-    """MuAPI result shapes vary by endpoint — try common keys."""
-    for key in ("video_url", "url", "output_url", "result_url"):
-        v = result.get(key)
-        if isinstance(v, str) and v.startswith("http"):
-            return v
-
-    output = result.get("outputs") or result.get("output") or result.get("result") or {}
-    if isinstance(output, dict):
-        for key in ("video_url", "url", "output_url"):
-            v = output.get(key)
-            if isinstance(v, str) and v.startswith("http"):
-                return v
-    if isinstance(output, list) and output and isinstance(output[0], str) and output[0].startswith("http"):
-        return output[0]
-
-    raise RuntimeError(f"Could not find downloaded video URL in MuAPI response: {result}")
-
-
-def download_youtube(video_url: str, fmt: str = "720") -> str:
-    """Hand a YouTube URL to MuAPI; return a hosted mp4 URL we can read from."""
-    print(f"[download] requesting {video_url} @ {fmt}p", flush=True)
-    result = muapi.run(
-        "youtube-download",
-        {"video_url": video_url, "format": fmt},
-        label="youtube-download",
-    )
-    out = _extract_video_url(result)
-    print(f"[download] ready: {out}", flush=True)
-    return out
+    # Nuclear Fallback: Fast Remuxing (no re-encoding)
+    if not os.path.exists(output_mp4):
+        files = glob.glob(f"{work_dir}/source.*")
+        if files:
+            raw_file = files[0]
+            subprocess.run(['ffmpeg', '-y', '-i', raw_file, '-c', 'copy', output_mp4], check=True)
+            if raw_file != output_mp4: os.remove(raw_file)
+            
+    return output_mp4
