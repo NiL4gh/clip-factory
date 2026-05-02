@@ -8,8 +8,13 @@ import traceback
 import gradio as gr
 from huggingface_hub import hf_hub_download
 
-# ── Resolve repo root so relative imports always work ────────────
-REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+# ── Resolve repo root — works whether launched via `python app.py`
+#    or via `exec(open('app.py').read())` in Colab (where __file__ is not set)
+try:
+    REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    REPO_DIR = os.getcwd()
+
 if REPO_DIR not in sys.path:
     sys.path.insert(0, REPO_DIR)
 
@@ -33,9 +38,6 @@ _state = {
     "current_url": None,
 }
 
-
-# ─────────────────────────────────────────────────────────────────
-# ANALYZE
 # ─────────────────────────────────────────────────────────────────
 def analyze_video(url, llm_idx, wsp_idx):
     try:
@@ -46,7 +48,7 @@ def analyze_video(url, llm_idx, wsp_idx):
         yield gr.update(), "⬇️ Checking LLM model..."
 
         if not os.path.exists(llm_path):
-            yield gr.update(), f"⬇️ Downloading {llm_entry['label']} to Drive (first time only)..."
+            yield gr.update(), f"⬇️ Downloading {llm_entry['label']} (first time only, ~4 GB)..."
             hf_hub_download(
                 repo_id=llm_entry["repo"],
                 filename=llm_entry["filename"],
@@ -95,10 +97,6 @@ def analyze_video(url, llm_idx, wsp_idx):
         traceback.print_exc()
         yield gr.update(), f"❌ {e}"
 
-
-# ─────────────────────────────────────────────────────────────────
-# RENDER
-# ─────────────────────────────────────────────────────────────────
 def render_clip(idx_str, face_center, add_subs):
     try:
         if not _state["clips"]:
@@ -128,10 +126,6 @@ def render_clip(idx_str, face_center, add_subs):
         traceback.print_exc()
         return None, [], f"❌ {e}"
 
-
-# ─────────────────────────────────────────────────────────────────
-# GRADIO UI
-# ─────────────────────────────────────────────────────────────────
 with gr.Blocks(title="The Clip Factory Pro", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# ✂️ The Clip Factory Pro\n> Convert long-form content into viral shorts — fully local, free.")
 
@@ -203,4 +197,7 @@ with gr.Blocks(title="The Clip Factory Pro", theme=gr.themes.Soft()) as demo:
 
 
 if __name__ == "__main__":
+    demo.launch(share=True, debug=True)
+else:
+    # Launched via exec() in Colab
     demo.launch(share=True, debug=True)
