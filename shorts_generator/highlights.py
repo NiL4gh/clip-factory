@@ -9,16 +9,17 @@ from typing import Dict, List
 _llm_cache = {}
 
 
-def _get_llm(llm_path: str, gpu_layers: int):
-    if llm_path not in _llm_cache:
-        from llama_cpp import Llama
-        print(f"  [llm] Loading {llm_path}")
-        _llm_cache[llm_path] = Llama(
-            model_path=llm_path,
-            n_gpu_layers=gpu_layers,
-            n_ctx=8192,
-            verbose=False,
-        )
+def _get_llm(llm_path: str, gpu_layers: int = 0):
+    from llama_cpp import Llama
+    
+    # By setting n_ctx=0, we tell llama.cpp to read the model's native maximum 
+    # context size (which is 32,768 for Mistral) instead of the 8k default.
+    return Llama(
+        model_path=llm_path, 
+        n_gpu_layers=gpu_layers,
+        n_ctx=0,  # <-- THIS IS THE CRITICAL FIX
+        verbose=False
+    )
         print("  [llm] Ready.")
     return _llm_cache[llm_path]
 
