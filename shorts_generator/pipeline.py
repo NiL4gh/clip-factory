@@ -1,32 +1,29 @@
-import json
-import re
-from llama_cpp import Llama
+import os
+from .downloader import download_video
+from .transcriber import transcribe_audio
+from .highlights import get_viral_clips
 
-def get_viral_clips(transcript, llm_path, gpu_layers):
-    llm = Llama(model_path=llm_path, n_gpu_layers=gpu_layers, n_ctx=8192, verbose=False)
-    
-    prompt = f"""
-    Analyze this transcript for high-retention viral segments (30-60s).
-    Grade each clip on Hook, Flow, and Payoff. 
-    
-    Transcript: {transcript[:8000]}
+class OpusPipeline:
+    def __init__(self, work_dir):
+        self.work_dir = work_dir
+        self.current_video_url = None
+        self.transcript = None
+        self.clips = []
 
-    Return ONLY a JSON array:
-    [{{
-      "start": int, 
-      "end": int, 
-      "title": "string", 
-      "score": int, 
-      "reason": "string"
-    }}]
-    """
-    
-    resp = llm.create_chat_completion(
-        messages=[{"role": "system", "content": "You are a viral strategist. Output raw JSON."},
-                  {"role": "user", "content": prompt}],
-        temperature=0.3
-    )
-    
-    raw = resp["choices"][0]["message"]["content"].strip()
-    match = re.search(r'\[.*\]', raw, re.DOTALL)
-    return json.loads(match.group()) if match else []
+    def process_new_video(self, url, llm_path, gpu_layers, whisper_model):
+        # 1. Intelligent Skip: Don't re-download if it's the same URL
+        if url == self.current_video_url and os.path.exists(f"{self.work_dir}/source.mp4"):
+            return self.clips, "✅ Using cached data from current session."
+
+        self.current_video_url = url
+        
+        # 2. Download
+        download_video(url, self.work_dir)
+        
+        # 3. Transcribe (Logic should be in your transcriber.py)
+        self.transcript, _ = transcribe_audio(f"{self.work_dir}/source.mp4", whisper_model)
+        
+        # 4. Analyze
+        self.clips = get_viral_clips(self.transcript, llm_path, gpu_layers)
+        
+        return self.clips, "✅ Analysis Complete."
