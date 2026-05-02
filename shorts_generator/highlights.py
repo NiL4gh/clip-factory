@@ -209,3 +209,4 @@ def get_highlights(transcript: Dict, num_clips: int = 3) -> Dict:
         highlights = dedupe_highlights(result.get("highlights", []))
 
     return {"highlights": highlights}
+  get_viral_clips = get_highlights
