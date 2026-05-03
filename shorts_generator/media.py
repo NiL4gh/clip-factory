@@ -24,7 +24,6 @@ def get_broll_image(keyword, out_path):
 def get_twemoji(emoji_char, out_path):
     if not emoji_char: return False
     
-    # Strip any text if LLM hallucinated, just take the first char that is an emoji
     try:
         codepoint = "-".join([hex(ord(c))[2:] for c in emoji_char if ord(c) > 127])
         if not codepoint:
@@ -37,4 +36,16 @@ def get_twemoji(emoji_char, out_path):
         return True
     except Exception as e:
         print(f"Twemoji fetch fail for '{emoji_char}': {e}")
+    return False
+
+def get_sfx(out_path):
+    url = "https://cdn.pixabay.com/audio/2022/03/15/audio_7718e87d11.mp3"
+    try:
+        if not os.path.exists(out_path):
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as resp, open(out_path, 'wb') as f:
+                f.write(resp.read())
+        return True
+    except Exception as e:
+        print(f"SFX fetch fail: {e}")
     return False

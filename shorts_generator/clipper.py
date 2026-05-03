@@ -4,7 +4,7 @@ import uuid
 import shutil
 import cv2
 
-from shorts_generator.media import get_broll_image, get_twemoji
+from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
 
 def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
     cap = cv2.VideoCapture(video_path)
@@ -132,22 +132,18 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     base_st = float(override_start) if override_start is not None else float(clip_data.get("start_time", 0))
     base_et = float(override_end) if override_end is not None else float(clip_data.get("end_time", 0))
     
-    # Transcript Editing: Exclude words that fall into the unchecked sentences
     excluded_ranges = []
     if excluded_sentences:
         for ex_str in excluded_sentences:
             try:
-                # Format: "[10.5s] Hello world."
                 st_str = ex_str.split("s]")[0].replace("[", "").strip()
                 st_val = float(st_str)
-                excluded_ranges.append({"start": st_val - 0.1, "end": st_val + 5.0}) # approximate bound
-            except:
-                pass
+                excluded_ranges.append({"start": st_val - 0.1, "end": st_val + 5.0})
+            except: pass
                 
     block_words = []
     for w in word_timestamps:
         if w["start"] >= base_st - 0.5 and w["end"] <= base_et + 0.5:
-            # Check if it falls in an excluded sentence range
             excluded = False
             for r in excluded_ranges:
                 if w["start"] >= r["start"] and w["start"] <= r["end"]:
@@ -156,21 +152,18 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             if not excluded:
                 block_words.append(w)
     
-    # Dynamic Pacing Edit (Silence Removal)
     segments = []
     if not block_words:
         segments.append({"start_time": base_st, "end_time": base_et})
     else:
         current_st = max(base_st, block_words[0]["start"] - 0.2)
         gap_threshold = 0.8
-        
         for i in range(len(block_words) - 1):
             w_curr = block_words[i]
             w_next = block_words[i+1]
             if w_next['start'] - w_curr['end'] > gap_threshold:
                 segments.append({"start_time": current_st, "end_time": w_curr['end'] + 0.2})
                 current_st = w_next['start'] - 0.2
-                
         segments.append({"start_time": current_st, "end_time": min(base_et, block_words[-1]['end'] + 0.2)})
 
     rendered_segs = []
@@ -179,38 +172,58 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         seg_et = float(seg["end_time"])
         if seg_et - seg_st < 0.5: continue 
         
+        # Phase 9: Camera Punch-In jump cut for climax
+        is_peak = (seg_st <= float(clip_data.get("peak_moment", 0)) <= seg_et)
+        
+        crop_x, crop_y = "0", "0"
         if face_center:
             crop_x, crop_y = _get_crop_params(input_video, seg_st, target_w, target_h)
         else:
             crop_x, crop_y = f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
             
+        if is_peak and face_center:
+            # 120% Zoom
+            try:
+                z_f = 1.2
+                cw, ch = int(target_w / z_f), int(target_h / z_f)
+                cx = int(float(crop_x) + (target_w - cw)/2)
+                cy = int(float(crop_y) + (target_h - ch)/2)
+                base_crop = f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h}"
+            except:
+                base_crop = f"crop={target_w}:{target_h}:{crop_x}:{crop_y}"
+        else:
+            base_crop = f"crop={target_w}:{target_h}:{crop_x}:{crop_y}"
+            
         seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
         
-        # Prepare inputs and filtergraph
         inputs = ["-i", input_video]
-        filter_complex = f"[0:v]crop={target_w}:{target_h}:{crop_x}:{crop_y}[base];"
+        filter_complex = f"[0:v]{base_crop}[base];"
         current_v = "base"
         
-        # Add B-Roll Overlays
-        broll_kws = clip_data.get("broll_keywords", [])
         input_idx = 1
+        sfx_delays = []
+        
+        # Phase 9: Dynamic Ken Burns B-Roll Overlays
+        broll_kws = clip_data.get("broll_keywords", [])
         for b in broll_kws:
             b_st = float(b.get("start_time", 0))
             if b_st >= seg_st and b_st <= seg_et:
-                # 2-second B-Roll
                 b_img_path = os.path.join(work_dir, f"broll_{out_id}_{input_idx}.jpg")
                 if get_broll_image(b.get("keyword", ""), b_img_path):
-                    inputs.extend(["-loop", "1", "-t", "2", "-i", b_img_path])
-                    filter_complex += f"[{input_idx}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease[broll{input_idx}];"
+                    inputs.extend(["-loop", "1", "-t", "2.0", "-i", b_img_path])
+                    sfx_delays.append(b_st - seg_st)
+                    
+                    # Zoompan Ken Burns effect
+                    filter_complex += f"[{input_idx}:v]scale={target_w*2}:{target_h*2}:force_original_aspect_ratio=decrease,pad={target_w*2}:{target_h*2}:(ow-iw)/2:(oh-ih)/2,zoompan=z='min(zoom+0.0015,1.5)':d=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={target_w}x{target_h}[broll{input_idx}];"
                     
                     rel_st = b_st - seg_st
                     rel_et = rel_st + 2.0
                     next_v = f"v{input_idx}"
-                    filter_complex += f"[{current_v}][broll{input_idx}]overlay=(W-w)/2:(H-h)/2:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
+                    filter_complex += f"[{current_v}][broll{input_idx}]overlay=0:0:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
                     current_v = next_v
                     input_idx += 1
                     
-        # Add Emoji Overlays
+        # Phase 9: Slide-Up Pop Emoji Overlays
         emoji_moms = clip_data.get("emoji_moments", [])
         for e in emoji_moms:
             e_st = float(e.get("start_time", 0))
@@ -218,33 +231,56 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                 e_img_path = os.path.join(work_dir, f"emoji_{out_id}_{input_idx}.png")
                 if get_twemoji(e.get("emoji_unicode", ""), e_img_path):
                     inputs.extend(["-loop", "1", "-t", "1.5", "-i", e_img_path])
+                    sfx_delays.append(e_st - seg_st)
+                    
                     filter_complex += f"[{input_idx}:v]scale=250:250[emoji{input_idx}];"
                     
                     rel_st = e_st - seg_st
                     rel_et = rel_st + 1.5
                     next_v = f"v{input_idx}"
-                    # Overlay at bottom right
-                    filter_complex += f"[{current_v}][emoji{input_idx}]overlay=W-w-50:H-h-300:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
+                    # Mathematical slide-up animation (moves up 100px over 0.2s)
+                    filter_complex += f"[{current_v}][emoji{input_idx}]overlay=x='W-w-50':y='H-h-300 + 100*max(0, 0.2-(t-{rel_st}))/0.2':enable='between(t,{rel_st},{rel_et})'[{next_v}];"
                     current_v = next_v
                     input_idx += 1
 
-        # Add Subtitles to final graph
+        # Add Audio SFX inputs
+        sfx_path = os.path.join(work_dir, "pop.mp3")
+        get_sfx(sfx_path)
+        for delay in sfx_delays:
+            inputs.extend(["-i", sfx_path])
+
+        # Build Subtitles
         seg_words = [w for w in block_words if w["start"] >= seg_st - 0.2 and w["end"] <= seg_et + 0.2]
         if add_subs and seg_words:
             ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
             _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st, 
                           theme=theme, style_mode=caption_style, position=caption_pos)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
-            next_v = f"v{input_idx}"
+            next_v = f"v{input_idx}_ass"
             filter_complex += f"[{current_v}]ass='{safe_ass}'[{next_v}];"
             current_v = next_v
             
-        # Clean up final semicolon
         filter_complex = filter_complex.rstrip(';')
+        
+        # Audio Mix (SFX)
+        audio_filter = ""
+        if sfx_delays:
+            audio_filter = "[0:a]volume=1.0[a_base];"
+            amix_inputs = "[a_base]"
+            for i, delay_sec in enumerate(sfx_delays):
+                sfx_idx = input_idx + i
+                delay_ms = max(0, int(delay_sec * 1000))
+                audio_filter += f"[{sfx_idx}:a]adelay={delay_ms}|{delay_ms},volume=0.6[sfx_{i}];"
+                amix_inputs += f"[sfx_{i}]"
+            audio_filter += f"{amix_inputs}amix=inputs={len(sfx_delays)+1}:duration=first[a_out]"
+            audio_map = "[a_out]"
+            filter_complex += f";{audio_filter}"
+        else:
+            audio_map = "0:a"
         
         cmd = ["ffmpeg", "-y", "-ss", str(seg_st), "-to", str(seg_et)]
         cmd.extend(inputs)
-        cmd.extend(["-filter_complex", filter_complex, "-map", f"[{current_v}]", "-map", "0:a", "-c:v", "libx264", "-c:a", "aac", seg_out])
+        cmd.extend(["-filter_complex", filter_complex, "-map", f"[{current_v}]", "-map", audio_map, "-c:v", "libx264", "-c:a", "aac", seg_out])
         
         subprocess.run(cmd, check=True)
         rendered_segs.append(seg_out)
