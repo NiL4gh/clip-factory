@@ -1,64 +1,54 @@
-# Clip Factory
+# ClipFactory.ai (Premium Shorts Engine)
 
-A fully automated, local-first AI YouTube Shorts generator designed for high-volume clipping (perfect for Whop Content Rewards and similar programs).
+![ClipFactory UI Placeholder](https://via.placeholder.com/1000x500.png?text=ClipFactory.ai+-+Premium+SaaS+Dashboard)
 
-Built to run entirely inside a Google Colab T4 GPU instance, it uses open-source LLMs and Whisper to find viral moments and render them into vertical short-form content.
+Transform long-form YouTube videos into highly engaging, viral-ready TikToks, Reels, and Shorts completely automatically and for free entirely within Google Colab.
 
-## Features
+*This project was originally forked from the open-source `AI-Shorts-Generator`, but has been completely re-architected and transformed into a premium, SaaS-grade clipping engine designed to rival paid tools like OpusClip and Vizard.ai.*
 
-- **Whop-Ready Clip Durations:** Automatically detects hooks and extracts 15-60 second clips, the optimal length for TikTok, Reels, and Shorts algorithms.
-- **Smart Caching:** Never waste time re-processing. Transcripts and highlights are cached to your Google Drive. If you reconnect or reload a video, it skips straight to the results.
-- **Opus Clip-style UI:** A professional, dark-mode, card-based interface.
-- **Enhancements:** Add background music and custom watermarks directly from the UI before rendering.
-- **AI Auto-Framing:** Detects faces and keeps the subject centered in the 9:16 vertical frame.
-- **Dynamic Captions:** Burns Hormozi-style highlighted captions into the video.
+## ✨ The Premium Parity Features
 
-## How to Run in Google Colab
+- **AI Virality Scoring:** Uses local LLMs (like Llama 3) to scan the transcript and extract the most engaging 30-90s continuous story arcs based on Hooks, Emotion, and Payoffs.
+- **Smart Pacing (Silence Removal):** Automatically slices out dead air and pauses >0.8 seconds to maintain aggressive, TikTok-style pacing.
+- **Auto-Framing (Face Tracking):** OpenCV-powered active speaker tracking to dynamically keep subjects centered in the 9:16 crop.
+- **Dynamic B-Roll & Ken Burns:** The LLM identifies visual keywords and silently fetches images via DuckDuckGo, automatically applying a documentary-style "Ken Burns" zoom & pan via FFmpeg.
+- **Slide-Up Emojis:** Auto-fetches high-res PNGs from Twemoji and overlays them onto the video with satisfying, mathematical slide-up "pop" animations.
+- **"Hormozi" Style Captions:** Dynamic, color-themed ASS subtitles with active-word highlighting.
+- **Transcript Text Editor:** Edit the video timeline simply by unchecking sentences in the UI transcript—the engine instantly slices them out of the final video.
+- **Auto Audio Mix:** Automatically ducks background music and mathematically injects "Pop/Swoosh" SFX exactly when visual interrupts appear.
 
-1. Create a new Google Colab notebook.
-2. Go to **Runtime > Change runtime type** and select **T4 GPU**.
-3. Create a cell with the following code and run it:
+## 🚀 How to Run (Google Colab)
 
-```python
-import os, sys, subprocess
-
-REPO_DIR = '/content/AI-Shorts-Generator-opus'
-
-# Clone if it doesn't exist
-if not os.path.exists(REPO_DIR):
-    subprocess.run(['git', 'clone', 'https://github.com/NiL4gh/AI-Shorts-Generator-opus.git', REPO_DIR], check=True)
-
-os.chdir(REPO_DIR)
-
-# Pull latest fixes
-subprocess.run(['git', 'pull'], check=True)
-
-# Run setup (mounts Drive, installs dependencies, compiles llama-cpp-python)
-subprocess.run(['bash', 'setup.sh'], check=True)
-```
-
-4. Create a second cell to launch the UI:
+1. Open a new Google Colab notebook.
+2. Ensure you have a GPU runtime enabled (`T4` or higher).
+3. Run the following cell to setup the environment and launch the UI:
 
 ```python
-import os, sys
-REPO_DIR = '/content/AI-Shorts-Generator-opus'
-os.chdir(REPO_DIR)
-if REPO_DIR not in sys.path:
-    sys.path.insert(0, REPO_DIR)
+# Mount Google Drive for caching
+from google.colab import drive
+drive.mount('/content/drive')
 
-# Launch the Gradio app
-exec(open('app.py').read())
+# Clone & Setup
+!git clone https://github.com/NiL4gh/AI-Shorts-Generator-opus.git
+%cd /content/AI-Shorts-Generator-opus
+!chmod +x setup.sh
+!./setup.sh
+
+# Launch the SaaS Dashboard
+import sys
+if '/content/AI-Shorts-Generator-opus' not in sys.path:
+    sys.path.insert(0, '/content/AI-Shorts-Generator-opus')
+!python app.py
 ```
 
-Click the public Gradio link that appears to open your Clip Factory dashboard.
+## 🛠️ Architecture
 
-## Folder Structure (Google Drive)
+This project bypasses expensive API constraints (like Stock Footage or GPT-4 APIs) by utilizing clever open-source workarounds:
+- **Transcription:** `faster-whisper`
+- **Logic/Curation:** Local GGUF models via `llama-cpp-python`
+- **Media Scraping:** `yt-dlp` and `duckduckgo-search`
+- **Rendering Engine:** Advanced `ffmpeg-python` filtergraphs
+- **Interface:** Custom-styled `Gradio` dashboard mimicking premium web apps.
 
-When run in Colab, the app mounts your Google Drive to save data between sessions.
-
-```
-/content/drive/MyDrive/clip_factory/
-├── models/             # Cached LLM and Whisper models (~4GB, only downloads once)
-├── projects/           # Cached transcripts and highlights for each video processed
-└── output/             # Your final rendered MP4 clips
-```
+## 🤝 Acknowledgements
+Originally forked from standard clipping scripts, this repository represents a complete structural overhaul aimed at professional content-reward creators requiring high-volume output.
