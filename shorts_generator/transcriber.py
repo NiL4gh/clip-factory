@@ -28,10 +28,10 @@ def transcribe_audio(
     """
     Returns (full_text: str, word_timestamps: list[dict])
     """
-    ui_logger.log("Extracting audio from video for transcription...")
+    ui_logger.log("Extracting audio from video for transcription (max 15 mins)...")
     wav_path = video_path.replace(".mp4", "_audio.wav")
     subprocess.run(
-        ["ffmpeg", "-y", "-i", video_path, "-ar", "16000", "-ac", "1", wav_path],
+        ["ffmpeg", "-y", "-i", video_path, "-t", "900", "-ar", "16000", "-ac", "1", wav_path],
         check=True, capture_output=True
     )
 

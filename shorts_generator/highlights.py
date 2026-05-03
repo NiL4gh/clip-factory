@@ -16,7 +16,7 @@ Virality signals (ranked by impact):
 5. QUOTABLE ONE-LINERS — perfect standalone quotes
 """
 
-CHUNK_CHARS = 40_000
+CHUNK_CHARS = 15_000
 
 def _get_llm(llm_path: str, gpu_layers: int = 35):
     from llama_cpp import Llama
@@ -75,6 +75,15 @@ def get_highlights(
     if isinstance(transcript_data, dict):
         segs = transcript_data.get("segments", [])
         text = "\n".join(f"[{s['start']:.1f}s] {s['text'].strip()}" for s in segs)
+    elif isinstance(transcript_data, list):
+        chunks_words = []
+        for i in range(0, len(transcript_data), 15):
+            group = transcript_data[i:i+15]
+            if group:
+                st = group[0]['start']
+                phrase = " ".join(w['word'] for w in group)
+                chunks_words.append(f"[{st:.1f}s] {phrase}")
+        text = "\n".join(chunks_words)
     elif isinstance(transcript_data, tuple):
         text = transcript_data[0]
     else:
@@ -92,11 +101,20 @@ def get_highlights(
         " You output ONLY raw JSON."
     )
     schema = (
-        '[{{"title":"string","start_time":float,"end_time":float,'
-        '"score":int,"hook_sentence":"string","virality_reason":"string","peak_moment":float,'
-        '"theme":"string(Motivation|Educational|Comedy|Suspense|Storytime)",'
-        '"broll_keywords":[{{"start_time":float,"keyword":"string"}}],'
-        '"emoji_moments":[{{"start_time":float,"emoji_unicode":"string"}}]}}]'
+        '[\n'
+        '  {\n'
+        '    "title": "A short engaging title",\n'
+        '    "start_time": 12.5,\n'
+        '    "end_time": 45.0,\n'
+        '    "score": 95,\n'
+        '    "hook_sentence": "The exact hook sentence spoken",\n'
+        '    "virality_reason": "Why this works",\n'
+        '    "peak_moment": 30.5,\n'
+        '    "theme": "Educational",\n'
+        '    "broll_keywords": [{"start_time": 15.0, "keyword": "rocket"}],\n'
+        '    "emoji_moments": [{"start_time": 20.0, "emoji_unicode": "🤯"}]\n'
+        '  }\n'
+        ']'
     )
 
     chunks = [text[i:i + CHUNK_CHARS] for i in range(0, max(len(text), 1), CHUNK_CHARS)]

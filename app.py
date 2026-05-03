@@ -204,7 +204,7 @@ def _analyze_video_core(url, num_clips):
     _state["word_timestamps"] = words
     cache.save_transcript(url.strip(), full_text, words)
 
-    result = get_highlights(full_text, num_clips=n, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20)
+    result = get_highlights(words, num_clips=n, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20)
     _state["clips"] = result.get("highlights", [])
     cache.save_highlights(url.strip(), _state["clips"])
     cache.save_metadata(url.strip())
