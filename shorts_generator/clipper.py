@@ -48,33 +48,47 @@ def render_short(
 ) -> str:
     start = float(clip_data.get("start_time", clip_data.get("start", 0)))
     end   = float(clip_data.get("end_time",   clip_data.get("end",   start + 60)))
+
+    # Validate timestamps
+    if end <= start:
+        raise ValueError(f"Invalid timestamps: start={start}, end={end}")
+    if (end - start) < 5:
+        raise ValueError(f"Clip too short: {end - start:.1f}s (minimum 5s)")
+    if (end - start) > 180:
+        end = start + 180  # cap at 3 minutes
+
+    os.makedirs(output_dir, exist_ok=True)
     out_path = os.path.join(output_dir, f"short_{uuid.uuid4().hex[:6]}.mp4")
 
-    # ── Face-aware crop ───────────────────────────────────────────
+    # Face-aware crop
     x_offset = "(iw-ih*9/16)/2"
     if face_center:
         cap = cv2.VideoCapture(input_video)
         frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
-        crop_w = int(frame_h * 9 / 16)
-        sample_ts = [start, start + (end - start) * 0.5, start + (end - start) * 0.85]
-        px = _sample_face_x(input_video, sample_ts, frame_w, crop_w)
-        x_offset = str(px)
+        if frame_w > 0 and frame_h > 0:
+            crop_w = int(frame_h * 9 / 16)
+            if crop_w < frame_w:
+                sample_ts = [start, start + (end - start) * 0.5, start + (end - start) * 0.85]
+                px = _sample_face_x(input_video, sample_ts, frame_w, crop_w)
+                x_offset = str(px)
 
-    # ── Subtitles ─────────────────────────────────────────────────
     vf = [
         f"crop=ih*9/16:ih:{x_offset}:0",
         "scale=1080:1920:flags=lanczos",
     ]
 
     if add_subs and word_timestamps:
-        ass_path = os.path.join(work_dir, f"subs_{uuid.uuid4().hex[:4]}.ass")
-        generate_ass_file(word_timestamps, start, end, ass_path)
-        safe_ass = ass_path.replace("\\", "/").replace(":", r"\:")
-        vf.append(f"ass='{safe_ass}'")
+        # Filter words that fall within clip range
+        clip_words = [w for w in word_timestamps
+                      if float(w["start"]) >= start and float(w["end"]) <= end]
+        if clip_words:
+            ass_path = os.path.join(work_dir, f"subs_{uuid.uuid4().hex[:4]}.ass")
+            generate_ass_file(clip_words, start, end, ass_path)
+            safe_ass = ass_path.replace("\\", "/").replace(":", r"\:")
+            vf.append(f"ass='{safe_ass}'")
 
-    # ── FFmpeg render ─────────────────────────────────────────────
     result = subprocess.run([
         "ffmpeg", "-y", "-ss", str(start), "-to", str(end),
         "-i", input_video,
@@ -86,6 +100,10 @@ def render_short(
 
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg failed:\n{result.stderr[-2000:]}")
+
+    # Verify output is valid
+    if not os.path.exists(out_path) or os.path.getsize(out_path) < 1000:
+        raise RuntimeError("Rendered clip is empty or too small — likely bad timestamps.")
 
     return out_path
 
