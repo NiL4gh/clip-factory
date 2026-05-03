@@ -29,7 +29,7 @@ from shorts_generator import cache
 for d in [WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR, PROJECTS_DIR]:
     os.makedirs(d, exist_ok=True)
 
-_state = {"clips": [], "word_timestamps": [], "current_url": None}
+_state = {"clips": [], "word_timestamps": [], "current_url": None, "transcript_text": ""}
 
 BGM_TRACKS = {
     "None": None,
@@ -39,60 +39,53 @@ BGM_TRACKS = {
     "Upbeat / Viral": "https://cdn.pixabay.com/audio/2022/03/15/audio_c8b817bb6b.mp3"
 }
 
-THEMES = ["Motivation", "Educational", "Comedy", "Suspense", "Storytime"]
+CAPTION_STYLES = ["Hormozi", "Standard", "Minimalist", "None"]
+CAPTION_POSITIONS = ["Top", "Center", "Bottom"]
 
 def _sc(s):
     s = int(s)
-    if s >= 80: return "#4ade80"
-    if s >= 55: return "#facc15"
-    return "#f87171"
+    if s >= 80: return "#4ade80" # Green
+    if s >= 60: return "#facc15" # Yellow
+    return "#f87171" # Red
 
-
-def _cards(clips, show_all=False):
-    vis = clips if show_all else clips[:5]
-    extra = max(0, len(clips) - 5)
+def _cards(clips):
     rows = ""
-    for i, c in enumerate(vis):
+    for i, c in enumerate(clips):
         sc = int(c.get("score", 0))
-        segs = c.get("segments", [{"start_time": c.get("start_time",0), "end_time": c.get("end_time",0)}])
-        st = float(segs[0]["start_time"])
-        et = float(segs[-1]["end_time"])
-        dur = sum((float(s["end_time"]) - float(s["start_time"])) for s in segs)
+        st = float(c.get("start_time", 0))
+        et = float(c.get("end_time", 0))
+        dur = et - st
+        title = c.get("title", "")[:60]
+        theme = c.get("theme", "Storytime")
         
-        title = c.get("title", "")[:55]
-        hook = c.get("hook_sentence", "")[:70]
-        
-        seg_badge = f"<span style='background:#333;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px'>{len(segs)} cuts</span>" if len(segs) > 1 else ""
-        
-        rows += f"""<tr style='border-bottom:1px solid #2a2a2a;cursor:pointer' 
-            onclick="document.getElementById('clip-sel').querySelector('input').value={i+1};
-            document.getElementById('clip-sel').querySelector('input').dispatchEvent(new Event('input',{{bubbles:true}}));">
-          <td style='padding:8px 10px;color:#888;font-size:12px'>#{i+1}</td>
-          <td style='padding:8px 0'><span style='font-weight:700;font-size:18px;color:{_sc(sc)}'>{sc}</span></td>
-          <td style='padding:8px 10px;font-size:13px;color:#ddd'>{title} {seg_badge}</td>
-          <td style='padding:8px 10px;font-size:12px;color:#888'>{st:.0f}s\u2013{et:.0f}s ({dur:.0f}s)</td>
-          <td style='padding:8px 10px;font-size:12px;color:#aaa;font-style:italic'>\u201c{hook}\u201d</td>
-        </tr>"""
-    more = ""
-    if extra > 0 and not show_all:
-        more = f"<p style='color:#666;font-size:12px;margin:8px 0 0'>+ {extra} more clips available</p>"
-    return f"""<table style='width:100%;border-collapse:collapse;font-family:system-ui'>
-      <thead><tr style='border-bottom:2px solid #333;text-align:left'>
-        <th style='padding:6px 10px;color:#666;font-size:11px'>#</th>
-        <th style='padding:6px 0;color:#666;font-size:11px'>SCORE</th>
-        <th style='padding:6px 10px;color:#666;font-size:11px'>TITLE</th>
-        <th style='padding:6px 10px;color:#666;font-size:11px'>TIME</th>
-        <th style='padding:6px 10px;color:#666;font-size:11px'>HOOK</th>
-      </tr></thead><tbody>{rows}</tbody></table>{more}"""
-
+        rows += f"""
+        <div class="clip-card" onclick="document.getElementById('clip-sel').querySelector('input').value={i+1}; document.getElementById('clip-sel').querySelector('input').dispatchEvent(new Event('input',{{bubbles:true}}));">
+            <div class="card-header">
+                <span class="card-badge">#{i+1} &bull; {theme}</span>
+                <span class="card-score" style="color:{_sc(sc)}">{sc}<span class="score-max">/100</span></span>
+            </div>
+            <div class="card-title">{title}</div>
+            <div class="card-meta">{st:.0f}s - {et:.0f}s ({dur:.0f}s)</div>
+            
+            <div class="viral-meter-bg">
+                <div class="viral-meter-fill" style="width:{sc}%; background:{_sc(sc)}"></div>
+            </div>
+        </div>
+        """
+    return f"""<div class="card-grid">{rows}</div>"""
 
 def _get_internal_clip_data(idx):
-    if not _state["clips"]: return "", "Storytime", "Lofi / Chill"
+    if not _state["clips"]: 
+        return "", "", 0, 0, "Hormozi", "Center", "None"
+        
     i = max(0, min(int(idx)-1, len(_state["clips"])-1))
     c = _state["clips"][i]
-    sc = int(c.get("score",0))
+    
+    st = float(c.get("start_time", 0))
+    et = float(c.get("end_time", 0))
     theme = c.get("theme", "Storytime")
     
+    # Auto-map music based on theme
     music_map = {
         "Motivation": "Epic / Cinematic",
         "Educational": "Lofi / Chill",
@@ -102,126 +95,126 @@ def _get_internal_clip_data(idx):
     }
     def_music = music_map.get(theme, "Lofi / Chill")
     
-    segs = c.get("segments", [{"start_time": c.get("start_time",0), "end_time": c.get("end_time",0)}])
-    st = float(segs[0]["start_time"])
-    et = float(segs[-1]["end_time"])
-    dur = sum((float(s["end_time"]) - float(s["start_time"])) for s in segs)
+    # Get transcript slice
+    transcript_html = ""
+    words_in_clip = [w['word'] for w in _state["word_timestamps"] if w['start'] >= st - 1 and w['end'] <= et + 1]
+    if words_in_clip:
+        transcript_html = " ".join(words_in_clip)
+    else:
+        transcript_html = "<i>No transcript data found for this timestamp.</i>"
     
-    seg_html = ""
-    if len(segs) > 1:
-        seg_html = "<div style='font-size:11px;color:#888;margin-bottom:8px'>Multi-segment stitch: "
-        for j, s in enumerate(segs):
-            seg_html += f"[{s['start_time']:.0f}s-{s['end_time']:.0f}s] "
-        seg_html += "</div>"
+    html = f"""
+    <div class="detail-panel">
+        <h2 style="margin:0 0 10px 0;font-size:18px;">{c.get('title','')}</h2>
         
-    html = f"""<div style='background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:16px;font-family:system-ui'>
-  <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px'>
-    <div>
-        <span style='font-size:12px;color:#666;font-weight:600'>CLIP {i+1}</span>
-        <span style='font-size:10px;background:#333;color:#aaa;padding:2px 6px;border-radius:4px;margin-left:8px'>Theme: {theme}</span>
+        <div class="detail-section">
+            <div class="detail-label">THE HOOK</div>
+            <div class="detail-text" style="color:#fff;">\u201c{c.get('hook_sentence','')}\u201d</div>
+        </div>
+        
+        <div class="detail-section">
+            <div class="detail-label">WHY IT WORKS (AI ANALYSIS)</div>
+            <div class="detail-text">{c.get('virality_reason','')}</div>
+        </div>
+        
+        <div class="detail-section">
+            <div class="detail-label">TRANSCRIPT PREVIEW</div>
+            <div class="detail-transcript">{transcript_html}</div>
+        </div>
     </div>
-    <span style='font-size:28px;font-weight:800;color:{_sc(sc)}'>{sc}<span style='font-size:12px;color:#666'>/100</span></span>
-  </div>
-  <h3 style='margin:0 0 10px;font-size:15px;color:#eee'>{c.get('title','')}</h3>
-  <div style='font-size:13px;color:#888;margin-bottom:4px'>Range: {st:.0f}s \u2192 {et:.0f}s \u00b7 Final duration: {dur:.0f}s</div>
-  {seg_html}
-  <div style='background:#111;border-radius:6px;padding:10px;margin-bottom:8px'>
-    <div style='font-size:10px;color:#666;font-weight:600;margin-bottom:3px'>HOOK</div>
-    <div style='font-size:13px;color:#ccc'>\u201c{c.get('hook_sentence','')}\u201d</div>
-  </div>
-  <div style='background:#111;border-radius:6px;padding:10px'>
-    <div style='font-size:10px;color:#666;font-weight:600;margin-bottom:3px'>WHY IT WORKS</div>
-    <div style='font-size:13px;color:#aaa'>{c.get('virality_reason','')}</div>
-  </div>
-</div>"""
-    return html, theme, def_music
+    """
+    
+    return html, st, et, "Hormozi", "Center", def_music
 
 def on_clip_select(n):
-    html, t, m = _get_internal_clip_data(n)
-    return html, gr.update(value=t), gr.update(value=m)
+    html, st, et, c_style, c_pos, bgm = _get_internal_clip_data(n)
+    return html, gr.update(value=st), gr.update(value=et), gr.update(value=c_style), gr.update(value=c_pos), gr.update(value=bgm)
 
-def analyze_video(url, llm_idx, wsp_idx, num_clips):
+def analyze_video(url, num_clips):
     if not url or not url.strip():
-        yield "", "Enter a YouTube URL.", "", gr.update(), gr.update(), gr.update(visible=False)
+        yield "", "Enter a YouTube URL.", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False)
         return
     try:
-        llm_entry = LLM_CATALOG[int(llm_idx)]
-        wsp_size  = WHISPER_CATALOG[int(wsp_idx)]["size"]
+        # Defaults
+        llm_entry = LLM_CATALOG[0]
+        wsp_size  = WHISPER_CATALOG[3]["size"]
         llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
         n = int(num_clips)
 
+        # Background caching check (No visible history dropdown needed)
         cached_h = cache.load_highlights(url.strip())
         cached_t = cache.load_transcript(url.strip())
         if cached_h and cached_t:
             _state["clips"] = cached_h
             _state["word_timestamps"] = cached_t[1]
             _state["current_url"] = url.strip()
-            html, t, m = _get_internal_clip_data(1)
-            yield _cards(_state["clips"]), f"Loaded {len(cached_h)} cached clips.", html, gr.update(value=t), gr.update(value=m), gr.update(visible=True)
+            html, st, et, cs, cp, bgm = _get_internal_clip_data(1)
+            yield _cards(_state["clips"]), f"Loaded from cache.", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True)
             return
 
-        yield "", "Checking model...", "", gr.update(), gr.update(), gr.update(visible=False)
+        yield "", "Checking AI models...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False)
         if not os.path.exists(llm_path):
-            yield "", f"Downloading {llm_entry['label']} (~4 GB, one-time)...", "", gr.update(), gr.update(), gr.update(visible=False)
-            hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"],
-                           local_dir=LLM_DIR, local_dir_use_symlinks=False)
+            hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
 
         source_mp4 = os.path.join(WORK_DIR, "source.mp4")
-        yield "", "Downloading video...", "", gr.update(), gr.update(), gr.update(visible=False)
+        yield "", "Downloading video...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False)
         _state["current_url"] = url.strip()
         download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
 
-        yield "", f"Transcribing ({wsp_size})...", "", gr.update(), gr.update(), gr.update(visible=False)
+        yield "", "Transcribing audio...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False)
         full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
         _state["word_timestamps"] = words
         cache.save_transcript(url.strip(), full_text, words)
 
-        yield "", "AI scoring multi-segment viral moments...", "", gr.update(), gr.update(), gr.update(visible=False)
-        result = get_highlights(full_text, num_clips=n, llm_path=llm_path,
-                               gpu_layers=llm_entry["gpu_layers"], max_clips=20)
+        yield "", "AI scoring viral moments...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False)
+        result = get_highlights(full_text, num_clips=n, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20)
         _state["clips"] = result.get("highlights", [])
         cache.save_highlights(url.strip(), _state["clips"])
         cache.save_metadata(url.strip())
 
         if not _state["clips"]:
-            yield "", "No clips found. Try a different video.", "", gr.update(), gr.update(), gr.update(visible=False)
+            yield "", "No clips found.", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False)
             return
 
-        html, t, m = _get_internal_clip_data(1)
-        yield _cards(_state["clips"]), f"Found {len(_state['clips'])} clips.", html, gr.update(value=t), gr.update(value=m), gr.update(visible=True)
+        html, st, et, cs, cp, bgm = _get_internal_clip_data(1)
+        yield _cards(_state["clips"]), "Done.", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True)
     except Exception as e:
         traceback.print_exc()
-        yield "", f"Error: {e}", "", gr.update(), gr.update(), gr.update(visible=False)
+        yield "", f"Error: {e}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False)
 
 
-def show_all():
-    return _cards(_state["clips"], show_all=True) if _state["clips"] else ""
-
-def render_clip(clip_num, face_center, cap_style_str, bg_music_genre):
+def render_clip(clip_num, face_center, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre):
     if not _state["clips"]:
         return None, "Analyse a video first."
     idx = int(clip_num) - 1
     if idx < 0 or idx >= len(_state["clips"]):
-        return None, f"Choose 1\u2013{len(_state['clips'])}."
+        return None, "Invalid clip number."
     try:
         clip = _state["clips"][idx]
         input_mp4 = os.path.join(WORK_DIR, "source.mp4")
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         
+        theme = clip.get("theme", "Storytime")
+        
+        # Core rendering with Semantic Pacing Edit
         out = render_short(
             input_video=input_mp4, clip_data=clip,
             word_timestamps=_state["word_timestamps"] if cap_style_str != "None" else [],
             output_dir=clips_dir, work_dir=WORK_DIR,
             face_center=face_center, add_subs=(cap_style_str != "None"),
-            theme=cap_style_str
+            theme=theme, caption_style=cap_style_str, caption_pos=cap_pos_str,
+            override_start=override_st, override_end=override_et
         )
         
+        # Audio Enhancement (Fixing 403 Forbidden with User-Agent)
         if bg_music_genre and bg_music_genre != "None":
             music_url = BGM_TRACKS[bg_music_genre]
             music_path = os.path.join(WORK_DIR, f"{bg_music_genre.replace(' ', '_').replace('/', '')}.mp3")
             
             if not os.path.exists(music_path):
-                urllib.request.urlretrieve(music_url, music_path)
+                req = urllib.request.Request(music_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req) as response, open(music_path, 'wb') as out_file:
+                    shutil.copyfileobj(response, out_file)
                 
             enhance_clip(out, clip, music_path=music_path)
         
@@ -230,7 +223,7 @@ def render_clip(clip_num, face_center, cap_style_str, bg_music_genre):
         if out != dst:
             shutil.copy2(out, dst)
             
-        return out, f"Rendered: {os.path.basename(out)}"
+        return out, f"Rendered successfully: {os.path.basename(out)}"
     except Exception as e:
         traceback.print_exc()
         return None, f"Error: {e}"
@@ -249,101 +242,97 @@ def get_gallery():
             unique.append(f)
     return unique[:12]
 
-def load_history(choice):
-    if not choice: return gr.update(), "", "", gr.update(), gr.update(), gr.update(visible=False)
-    vid = choice.split(" | ")[0].strip()
-    for p in cache.list_projects():
-        if p.get("video_id") == vid:
-            url = p.get("url", "")
-            h = cache.load_highlights(url)
-            t = cache.load_transcript(url)
-            if h and t:
-                _state["clips"], _state["word_timestamps"] = h, t[1]
-                _state["current_url"] = url
-                html, thm, mus = _get_internal_clip_data(1)
-                return url, _cards(h), html, gr.update(value=thm), gr.update(value=mus), gr.update(visible=True)
-    return gr.update(), "", "", gr.update(), gr.update(), gr.update(visible=False)
-
-def history_list():
-    return [f"{p['video_id']} | {p.get('url','')}" for p in cache.list_projects()] or []
-
-
 _css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-body,.gradio-container{background:#0f0f0f!important;font-family:'Inter',system-ui,sans-serif!important;color:#e0e0e0!important}
-.gr-box,.gr-form,.gr-panel,.gr-group{background:#161616!important;border-color:#2a2a2a!important}
-.gr-button-primary{background:#fff!important;color:#000!important;font-weight:600!important;border:none!important;border-radius:6px!important}
-.gr-button-primary:hover{background:#e0e0e0!important}
-.gr-button-secondary{background:#1a1a1a!important;color:#ccc!important;border:1px solid #333!important;border-radius:6px!important}
-label span{color:#888!important;font-size:12px!important;font-weight:500!important}
-input,textarea,select{background:#1a1a1a!important;color:#e0e0e0!important;border:1px solid #2a2a2a!important;border-radius:6px!important}
-.gr-accordion{background:#161616!important;border:1px solid #2a2a2a!important;border-radius:6px!important}
-footer{display:none!important}
+body, .gradio-container { background: #0a0a0a !important; font-family: 'Inter', system-ui, sans-serif !important; color: #ededed !important; }
+
+/* Premium Layout Elements */
+.sidebar { background: #121212 !important; border-right: 1px solid #222 !important; padding: 20px !important; border-radius: 12px; }
+.main-content { background: #0a0a0a !important; }
+
+/* Clip Cards */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 10px; }
+.clip-card { background: #161616; border: 1px solid #2a2a2a; border-radius: 10px; padding: 16px; cursor: pointer; transition: all 0.2s ease; }
+.clip-card:hover { border-color: #555; transform: translateY(-2px); background: #1c1c1c; }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-badge { background: #2a2a2a; color: #aaa; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }
+.card-score { font-size: 20px; font-weight: 800; }
+.score-max { font-size: 11px; color: #666; font-weight: 500; }
+.card-title { font-size: 14px; font-weight: 600; color: #eee; margin-bottom: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-meta { font-size: 12px; color: #888; }
+
+.viral-meter-bg { width: 100%; height: 4px; background: #222; border-radius: 2px; margin-top: 12px; overflow: hidden; }
+.viral-meter-fill { height: 100%; border-radius: 2px; }
+
+/* Detail Panel */
+.detail-panel { background: #121212; border: 1px solid #222; border-radius: 10px; padding: 20px; }
+.detail-section { margin-top: 16px; }
+.detail-label { font-size: 10px; color: #888; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.5px; }
+.detail-text { font-size: 13px; color: #bbb; line-height: 1.5; }
+.detail-transcript { font-size: 12px; color: #999; line-height: 1.6; background: #0a0a0a; padding: 12px; border-radius: 6px; max-height: 150px; overflow-y: auto; border: 1px solid #1a1a1a; font-family: monospace; }
+
+/* Forms & Buttons */
+input, textarea, select { background: #161616 !important; color: #eee !important; border: 1px solid #333 !important; border-radius: 6px !important; }
+.gr-button-primary { background: linear-gradient(135deg, #FF4500, #FF8C00) !important; color: #fff !important; font-weight: 700 !important; border: none !important; }
+.gr-button-primary:hover { opacity: 0.9 !important; }
+footer { display: none !important; }
 """
 
-with gr.Blocks(title="Clip Factory", css=_css) as demo:
-    gr.HTML("<div style='padding:16px 0 8px;font-family:Inter,system-ui'>"
-            "<h1 style='font-size:22px;font-weight:700;color:#fff;margin:0'>Clip Factory</h1>"
-            "<p style='font-size:13px;color:#666;margin:4px 0 0'>Paste a video URL. AI finds the best clips. Render and download.</p></div>")
-
+with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
     with gr.Row():
-        url_input = gr.Textbox(placeholder="https://youtube.com/watch?v=...", label="Video URL", scale=5)
-        analyze_btn = gr.Button("Analyse", variant="primary", scale=1, min_width=100)
+        # SIDEBAR
+        with gr.Column(scale=2, elem_classes="sidebar"):
+            gr.HTML("<h1 style='font-size:24px;font-weight:800;margin:0;background:linear-gradient(90deg,#fff,#aaa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;'>ClipFactory.ai</h1><p style='color:#666;font-size:12px;margin-top:4px'>Premium Video Re-purposing</p>")
+            
+            url_input = gr.Textbox(placeholder="Paste YouTube URL...", label="Video Source", lines=1)
+            num_clips = gr.Slider(1, 15, value=10, step=1, label="Target Clips Count")
+            analyze_btn = gr.Button("Analyze Video", variant="primary")
+            status_box = gr.Textbox(label="Status", interactive=False, lines=1)
+            
+            gr.HTML("<hr style='border-color:#222;margin:20px 0;'>")
+            refresh_btn = gr.Button("Refresh Gallery", variant="secondary")
 
-    with gr.Row():
-        num_clips = gr.Slider(1, 10, value=5, step=1, label="Top clips to show", scale=3)
-        history_drop = gr.Dropdown(choices=history_list(), label="Previously processed", scale=3, interactive=True)
-        load_btn = gr.Button("Load", variant="secondary", scale=1, min_width=60)
+        # MAIN CONTENT
+        with gr.Column(scale=8, elem_classes="main-content"):
+            clips_html = gr.HTML("<div style='padding:40px;text-align:center;color:#444;border:1px dashed #222;border-radius:12px;'>Awaiting video URL...</div>")
+            
+            with gr.Group(visible=False) as editor_group:
+                gr.HTML("<h2 style='margin:20px 0 10px 0;font-size:18px;'>Edit & Render</h2>")
+                with gr.Row():
+                    with gr.Column(scale=5):
+                        detail_html = gr.HTML("")
+                    with gr.Column(scale=5):
+                        clip_num = gr.Number(value=1, label="Selected Clip", precision=0, minimum=1, maximum=20, elem_id="clip-sel", visible=False)
+                        
+                        with gr.Accordion("Timeline Edit", open=True):
+                            gr.HTML("<p style='font-size:11px;color:#888;margin:0 0 10px 0;'>Micro-silences >0.8s are automatically removed during render. Adjust these master bounds if needed.</p>")
+                            with gr.Row():
+                                st_override = gr.Number(label="Start Time (s)", precision=1)
+                                et_override = gr.Number(label="End Time (s)", precision=1)
+                                
+                        with gr.Accordion("Enhancements", open=True):
+                            face_cb = gr.Checkbox(label="Auto Face Tracking", value=True)
+                            with gr.Row():
+                                cap_style = gr.Dropdown(choices=CAPTION_STYLES, value="Hormozi", label="Caption Template")
+                                cap_pos = gr.Dropdown(choices=CAPTION_POSITIONS, value="Center", label="Placement")
+                            bg_music = gr.Dropdown(choices=list(BGM_TRACKS.keys()), value="Lofi / Chill", label="Smart BGM")
+                            
+                        render_btn = gr.Button("Render Final Clip", variant="primary", size="lg")
+                        render_status = gr.Textbox(label="", interactive=False, lines=1)
+            
+            with gr.Row():
+                video_preview = gr.Video(label="Preview Player", height=500, scale=4)
+                gallery = gr.Gallery(label="Library", columns=3, height=500, object_fit="contain", scale=6)
 
-    with gr.Accordion("Settings", open=False):
-        with gr.Row():
-            llm_drop = gr.Dropdown([e["label"] for e in LLM_CATALOG], value=LLM_CATALOG[0]["label"],
-                                  label="AI Model", type="index", scale=1)
-            wsp_drop = gr.Dropdown([e["label"] for e in WHISPER_CATALOG], value=WHISPER_CATALOG[3]["label"],
-                                  label="Whisper", type="index", scale=1)
-
-    status_box = gr.Textbox(label="Status", interactive=False, lines=1)
-    clips_html = gr.HTML("")
-    show_all_btn = gr.Button("Show all clips", variant="secondary", visible=False)
-
-    with gr.Group(visible=False) as detail_group:
-        with gr.Row():
-            with gr.Column(scale=6):
-                detail_html = gr.HTML("")
-            with gr.Column(scale=4):
-                clip_num = gr.Number(value=1, label="Clip #", precision=0, minimum=1, maximum=20, elem_id="clip-sel")
-                
-                with gr.Accordion("Automated Enhancements", open=True):
-                    face_cb = gr.Checkbox(label="Smart Visual Edit (AI Face Center)", value=True)
-                    cap_style = gr.Dropdown(choices=THEMES + ["None"], value="Storytime", label="Caption Style (Auto-detected)")
-                    bg_music = gr.Dropdown(
-                        choices=list(BGM_TRACKS.keys()), 
-                        value="Lofi / Chill",
-                        label="Smart Background Music (Auto-ducking)"
-                    )
-                    
-                render_btn = gr.Button("Render clip", variant="primary")
-                render_status = gr.Textbox(label="", interactive=False, lines=1)
-
-    with gr.Row():
-        video_preview = gr.Video(label="Preview", height=420, scale=5)
-        gallery = gr.Gallery(label="Rendered clips", columns=3, height=420, object_fit="contain", scale=5)
-    refresh_btn = gr.Button("Refresh library", variant="secondary")
-
-    # Events
-    analyze_btn.click(analyze_video, [url_input, llm_drop, wsp_drop, num_clips],
-                      [clips_html, status_box, detail_html, cap_style, bg_music, detail_group]).then(
-                      lambda: gr.update(visible=True), outputs=[show_all_btn])
+    # Event Bindings
+    analyze_btn.click(analyze_video, [url_input, num_clips],
+                      [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group])
                       
-    clip_num.change(on_clip_select, [clip_num], [detail_html, cap_style, bg_music])
+    clip_num.change(on_clip_select, [clip_num], [detail_html, st_override, et_override, cap_style, cap_pos, bg_music])
     
-    show_all_btn.click(show_all, outputs=[clips_html])
-    
-    render_btn.click(render_clip, [clip_num, face_cb, cap_style, bg_music], [video_preview, render_status])
+    render_btn.click(render_clip, [clip_num, face_cb, st_override, et_override, cap_style, cap_pos, bg_music], [video_preview, render_status])
     
     refresh_btn.click(get_gallery, outputs=[gallery])
-    
-    load_btn.click(load_history, [history_drop], [url_input, clips_html, detail_html, cap_style, bg_music, detail_group])
 
 if __name__ == "__main__":
     demo.launch(share=True, debug=True, allowed_paths=[OUTPUT_DIR, WORK_DIR, PROJECTS_DIR, BASE_DIR])

@@ -86,12 +86,12 @@ def get_highlights(
 
     lang_hint = f" The transcript is in {language}." if language else ""
     system = (
-        "You are an expert short-form content strategist."
+        "You are an expert short-form content strategist for TikTok/Reels/Shorts."
         f"{lang_hint}"
         " You output ONLY raw JSON."
     )
     schema = (
-        '[{{"title":"string","segments":[{{"start_time":float,"end_time":float}}],'
+        '[{{"title":"string","start_time":float,"end_time":float,'
         '"score":int,"hook_sentence":"string","virality_reason":"string","peak_moment":float,'
         '"theme":"string(Motivation|Educational|Comedy|Suspense|Storytime)"}}]'
     )
@@ -104,9 +104,9 @@ def get_highlights(
         print(f"  [llm] Analysing chunk {idx + 1}/{len(chunks)} ...")
         prompt = (
             f"{VIRALITY_CRITERIA}\n\n"
-            f"Analyse this transcript and extract the TOP {clips_per_chunk} most engaging clips "
-            f"with a strong hook. Create 'smart multi-segment clips' by skipping boring filler. "
-            f"Each clip must have an array of 'segments' (start and end times) that join together to form a punchy 15-60 second video. "
+            f"Analyse this transcript and extract the TOP {clips_per_chunk} most engaging COMPLETE STORIES. "
+            f"Each clip must be a cohesive narrative arc (Hook -> Body -> Payoff) between 30 to 90 seconds long. "
+            f"Do NOT fragment the clip. Just provide the overall start_time and end_time of the story block. "
             f"Identify the 'peak_moment' (exact timestamp where the punchline or highest energy hits). "
             f"Classify the overall 'theme' of the clip into exactly one of: Motivation, Educational, Comedy, Suspense, Storytime.\n\n"
             f"Transcript:\n{chunk}\n\n"
@@ -121,29 +121,15 @@ def get_highlights(
     valid = []
     for h in all_highlights:
         try:
-            # Backwards compat
-            if "segments" not in h and "start_time" in h and "end_time" in h:
-                h["segments"] = [{"start_time": float(h["start_time"]), "end_time": float(h["end_time"])}]
+            st = float(h.get("start_time", 0))
+            et = float(h.get("end_time", 0))
+            dur = et - st
             
-            if not h.get("segments"):
-                continue
-                
-            total_dur = 0
-            valid_segs = []
-            for seg in h["segments"]:
-                st = float(seg.get("start_time", 0))
-                et = float(seg.get("end_time", 0))
-                if et > st:
-                    valid_segs.append({"start_time": st, "end_time": et})
-                    total_dur += (et - st)
-            
-            if total_dur >= 5 and valid_segs:
-                h["segments"] = valid_segs
-                h["start_time"] = valid_segs[0]["start_time"]
-                h["end_time"] = valid_segs[-1]["end_time"]
-                h["duration"] = total_dur
+            # We enforce a semantic block > 15s. The python pacing engine will handle micro-cuts later.
+            if dur >= 15:
+                h["duration"] = dur
                 h["score"] = max(0, min(100, int(h.get("score", 50))))
-                h["peak_moment"] = float(h.get("peak_moment", h["start_time"] + total_dur/2))
+                h["peak_moment"] = float(h.get("peak_moment", st + dur/2))
                 
                 theme = h.get("theme", "Storytime")
                 if theme not in ["Motivation", "Educational", "Comedy", "Suspense", "Storytime"]:
@@ -158,7 +144,7 @@ def get_highlights(
 
     seen, deduped = set(), []
     for h in valid:
-        key = round(h["start_time"], 0)
+        key = round(h["start_time"], -1) # Group very similar timestamps
         if key not in seen:
             seen.add(key)
             deduped.append(h)
