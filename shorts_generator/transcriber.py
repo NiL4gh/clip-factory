@@ -23,10 +23,13 @@ def transcribe_audio(
     whisper_dir: str = "/tmp/whisper",
     device: str = "cuda",
     compute_type: str = "float16",
+    language: str = None,
 ):
     """
     Returns (full_text: str, word_timestamps: list[dict])
     word_timestamps entries: {"word": str, "start": float, "end": float}
+
+    language: ISO 639-1 code (e.g. "en", "bn" for Bangla). None = auto-detect.
     """
     # Extract 16kHz mono wav for faster processing
     wav_path = video_path.replace(".mp4", "_audio.wav")
@@ -36,7 +39,15 @@ def transcribe_audio(
     )
 
     model = _get_model(model_size, whisper_dir, device, compute_type)
-    segments, _ = model.transcribe(wav_path, beam_size=5, word_timestamps=True)
+
+    transcribe_kwargs = {"beam_size": 5, "word_timestamps": True}
+    if language:
+        transcribe_kwargs["language"] = language
+
+    segments, info = model.transcribe(wav_path, **transcribe_kwargs)
+
+    detected_lang = getattr(info, "language", language or "unknown")
+    print(f"  [whisper] Detected language: {detected_lang}")
 
     full_text = ""
     word_timestamps = []

@@ -1,6 +1,5 @@
 """
 Local LLM highlight detection using llama-cpp-python.
-Drop-in replacement — same get_highlights() / get_viral_clips() interface.
 """
 import json
 import re
@@ -19,7 +18,6 @@ Virality signals (ranked by impact):
 8. PRACTICAL VALUE — a concrete tip the viewer can immediately apply
 """
 
-# ~10k tokens at 4 chars/token. Safe for Mistral's 32k native window.
 CHUNK_CHARS = 40_000
 
 
@@ -27,8 +25,6 @@ def _get_llm(llm_path: str, gpu_layers: int = 35):
     from llama_cpp import Llama
     if llm_path not in _llm_cache:
         print(f"  [llm] Loading {llm_path} ...")
-        # n_ctx=0 → use model's own native max context (32768 for Mistral).
-        # This is what prevents the 'tokens exceed context window' error.
         _llm_cache[llm_path] = Llama(
             model_path=llm_path,
             n_gpu_layers=gpu_layers,
@@ -60,7 +56,7 @@ def _query_llm(llm, system: str, prompt: str) -> list:
             {"role": "user",   "content": prompt},
         ],
         temperature=0.2,
-        max_tokens=1024,
+        max_tokens=2048,
     )
     raw = resp["choices"][0]["message"]["content"].strip()
     parsed = _parse_json_loose(raw)
@@ -73,14 +69,15 @@ def _query_llm(llm, system: str, prompt: str) -> list:
 
 def get_highlights(
     transcript_data,
-    num_clips: int = 3,
+    num_clips: int = 5,
     llm_path: str = "",
     gpu_layers: int = 35,
+    max_clips: int = 20,
+    language: str = "",
 ) -> dict:
     """
-    transcript_data: plain string OR dict with {"segments": [...]}
-                     OR (full_text, word_timestamps) tuple from transcriber.py
-    Returns {"highlights": [{title, start_time, end_time, score, hook_sentence, virality_reason}]}
+    Finds ALL possible viral clips (up to max_clips), sorted by score.
+    The UI decides how many to show initially.
     """
     if isinstance(transcript_data, dict):
         segs = transcript_data.get("segments", [])
@@ -95,18 +92,19 @@ def get_highlights(
 
     llm = _get_llm(llm_path, gpu_layers)
 
+    lang_hint = f" The transcript is in {language}." if language else ""
     system = (
-        "You are an expert YouTube Shorts viral strategist. "
-        "You output ONLY raw JSON with no markdown, no explanation."
+        "You are an expert YouTube Shorts viral strategist."
+        f"{lang_hint}"
+        " You output ONLY raw JSON with no markdown, no explanation."
     )
     schema = (
         '[{"title":"string","start_time":float,"end_time":float,'
         '"score":int,"hook_sentence":"string","virality_reason":"string"}]'
     )
 
-    # Split transcript into chunks so we never exceed the context window.
     chunks = [text[i:i + CHUNK_CHARS] for i in range(0, max(len(text), 1), CHUNK_CHARS)]
-    clips_per_chunk = max(1, num_clips // len(chunks) + 1)
+    clips_per_chunk = max(3, max_clips // len(chunks))
     all_highlights = []
 
     for idx, chunk in enumerate(chunks):
@@ -114,7 +112,7 @@ def get_highlights(
         prompt = (
             f"{VIRALITY_CRITERIA}\n\n"
             f"Analyse this transcript and extract the TOP {clips_per_chunk} most engaging, "
-            f"self-contained segments (30–90 seconds each) with a strong hook.\n\n"
+            f"self-contained segments (30\u201390 seconds each) with a strong hook.\n\n"
             f"Transcript:\n{chunk}\n\n"
             f"Respond ONLY with a JSON array:\n{schema}"
         )
@@ -122,19 +120,32 @@ def get_highlights(
             results = _query_llm(llm, system, prompt)
             all_highlights.extend(results)
         except Exception as e:
-            print(f"  [llm] Warning: chunk {idx + 1} failed — {e}")
+            print(f"  [llm] Warning: chunk {idx + 1} failed \u2014 {e}")
 
-    # Sort and deduplicate overlapping clips
-    all_highlights.sort(key=lambda x: int(x.get("score", 0)), reverse=True)
-    seen, deduped = set(), []
+    # Validate + deduplicate
+    valid = []
     for h in all_highlights:
-        key = round(float(h.get("start_time", 0)), 0)
+        try:
+            st = float(h.get("start_time", 0))
+            et = float(h.get("end_time", 0))
+            if et > st and (et - st) >= 10:
+                h["start_time"] = st
+                h["end_time"] = et
+                h["score"] = max(0, min(100, int(h.get("score", 50))))
+                valid.append(h)
+        except (ValueError, TypeError):
+            continue
+
+    valid.sort(key=lambda x: x["score"], reverse=True)
+
+    seen, deduped = set(), []
+    for h in valid:
+        key = round(h["start_time"], 0)
         if key not in seen:
             seen.add(key)
             deduped.append(h)
 
-    return {"highlights": deduped[:num_clips]}
+    return {"highlights": deduped[:max_clips]}
 
 
-# Legacy alias
 get_viral_clips = get_highlights
