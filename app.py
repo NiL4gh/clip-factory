@@ -3,6 +3,7 @@ import sys
 import glob
 import shutil
 import traceback
+import urllib.request
 
 import gradio as gr
 from huggingface_hub import hf_hub_download
@@ -30,6 +31,13 @@ for d in [WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR, PROJECTS_DIR]:
 
 _state = {"clips": [], "word_timestamps": [], "current_url": None}
 
+# Royalty-free music registry for fully automated smart music
+BGM_TRACKS = {
+    "None": None,
+    "Lofi / Chill": "https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3",
+    "Suspense / Hook": "https://cdn.pixabay.com/audio/2022/10/25/audio_24923e2060.mp3",
+    "Upbeat / Viral": "https://cdn.pixabay.com/audio/2022/03/15/audio_c8b817bb6b.mp3"
+}
 
 def _sc(s):
     s = int(s)
@@ -172,7 +180,7 @@ def on_clip_select(n):
 def show_all():
     return _cards(_state["clips"], show_all=True) if _state["clips"] else ""
 
-def render_clip(clip_num, face_center, add_subs, bg_music):
+def render_clip(clip_num, face_center, add_subs, bg_music_genre):
     if not _state["clips"]:
         return None, "Analyse a video first."
     idx = int(clip_num) - 1
@@ -183,7 +191,7 @@ def render_clip(clip_num, face_center, add_subs, bg_music):
         input_mp4 = os.path.join(WORK_DIR, "source.mp4")
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         
-        # 1. Base render (handles multi-segment concatenation)
+        # 1. Base render (handles multi-segment concatenation & visual face-tracking edit)
         out = render_short(
             input_video=input_mp4, clip_data=clip,
             word_timestamps=_state["word_timestamps"] if add_subs else [],
@@ -191,8 +199,16 @@ def render_clip(clip_num, face_center, add_subs, bg_music):
             face_center=face_center, add_subs=add_subs,
         )
         
-        # 2. Enhancements (Smart Music Peak)
-        enhance_clip(out, clip, music_path=bg_music)
+        # 2. Automated Smart Music
+        if bg_music_genre and bg_music_genre != "None":
+            music_url = BGM_TRACKS[bg_music_genre]
+            music_path = os.path.join(WORK_DIR, f"{bg_music_genre.replace(' ', '_').replace('/', '')}.mp3")
+            
+            # Download track if not cached
+            if not os.path.exists(music_path):
+                urllib.request.urlretrieve(music_url, music_path)
+                
+            enhance_clip(out, clip, music_path=music_path)
         
         # 3. Copy to global output
         os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -282,10 +298,14 @@ with gr.Blocks(title="Clip Factory", css=_css) as demo:
             with gr.Column(scale=4):
                 clip_num = gr.Number(value=1, label="Clip #", precision=0, minimum=1, maximum=20, elem_id="clip-sel")
                 
-                with gr.Accordion("Enhancements", open=False):
-                    face_cb = gr.Checkbox(label="Face tracking (Auto-crop)", value=True)
+                with gr.Accordion("Automated Enhancements", open=True):
+                    face_cb = gr.Checkbox(label="Smart Visual Edit (AI Face Center)", value=True)
                     subs_cb = gr.Checkbox(label="Dynamic Captions", value=True)
-                    bg_music = gr.Audio(type="filepath", label="Smart Background Music (Upload mp3)")
+                    bg_music = gr.Dropdown(
+                        choices=list(BGM_TRACKS.keys()), 
+                        value="Lofi / Chill",
+                        label="Smart Background Music (Auto-ducking)"
+                    )
                     
                 render_btn = gr.Button("Render clip", variant="primary")
                 render_status = gr.Textbox(label="", interactive=False, lines=1)

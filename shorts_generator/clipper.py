@@ -4,9 +4,47 @@ import uuid
 import shutil
 import cv2
 
-def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920, sample_fps=1):
-    # Fallback default crop
-    return (0, 0)
+def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
+    """
+    Smart Visual Editing: Scans the frame at `time_offset` using OpenCV.
+    Detects faces and calculates the exact X-coordinate to keep the speaker centered
+    when cropping 16:9 to 9:16 vertical format.
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2" # Fallback center
+        
+    cap.set(cv2.CAP_PROP_POS_MSEC, time_offset * 1000)
+    ret, frame = cap.read()
+    cap.release()
+    
+    if not ret:
+        return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
+
+    h, w = frame.shape[:2]
+    
+    try:
+        # Smart Face Tracking
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
+        face_cascade = cv2.CascadeClassifier(cascade_path)
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+        
+        if len(faces) > 0:
+            # Find largest face (primary speaker)
+            faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
+            fx, fy, fw, fh = faces[0]
+            face_center_x = fx + (fw // 2)
+            
+            # Calculate dynamic crop_x to center the face, clamped to video bounds
+            crop_x = max(0, min(w - target_w, face_center_x - (target_w // 2)))
+            return str(int(crop_x)), f"(in_h-{target_h})/2"
+    except Exception as e:
+        print(f"Face tracking error: {e}")
+        
+    # Center fallback
+    return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
+
 
 def _generate_ass(words, out_path, video_w, video_h, time_offset=0):
     lines = [
@@ -49,8 +87,6 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0):
         if chunk_et <= chunk_st:
             continue
             
-        full_text = " ".join(w["word"].strip() for w in chunk)
-        
         for w in chunk:
             w_st = max(0, w["start"] - time_offset)
             w_et = max(0, w["end"] - time_offset)
@@ -75,7 +111,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir, 
     out_id = uuid.uuid4().hex[:8]
     final_output = os.path.join(output_dir, f"short_{out_id}.mp4")
     
-    segments = clip_data.get("segments", [{"start_time": clip_data["start_time"], "end_time": clip_data["end_time"]}])
+    segments = clip_data.get("segments", [{"start_time": clip_data.get("start_time", 0), "end_time": clip_data.get("end_time", 0)}])
     target_w, target_h = 1080, 1920
     
     rendered_segs = []
@@ -83,9 +119,11 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir, 
         seg_st = float(seg["start_time"])
         seg_et = float(seg["end_time"])
         
-        # Simple center crop for now
-        crop_x = f"(in_w-{target_w})/2"
-        crop_y = f"(in_h-{target_h})/2"
+        # Smart Visual Edit: Track Face
+        if face_center:
+            crop_x, crop_y = _get_crop_params(input_video, seg_st, target_w, target_h)
+        else:
+            crop_x, crop_y = f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
         
         seg_words = [w for w in word_timestamps if w["start"] >= seg_st - 0.5 and w["end"] <= seg_et + 0.5]
         
