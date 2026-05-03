@@ -4,6 +4,8 @@ import uuid
 import shutil
 import cv2
 
+from shorts_generator.media import get_broll_image, get_twemoji
+
 def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -38,39 +40,26 @@ def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
 
 
 def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Hormozi", position="Center"):
-    
-    # Base color palettes based on theme
     palettes = {
-        "Motivation": {"main": "&H00FFFFFF", "high": "&H0000FFFF"}, # Yellow
-        "Educational": {"main": "&H00FFFFFF", "high": "&H00FFC000"}, # Blue
-        "Comedy": {"main": "&H00FFFFFF", "high": "&H00FF00FF"}, # Magenta
-        "Suspense": {"main": "&H00FFFFFF", "high": "&H000000FF"}, # Red
-        "Storytime": {"main": "&H00FFFFFF", "high": "&H0000A5FF"}  # Orange
+        "Motivation": {"main": "&H00FFFFFF", "high": "&H0000FFFF"}, 
+        "Educational": {"main": "&H00FFFFFF", "high": "&H00FFC000"}, 
+        "Comedy": {"main": "&H00FFFFFF", "high": "&H00FF00FF"}, 
+        "Suspense": {"main": "&H00FFFFFF", "high": "&H000000FF"}, 
+        "Storytime": {"main": "&H00FFFFFF", "high": "&H0000A5FF"}  
     }
     
     p = palettes.get(theme, palettes["Storytime"])
     
-    # Styling logic (Font, Outline, Shadows)
     if style_mode == "Hormozi":
         font_name = "Arial Black"
-        outline = 6
-        shadow = 4
-        bold = 1
-        font_size = 85
+        outline = 6; shadow = 4; bold = 1; font_size = 85
     elif style_mode == "Minimalist":
         font_name = "Arial"
-        outline = 1
-        shadow = 0
-        bold = 0
-        font_size = 75
-    else: # Standard
+        outline = 1; shadow = 0; bold = 0; font_size = 75
+    else: 
         font_name = "Arial"
-        outline = 4
-        shadow = 2
-        bold = 1
-        font_size = 80
+        outline = 4; shadow = 2; bold = 1; font_size = 80
         
-    # Position logic (ASS Alignment: 8=Top, 5=Center, 2=Bottom)
     align_map = {"Top": 8, "Center": 5, "Bottom": 2}
     align = align_map.get(position, 5)
 
@@ -90,10 +79,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     ]
     
     def fmt_time(secs):
-        h = int(secs // 3600)
-        m = int((secs % 3600) // 60)
-        s = int(secs % 60)
-        cs = int((secs - int(secs)) * 100)
+        h = int(secs // 3600); m = int((secs % 3600) // 60); s = int(secs % 60); cs = int((secs - int(secs)) * 100)
         return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
     chunks = []
@@ -109,20 +95,17 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     for chunk in chunks:
         chunk_st = max(0, chunk[0]['start'] - time_offset)
         chunk_et = max(0, chunk[-1]['end'] - time_offset)
-        if chunk_et <= chunk_st:
-            continue
+        if chunk_et <= chunk_st: continue
             
         for w in chunk:
             w_st = max(0, w["start"] - time_offset)
             w_et = max(0, w["end"] - time_offset)
-            if w_et <= w_st:
-                continue
+            if w_et <= w_st: continue
                 
             styled = ""
             for x in chunk:
                 txt = x['word'].strip()
                 if style_mode == "Hormozi": txt = txt.upper()
-                
                 if x == w:
                     styled += f"{{\\rHighlight}}{txt}{{\\rMain}} "
                 else:
@@ -137,7 +120,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
 def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir, 
                  face_center=True, add_subs=True, theme="Storytime", 
                  caption_style="Hormozi", caption_pos="Center",
-                 override_start=None, override_end=None):
+                 override_start=None, override_end=None, excluded_sentences=None):
                      
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(work_dir, exist_ok=True)
@@ -146,15 +129,34 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     
     target_w, target_h = 1080, 1920
     
-    # 1. Base boundaries (Use overrides if provided)
     base_st = float(override_start) if override_start is not None else float(clip_data.get("start_time", 0))
     base_et = float(override_end) if override_end is not None else float(clip_data.get("end_time", 0))
     
-    # Filter words in this global block
-    block_words = [w for w in word_timestamps if w["start"] >= base_st - 0.5 and w["end"] <= base_et + 0.5]
+    # Transcript Editing: Exclude words that fall into the unchecked sentences
+    excluded_ranges = []
+    if excluded_sentences:
+        for ex_str in excluded_sentences:
+            try:
+                # Format: "[10.5s] Hello world."
+                st_str = ex_str.split("s]")[0].replace("[", "").strip()
+                st_val = float(st_str)
+                excluded_ranges.append({"start": st_val - 0.1, "end": st_val + 5.0}) # approximate bound
+            except:
+                pass
+                
+    block_words = []
+    for w in word_timestamps:
+        if w["start"] >= base_st - 0.5 and w["end"] <= base_et + 0.5:
+            # Check if it falls in an excluded sentence range
+            excluded = False
+            for r in excluded_ranges:
+                if w["start"] >= r["start"] and w["start"] <= r["end"]:
+                    excluded = True
+                    break
+            if not excluded:
+                block_words.append(w)
     
-    # 2. Dynamic Pacing Edit (Silence Removal)
-    # Instead of asking the LLM to guess micro-cuts, we algorithmically cut dead air > 0.8s
+    # Dynamic Pacing Edit (Silence Removal)
     segments = []
     if not block_words:
         segments.append({"start_time": base_st, "end_time": base_et})
@@ -166,46 +168,89 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             w_curr = block_words[i]
             w_next = block_words[i+1]
             if w_next['start'] - w_curr['end'] > gap_threshold:
-                # Silence detected. Close current segment.
                 segments.append({"start_time": current_st, "end_time": w_curr['end'] + 0.2})
-                # Start new segment
                 current_st = w_next['start'] - 0.2
                 
-        # Close final segment
         segments.append({"start_time": current_st, "end_time": min(base_et, block_words[-1]['end'] + 0.2)})
 
     rendered_segs = []
     for idx, seg in enumerate(segments):
         seg_st = float(seg["start_time"])
         seg_et = float(seg["end_time"])
-        if seg_et - seg_st < 0.5: continue # Skip ultra-short artifacts
+        if seg_et - seg_st < 0.5: continue 
         
         if face_center:
             crop_x, crop_y = _get_crop_params(input_video, seg_st, target_w, target_h)
         else:
             crop_x, crop_y = f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
-        
-        seg_words = [w for w in block_words if w["start"] >= seg_st - 0.2 and w["end"] <= seg_et + 0.2]
-        
-        ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
-        _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st, 
-                      theme=theme, style_mode=caption_style, position=caption_pos)
-        
+            
         seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
         
-        cmd = ["ffmpeg", "-y", "-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
+        # Prepare inputs and filtergraph
+        inputs = ["-i", input_video]
+        filter_complex = f"[0:v]crop={target_w}:{target_h}:{crop_x}:{crop_y}[base];"
+        current_v = "base"
         
-        vf = [f"crop={target_w}:{target_h}:{crop_x}:{crop_y}"]
+        # Add B-Roll Overlays
+        broll_kws = clip_data.get("broll_keywords", [])
+        input_idx = 1
+        for b in broll_kws:
+            b_st = float(b.get("start_time", 0))
+            if b_st >= seg_st and b_st <= seg_et:
+                # 2-second B-Roll
+                b_img_path = os.path.join(work_dir, f"broll_{out_id}_{input_idx}.jpg")
+                if get_broll_image(b.get("keyword", ""), b_img_path):
+                    inputs.extend(["-loop", "1", "-t", "2", "-i", b_img_path])
+                    filter_complex += f"[{input_idx}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease[broll{input_idx}];"
+                    
+                    rel_st = b_st - seg_st
+                    rel_et = rel_st + 2.0
+                    next_v = f"v{input_idx}"
+                    filter_complex += f"[{current_v}][broll{input_idx}]overlay=(W-w)/2:(H-h)/2:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
+                    current_v = next_v
+                    input_idx += 1
+                    
+        # Add Emoji Overlays
+        emoji_moms = clip_data.get("emoji_moments", [])
+        for e in emoji_moms:
+            e_st = float(e.get("start_time", 0))
+            if e_st >= seg_st and e_st <= seg_et:
+                e_img_path = os.path.join(work_dir, f"emoji_{out_id}_{input_idx}.png")
+                if get_twemoji(e.get("emoji_unicode", ""), e_img_path):
+                    inputs.extend(["-loop", "1", "-t", "1.5", "-i", e_img_path])
+                    filter_complex += f"[{input_idx}:v]scale=250:250[emoji{input_idx}];"
+                    
+                    rel_st = e_st - seg_st
+                    rel_et = rel_st + 1.5
+                    next_v = f"v{input_idx}"
+                    # Overlay at bottom right
+                    filter_complex += f"[{current_v}][emoji{input_idx}]overlay=W-w-50:H-h-300:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
+                    current_v = next_v
+                    input_idx += 1
+
+        # Add Subtitles to final graph
+        seg_words = [w for w in block_words if w["start"] >= seg_st - 0.2 and w["end"] <= seg_et + 0.2]
         if add_subs and seg_words:
+            ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
+            _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st, 
+                          theme=theme, style_mode=caption_style, position=caption_pos)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
-            vf.append(f"ass='{safe_ass}'")
+            next_v = f"v{input_idx}"
+            filter_complex += f"[{current_v}]ass='{safe_ass}'[{next_v}];"
+            current_v = next_v
             
-        cmd.extend(["-vf", ",".join(vf), "-c:v", "libx264", "-c:a", "aac", seg_out])
+        # Clean up final semicolon
+        filter_complex = filter_complex.rstrip(';')
+        
+        cmd = ["ffmpeg", "-y", "-ss", str(seg_st), "-to", str(seg_et)]
+        cmd.extend(inputs)
+        cmd.extend(["-filter_complex", filter_complex, "-map", f"[{current_v}]", "-map", "0:a", "-c:v", "libx264", "-c:a", "aac", seg_out])
+        
         subprocess.run(cmd, check=True)
         rendered_segs.append(seg_out)
         
     if not rendered_segs:
-        raise ValueError("No valid segments could be rendered.")
+        raise ValueError("No valid segments could be rendered. (Check your transcript exclusions)")
         
     if len(rendered_segs) == 1:
         shutil.copy2(rendered_segs[0], final_output)

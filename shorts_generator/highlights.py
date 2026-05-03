@@ -93,7 +93,9 @@ def get_highlights(
     schema = (
         '[{{"title":"string","start_time":float,"end_time":float,'
         '"score":int,"hook_sentence":"string","virality_reason":"string","peak_moment":float,'
-        '"theme":"string(Motivation|Educational|Comedy|Suspense|Storytime)"}}]'
+        '"theme":"string(Motivation|Educational|Comedy|Suspense|Storytime)",'
+        '"broll_keywords":[{{"start_time":float,"keyword":"string"}}],'
+        '"emoji_moments":[{{"start_time":float,"emoji_unicode":"string"}}]}}]'
     )
 
     chunks = [text[i:i + CHUNK_CHARS] for i in range(0, max(len(text), 1), CHUNK_CHARS)]
@@ -108,7 +110,8 @@ def get_highlights(
             f"Each clip must be a cohesive narrative arc (Hook -> Body -> Payoff) between 30 to 90 seconds long. "
             f"Do NOT fragment the clip. Just provide the overall start_time and end_time of the story block. "
             f"Identify the 'peak_moment' (exact timestamp where the punchline or highest energy hits). "
-            f"Classify the overall 'theme' of the clip into exactly one of: Motivation, Educational, Comedy, Suspense, Storytime.\n\n"
+            f"Classify the overall 'theme' of the clip into exactly one of: Motivation, Educational, Comedy, Suspense, Storytime. "
+            f"Also, provide 1 or 2 'broll_keywords' (visual nouns) and 1 or 2 'emoji_moments' (a single unicode emoji character like 🚀) with their exact timestamps to increase retention.\n\n"
             f"Transcript:\n{chunk}\n\n"
             f"Respond ONLY with a JSON array:\n{schema}"
         )
@@ -125,7 +128,6 @@ def get_highlights(
             et = float(h.get("end_time", 0))
             dur = et - st
             
-            # We enforce a semantic block > 15s. The python pacing engine will handle micro-cuts later.
             if dur >= 15:
                 h["duration"] = dur
                 h["score"] = max(0, min(100, int(h.get("score", 50))))
@@ -136,6 +138,9 @@ def get_highlights(
                     theme = "Storytime"
                 h["theme"] = theme
                 
+                h["broll_keywords"] = h.get("broll_keywords", [])
+                h["emoji_moments"] = h.get("emoji_moments", [])
+                
                 valid.append(h)
         except (ValueError, TypeError, KeyError):
             continue
@@ -144,7 +149,7 @@ def get_highlights(
 
     seen, deduped = set(), []
     for h in valid:
-        key = round(h["start_time"], -1) # Group very similar timestamps
+        key = round(h["start_time"], -1)
         if key not in seen:
             seen.add(key)
             deduped.append(h)
