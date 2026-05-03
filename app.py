@@ -31,13 +31,15 @@ for d in [WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR, PROJECTS_DIR]:
 
 _state = {"clips": [], "word_timestamps": [], "current_url": None}
 
-# Royalty-free music registry for fully automated smart music
 BGM_TRACKS = {
     "None": None,
+    "Epic / Cinematic": "https://cdn.pixabay.com/audio/2022/01/18/audio_d0a13f69d2.mp3",
     "Lofi / Chill": "https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3",
     "Suspense / Hook": "https://cdn.pixabay.com/audio/2022/10/25/audio_24923e2060.mp3",
     "Upbeat / Viral": "https://cdn.pixabay.com/audio/2022/03/15/audio_c8b817bb6b.mp3"
 }
+
+THEMES = ["Motivation", "Educational", "Comedy", "Suspense", "Storytime"]
 
 def _sc(s):
     s = int(s)
@@ -84,11 +86,21 @@ def _cards(clips, show_all=False):
       </tr></thead><tbody>{rows}</tbody></table>{more}"""
 
 
-def _detail(idx):
-    if not _state["clips"]: return ""
+def _get_internal_clip_data(idx):
+    if not _state["clips"]: return "", "Storytime", "Lofi / Chill"
     i = max(0, min(int(idx)-1, len(_state["clips"])-1))
     c = _state["clips"][i]
     sc = int(c.get("score",0))
+    theme = c.get("theme", "Storytime")
+    
+    music_map = {
+        "Motivation": "Epic / Cinematic",
+        "Educational": "Lofi / Chill",
+        "Comedy": "Upbeat / Viral",
+        "Suspense": "Suspense / Hook",
+        "Storytime": "Lofi / Chill"
+    }
+    def_music = music_map.get(theme, "Lofi / Chill")
     
     segs = c.get("segments", [{"start_time": c.get("start_time",0), "end_time": c.get("end_time",0)}])
     st = float(segs[0]["start_time"])
@@ -102,9 +114,12 @@ def _detail(idx):
             seg_html += f"[{s['start_time']:.0f}s-{s['end_time']:.0f}s] "
         seg_html += "</div>"
         
-    return f"""<div style='background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:16px;font-family:system-ui'>
+    html = f"""<div style='background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:16px;font-family:system-ui'>
   <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px'>
-    <span style='font-size:12px;color:#666;font-weight:600'>CLIP {i+1}</span>
+    <div>
+        <span style='font-size:12px;color:#666;font-weight:600'>CLIP {i+1}</span>
+        <span style='font-size:10px;background:#333;color:#aaa;padding:2px 6px;border-radius:4px;margin-left:8px'>Theme: {theme}</span>
+    </div>
     <span style='font-size:28px;font-weight:800;color:{_sc(sc)}'>{sc}<span style='font-size:12px;color:#666'>/100</span></span>
   </div>
   <h3 style='margin:0 0 10px;font-size:15px;color:#eee'>{c.get('title','')}</h3>
@@ -119,11 +134,15 @@ def _detail(idx):
     <div style='font-size:13px;color:#aaa'>{c.get('virality_reason','')}</div>
   </div>
 </div>"""
+    return html, theme, def_music
 
+def on_clip_select(n):
+    html, t, m = _get_internal_clip_data(n)
+    return html, gr.update(value=t), gr.update(value=m)
 
 def analyze_video(url, llm_idx, wsp_idx, num_clips):
     if not url or not url.strip():
-        yield "", "Enter a YouTube URL.", "", gr.update(visible=False)
+        yield "", "Enter a YouTube URL.", "", gr.update(), gr.update(), gr.update(visible=False)
         return
     try:
         llm_entry = LLM_CATALOG[int(llm_idx)]
@@ -131,33 +150,33 @@ def analyze_video(url, llm_idx, wsp_idx, num_clips):
         llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
         n = int(num_clips)
 
-        # Check cache
         cached_h = cache.load_highlights(url.strip())
         cached_t = cache.load_transcript(url.strip())
         if cached_h and cached_t:
             _state["clips"] = cached_h
             _state["word_timestamps"] = cached_t[1]
             _state["current_url"] = url.strip()
-            yield _cards(_state["clips"]), f"Loaded {len(cached_h)} cached clips.", _detail(1), gr.update(visible=True)
+            html, t, m = _get_internal_clip_data(1)
+            yield _cards(_state["clips"]), f"Loaded {len(cached_h)} cached clips.", html, gr.update(value=t), gr.update(value=m), gr.update(visible=True)
             return
 
-        yield "", "Checking model...", "", gr.update(visible=False)
+        yield "", "Checking model...", "", gr.update(), gr.update(), gr.update(visible=False)
         if not os.path.exists(llm_path):
-            yield "", f"Downloading {llm_entry['label']} (~4 GB, one-time)...", "", gr.update(visible=False)
+            yield "", f"Downloading {llm_entry['label']} (~4 GB, one-time)...", "", gr.update(), gr.update(), gr.update(visible=False)
             hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"],
                            local_dir=LLM_DIR, local_dir_use_symlinks=False)
 
         source_mp4 = os.path.join(WORK_DIR, "source.mp4")
-        yield "", "Downloading video...", "", gr.update(visible=False)
+        yield "", "Downloading video...", "", gr.update(), gr.update(), gr.update(visible=False)
         _state["current_url"] = url.strip()
         download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
 
-        yield "", f"Transcribing ({wsp_size})...", "", gr.update(visible=False)
+        yield "", f"Transcribing ({wsp_size})...", "", gr.update(), gr.update(), gr.update(visible=False)
         full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
         _state["word_timestamps"] = words
         cache.save_transcript(url.strip(), full_text, words)
 
-        yield "", "AI scoring multi-segment viral moments...", "", gr.update(visible=False)
+        yield "", "AI scoring multi-segment viral moments...", "", gr.update(), gr.update(), gr.update(visible=False)
         result = get_highlights(full_text, num_clips=n, llm_path=llm_path,
                                gpu_layers=llm_entry["gpu_layers"], max_clips=20)
         _state["clips"] = result.get("highlights", [])
@@ -165,22 +184,20 @@ def analyze_video(url, llm_idx, wsp_idx, num_clips):
         cache.save_metadata(url.strip())
 
         if not _state["clips"]:
-            yield "", "No clips found. Try a different video.", "", gr.update(visible=False)
+            yield "", "No clips found. Try a different video.", "", gr.update(), gr.update(), gr.update(visible=False)
             return
 
-        yield _cards(_state["clips"]), f"Found {len(_state['clips'])} clips.", _detail(1), gr.update(visible=True)
+        html, t, m = _get_internal_clip_data(1)
+        yield _cards(_state["clips"]), f"Found {len(_state['clips'])} clips.", html, gr.update(value=t), gr.update(value=m), gr.update(visible=True)
     except Exception as e:
         traceback.print_exc()
-        yield "", f"Error: {e}", "", gr.update(visible=False)
+        yield "", f"Error: {e}", "", gr.update(), gr.update(), gr.update(visible=False)
 
-
-def on_clip_select(n):
-    return _detail(n)
 
 def show_all():
     return _cards(_state["clips"], show_all=True) if _state["clips"] else ""
 
-def render_clip(clip_num, face_center, add_subs, bg_music_genre):
+def render_clip(clip_num, face_center, cap_style_str, bg_music_genre):
     if not _state["clips"]:
         return None, "Analyse a video first."
     idx = int(clip_num) - 1
@@ -191,26 +208,23 @@ def render_clip(clip_num, face_center, add_subs, bg_music_genre):
         input_mp4 = os.path.join(WORK_DIR, "source.mp4")
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         
-        # 1. Base render (handles multi-segment concatenation & visual face-tracking edit)
         out = render_short(
             input_video=input_mp4, clip_data=clip,
-            word_timestamps=_state["word_timestamps"] if add_subs else [],
+            word_timestamps=_state["word_timestamps"] if cap_style_str != "None" else [],
             output_dir=clips_dir, work_dir=WORK_DIR,
-            face_center=face_center, add_subs=add_subs,
+            face_center=face_center, add_subs=(cap_style_str != "None"),
+            theme=cap_style_str
         )
         
-        # 2. Automated Smart Music
         if bg_music_genre and bg_music_genre != "None":
             music_url = BGM_TRACKS[bg_music_genre]
             music_path = os.path.join(WORK_DIR, f"{bg_music_genre.replace(' ', '_').replace('/', '')}.mp3")
             
-            # Download track if not cached
             if not os.path.exists(music_path):
                 urllib.request.urlretrieve(music_url, music_path)
                 
             enhance_clip(out, clip, music_path=music_path)
         
-        # 3. Copy to global output
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
         if out != dst:
@@ -236,7 +250,7 @@ def get_gallery():
     return unique[:12]
 
 def load_history(choice):
-    if not choice: return gr.update(), "", "", gr.update(visible=False)
+    if not choice: return gr.update(), "", "", gr.update(), gr.update(), gr.update(visible=False)
     vid = choice.split(" | ")[0].strip()
     for p in cache.list_projects():
         if p.get("video_id") == vid:
@@ -246,8 +260,9 @@ def load_history(choice):
             if h and t:
                 _state["clips"], _state["word_timestamps"] = h, t[1]
                 _state["current_url"] = url
-                return url, _cards(h), _detail(1), gr.update(visible=True)
-    return gr.update(), "", "", gr.update(visible=False)
+                html, thm, mus = _get_internal_clip_data(1)
+                return url, _cards(h), html, gr.update(value=thm), gr.update(value=mus), gr.update(visible=True)
+    return gr.update(), "", "", gr.update(), gr.update(), gr.update(visible=False)
 
 def history_list():
     return [f"{p['video_id']} | {p.get('url','')}" for p in cache.list_projects()] or []
@@ -300,7 +315,7 @@ with gr.Blocks(title="Clip Factory", css=_css) as demo:
                 
                 with gr.Accordion("Automated Enhancements", open=True):
                     face_cb = gr.Checkbox(label="Smart Visual Edit (AI Face Center)", value=True)
-                    subs_cb = gr.Checkbox(label="Dynamic Captions", value=True)
+                    cap_style = gr.Dropdown(choices=THEMES + ["None"], value="Storytime", label="Caption Style (Auto-detected)")
                     bg_music = gr.Dropdown(
                         choices=list(BGM_TRACKS.keys()), 
                         value="Lofi / Chill",
@@ -317,13 +332,18 @@ with gr.Blocks(title="Clip Factory", css=_css) as demo:
 
     # Events
     analyze_btn.click(analyze_video, [url_input, llm_drop, wsp_drop, num_clips],
-                      [clips_html, status_box, detail_html, detail_group]).then(
+                      [clips_html, status_box, detail_html, cap_style, bg_music, detail_group]).then(
                       lambda: gr.update(visible=True), outputs=[show_all_btn])
-    clip_num.change(on_clip_select, [clip_num], [detail_html])
+                      
+    clip_num.change(on_clip_select, [clip_num], [detail_html, cap_style, bg_music])
+    
     show_all_btn.click(show_all, outputs=[clips_html])
-    render_btn.click(render_clip, [clip_num, face_cb, subs_cb, bg_music], [video_preview, render_status])
+    
+    render_btn.click(render_clip, [clip_num, face_cb, cap_style, bg_music], [video_preview, render_status])
+    
     refresh_btn.click(get_gallery, outputs=[gallery])
-    load_btn.click(load_history, [history_drop], [url_input, clips_html, detail_html, detail_group])
+    
+    load_btn.click(load_history, [history_drop], [url_input, clips_html, detail_html, cap_style, bg_music, detail_group])
 
 if __name__ == "__main__":
     demo.launch(share=True, debug=True, allowed_paths=[OUTPUT_DIR, WORK_DIR, PROJECTS_DIR, BASE_DIR])

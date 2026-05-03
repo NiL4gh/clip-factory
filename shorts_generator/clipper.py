@@ -7,12 +7,11 @@ import cv2
 def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
     """
     Smart Visual Editing: Scans the frame at `time_offset` using OpenCV.
-    Detects faces and calculates the exact X-coordinate to keep the speaker centered
-    when cropping 16:9 to 9:16 vertical format.
+    Detects faces and calculates the exact X-coordinate to keep the speaker centered.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2" # Fallback center
+        return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2" 
         
     cap.set(cv2.CAP_PROP_POS_MSEC, time_offset * 1000)
     ret, frame = cap.read()
@@ -24,29 +23,46 @@ def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
     h, w = frame.shape[:2]
     
     try:
-        # Smart Face Tracking
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
         face_cascade = cv2.CascadeClassifier(cascade_path)
         faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
         
         if len(faces) > 0:
-            # Find largest face (primary speaker)
             faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
             fx, fy, fw, fh = faces[0]
             face_center_x = fx + (fw // 2)
             
-            # Calculate dynamic crop_x to center the face, clamped to video bounds
             crop_x = max(0, min(w - target_w, face_center_x - (target_w // 2)))
             return str(int(crop_x)), f"(in_h-{target_h})/2"
     except Exception as e:
         print(f"Face tracking error: {e}")
         
-    # Center fallback
     return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
 
 
-def _generate_ass(words, out_path, video_w, video_h, time_offset=0):
+def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime"):
+    
+    styles = {
+        "Motivation": {
+            "main": "&H00FFFFFF", "high": "&H0000FFFF" # Yellow highlight
+        },
+        "Educational": {
+            "main": "&H00FFFFFF", "high": "&H00FFC000" # Light Blue highlight
+        },
+        "Comedy": {
+            "main": "&H00FFFFFF", "high": "&H00FF00FF" # Magenta highlight
+        },
+        "Suspense": {
+            "main": "&H00FFFFFF", "high": "&H000000FF" # Red highlight
+        },
+        "Storytime": {
+            "main": "&H00FFFFFF", "high": "&H0000A5FF" # Orange highlight
+        }
+    }
+    
+    st = styles.get(theme, styles["Storytime"])
+
     lines = [
         "[Script Info]",
         "ScriptType: v4.00+",
@@ -55,8 +71,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0):
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        "Style: Main,Arial,80,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,5,10,10,250,1",
-        "Style: Highlight,Arial,80,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,5,10,10,250,1",
+        f"Style: Main,Arial,80,{st['main']},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,5,10,10,250,1",
+        f"Style: Highlight,Arial,80,{st['high']},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,5,10,10,250,1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
@@ -69,7 +85,6 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0):
         cs = int((secs - int(secs)) * 100)
         return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
-    # Group words into chunks of 3-4
     chunks = []
     curr = []
     for w in words:
@@ -81,7 +96,6 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0):
         chunks.append(curr)
 
     for chunk in chunks:
-        # Subtract time_offset because the ffmpeg filter starts this segment at t=0
         chunk_st = max(0, chunk[0]['start'] - time_offset)
         chunk_et = max(0, chunk[-1]['end'] - time_offset)
         if chunk_et <= chunk_st:
@@ -105,7 +119,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0):
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir, face_center=True, add_subs=True):
+
+def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir, face_center=True, add_subs=True, theme="Storytime"):
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(work_dir, exist_ok=True)
     out_id = uuid.uuid4().hex[:8]
@@ -119,7 +134,6 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir, 
         seg_st = float(seg["start_time"])
         seg_et = float(seg["end_time"])
         
-        # Smart Visual Edit: Track Face
         if face_center:
             crop_x, crop_y = _get_crop_params(input_video, seg_st, target_w, target_h)
         else:
@@ -128,7 +142,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir, 
         seg_words = [w for w in word_timestamps if w["start"] >= seg_st - 0.5 and w["end"] <= seg_et + 0.5]
         
         ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
-        _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st)
+        _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st, theme=theme)
         
         seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
         

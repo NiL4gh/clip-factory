@@ -92,7 +92,8 @@ def get_highlights(
     )
     schema = (
         '[{{"title":"string","segments":[{{"start_time":float,"end_time":float}}],'
-        '"score":int,"hook_sentence":"string","virality_reason":"string","peak_moment":float}}]'
+        '"score":int,"hook_sentence":"string","virality_reason":"string","peak_moment":float,'
+        '"theme":"string(Motivation|Educational|Comedy|Suspense|Storytime)"}}]'
     )
 
     chunks = [text[i:i + CHUNK_CHARS] for i in range(0, max(len(text), 1), CHUNK_CHARS)]
@@ -106,7 +107,8 @@ def get_highlights(
             f"Analyse this transcript and extract the TOP {clips_per_chunk} most engaging clips "
             f"with a strong hook. Create 'smart multi-segment clips' by skipping boring filler. "
             f"Each clip must have an array of 'segments' (start and end times) that join together to form a punchy 15-60 second video. "
-            f"Identify the 'peak_moment' (exact timestamp where the punchline or highest energy hits).\n\n"
+            f"Identify the 'peak_moment' (exact timestamp where the punchline or highest energy hits). "
+            f"Classify the overall 'theme' of the clip into exactly one of: Motivation, Educational, Comedy, Suspense, Storytime.\n\n"
             f"Transcript:\n{chunk}\n\n"
             f"Respond ONLY with a JSON array:\n{schema}"
         )
@@ -142,6 +144,12 @@ def get_highlights(
                 h["duration"] = total_dur
                 h["score"] = max(0, min(100, int(h.get("score", 50))))
                 h["peak_moment"] = float(h.get("peak_moment", h["start_time"] + total_dur/2))
+                
+                theme = h.get("theme", "Storytime")
+                if theme not in ["Motivation", "Educational", "Comedy", "Suspense", "Storytime"]:
+                    theme = "Storytime"
+                h["theme"] = theme
+                
                 valid.append(h)
         except (ValueError, TypeError, KeyError):
             continue
