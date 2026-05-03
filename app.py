@@ -22,6 +22,7 @@ from shorts_generator.downloader import download_video
 from shorts_generator.transcriber import transcribe_audio
 from shorts_generator.highlights import get_highlights
 from shorts_generator.clipper import render_short
+from shorts_generator.enhancer import enhance_clip
 from shorts_generator import cache
 
 for d in [WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR, PROJECTS_DIR]:
@@ -153,7 +154,7 @@ def on_clip_select(n):
 def show_all():
     return _cards(_state["clips"], show_all=True) if _state["clips"] else ""
 
-def render_clip(clip_num, face_center, add_subs):
+def render_clip(clip_num, face_center, add_subs, bg_music, watermark):
     if not _state["clips"]:
         return None, "Analyse a video first."
     idx = int(clip_num) - 1
@@ -163,16 +164,24 @@ def render_clip(clip_num, face_center, add_subs):
         clip = _state["clips"][idx]
         input_mp4 = os.path.join(WORK_DIR, "source.mp4")
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
+        
+        # 1. Base render
         out = render_short(
             input_video=input_mp4, clip_data=clip,
             word_timestamps=_state["word_timestamps"] if add_subs else [],
             output_dir=clips_dir, work_dir=WORK_DIR,
             face_center=face_center, add_subs=add_subs,
         )
+        
+        # 2. Enhancements
+        enhance_clip(out, music_path=bg_music, watermark=watermark)
+        
+        # 3. Copy to global output
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
         if out != dst:
             shutil.copy2(out, dst)
+            
         return out, f"Rendered: {os.path.basename(out)}"
     except Exception as e:
         traceback.print_exc()
@@ -254,8 +263,13 @@ with gr.Blocks(title="Clip Factory", css=_css) as demo:
                 detail_html = gr.HTML("")
             with gr.Column(scale=4):
                 clip_num = gr.Number(value=1, label="Clip #", precision=0, minimum=1, maximum=20, elem_id="clip-sel")
-                face_cb = gr.Checkbox(label="Face tracking", value=True)
-                subs_cb = gr.Checkbox(label="Captions", value=True)
+                
+                with gr.Accordion("Enhancements", open=False):
+                    face_cb = gr.Checkbox(label="Face tracking (Auto-crop)", value=True)
+                    subs_cb = gr.Checkbox(label="Dynamic Captions", value=True)
+                    bg_music = gr.Audio(type="filepath", label="Background Music (Optional, loops automatically)")
+                    watermark = gr.Textbox(label="Watermark Text", placeholder="e.g. @YourBrand")
+                    
                 render_btn = gr.Button("Render clip", variant="primary")
                 render_status = gr.Textbox(label="", interactive=False, lines=1)
 
@@ -270,7 +284,7 @@ with gr.Blocks(title="Clip Factory", css=_css) as demo:
                       lambda: gr.update(visible=True), outputs=[show_all_btn])
     clip_num.change(on_clip_select, [clip_num], [detail_html])
     show_all_btn.click(show_all, outputs=[clips_html])
-    render_btn.click(render_clip, [clip_num, face_cb, subs_cb], [video_preview, render_status])
+    render_btn.click(render_clip, [clip_num, face_cb, subs_cb, bg_music, watermark], [video_preview, render_status])
     refresh_btn.click(get_gallery, outputs=[gallery])
     load_btn.click(load_history, [history_drop], [url_input, clips_html, detail_html, detail_group])
 
