@@ -77,7 +77,7 @@ def get_highlights(
 ) -> dict:
     """
     Finds ALL possible viral clips (up to max_clips), sorted by score.
-    The UI decides how many to show initially.
+    Clips target 15-60 seconds for Whop Content Rewards compatibility.
     """
     if isinstance(transcript_data, dict):
         segs = transcript_data.get("segments", [])
@@ -94,7 +94,7 @@ def get_highlights(
 
     lang_hint = f" The transcript is in {language}." if language else ""
     system = (
-        "You are an expert YouTube Shorts viral strategist."
+        "You are an expert short-form content strategist."
         f"{lang_hint}"
         " You output ONLY raw JSON with no markdown, no explanation."
     )
@@ -112,7 +112,8 @@ def get_highlights(
         prompt = (
             f"{VIRALITY_CRITERIA}\n\n"
             f"Analyse this transcript and extract the TOP {clips_per_chunk} most engaging, "
-            f"self-contained segments (30\u201390 seconds each) with a strong hook.\n\n"
+            f"self-contained segments (15\u201360 seconds each, can go up to 90s if the moment is strong) "
+            f"with a strong hook that grabs attention in the first 2 seconds.\n\n"
             f"Transcript:\n{chunk}\n\n"
             f"Respond ONLY with a JSON array:\n{schema}"
         )
