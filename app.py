@@ -44,17 +44,23 @@ def _cards(clips, show_all=False):
     rows = ""
     for i, c in enumerate(vis):
         sc = int(c.get("score", 0))
-        st = float(c.get("start_time", 0))
-        et = float(c.get("end_time", 0))
+        segs = c.get("segments", [{"start_time": c.get("start_time",0), "end_time": c.get("end_time",0)}])
+        st = float(segs[0]["start_time"])
+        et = float(segs[-1]["end_time"])
+        dur = sum((float(s["end_time"]) - float(s["start_time"])) for s in segs)
+        
         title = c.get("title", "")[:55]
         hook = c.get("hook_sentence", "")[:70]
+        
+        seg_badge = f"<span style='background:#333;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px'>{len(segs)} cuts</span>" if len(segs) > 1 else ""
+        
         rows += f"""<tr style='border-bottom:1px solid #2a2a2a;cursor:pointer' 
             onclick="document.getElementById('clip-sel').querySelector('input').value={i+1};
             document.getElementById('clip-sel').querySelector('input').dispatchEvent(new Event('input',{{bubbles:true}}));">
           <td style='padding:8px 10px;color:#888;font-size:12px'>#{i+1}</td>
           <td style='padding:8px 0'><span style='font-weight:700;font-size:18px;color:{_sc(sc)}'>{sc}</span></td>
-          <td style='padding:8px 10px;font-size:13px;color:#ddd'>{title}</td>
-          <td style='padding:8px 10px;font-size:12px;color:#888'>{st:.0f}s\u2013{et:.0f}s ({et-st:.0f}s)</td>
+          <td style='padding:8px 10px;font-size:13px;color:#ddd'>{title} {seg_badge}</td>
+          <td style='padding:8px 10px;font-size:12px;color:#888'>{st:.0f}s\u2013{et:.0f}s ({dur:.0f}s)</td>
           <td style='padding:8px 10px;font-size:12px;color:#aaa;font-style:italic'>\u201c{hook}\u201d</td>
         </tr>"""
     more = ""
@@ -75,15 +81,27 @@ def _detail(idx):
     i = max(0, min(int(idx)-1, len(_state["clips"])-1))
     c = _state["clips"][i]
     sc = int(c.get("score",0))
-    st = float(c.get("start_time",0))
-    et = float(c.get("end_time",0))
+    
+    segs = c.get("segments", [{"start_time": c.get("start_time",0), "end_time": c.get("end_time",0)}])
+    st = float(segs[0]["start_time"])
+    et = float(segs[-1]["end_time"])
+    dur = sum((float(s["end_time"]) - float(s["start_time"])) for s in segs)
+    
+    seg_html = ""
+    if len(segs) > 1:
+        seg_html = "<div style='font-size:11px;color:#888;margin-bottom:8px'>Multi-segment stitch: "
+        for j, s in enumerate(segs):
+            seg_html += f"[{s['start_time']:.0f}s-{s['end_time']:.0f}s] "
+        seg_html += "</div>"
+        
     return f"""<div style='background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:16px;font-family:system-ui'>
   <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px'>
     <span style='font-size:12px;color:#666;font-weight:600'>CLIP {i+1}</span>
     <span style='font-size:28px;font-weight:800;color:{_sc(sc)}'>{sc}<span style='font-size:12px;color:#666'>/100</span></span>
   </div>
   <h3 style='margin:0 0 10px;font-size:15px;color:#eee'>{c.get('title','')}</h3>
-  <div style='font-size:13px;color:#888;margin-bottom:10px'>{st:.0f}s \u2192 {et:.0f}s \u00b7 {et-st:.0f}s clip</div>
+  <div style='font-size:13px;color:#888;margin-bottom:4px'>Range: {st:.0f}s \u2192 {et:.0f}s \u00b7 Final duration: {dur:.0f}s</div>
+  {seg_html}
   <div style='background:#111;border-radius:6px;padding:10px;margin-bottom:8px'>
     <div style='font-size:10px;color:#666;font-weight:600;margin-bottom:3px'>HOOK</div>
     <div style='font-size:13px;color:#ccc'>\u201c{c.get('hook_sentence','')}\u201d</div>
@@ -131,7 +149,7 @@ def analyze_video(url, llm_idx, wsp_idx, num_clips):
         _state["word_timestamps"] = words
         cache.save_transcript(url.strip(), full_text, words)
 
-        yield "", "AI scoring viral moments...", "", gr.update(visible=False)
+        yield "", "AI scoring multi-segment viral moments...", "", gr.update(visible=False)
         result = get_highlights(full_text, num_clips=n, llm_path=llm_path,
                                gpu_layers=llm_entry["gpu_layers"], max_clips=20)
         _state["clips"] = result.get("highlights", [])
@@ -154,7 +172,7 @@ def on_clip_select(n):
 def show_all():
     return _cards(_state["clips"], show_all=True) if _state["clips"] else ""
 
-def render_clip(clip_num, face_center, add_subs, bg_music, watermark):
+def render_clip(clip_num, face_center, add_subs, bg_music):
     if not _state["clips"]:
         return None, "Analyse a video first."
     idx = int(clip_num) - 1
@@ -165,7 +183,7 @@ def render_clip(clip_num, face_center, add_subs, bg_music, watermark):
         input_mp4 = os.path.join(WORK_DIR, "source.mp4")
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         
-        # 1. Base render
+        # 1. Base render (handles multi-segment concatenation)
         out = render_short(
             input_video=input_mp4, clip_data=clip,
             word_timestamps=_state["word_timestamps"] if add_subs else [],
@@ -173,8 +191,8 @@ def render_clip(clip_num, face_center, add_subs, bg_music, watermark):
             face_center=face_center, add_subs=add_subs,
         )
         
-        # 2. Enhancements
-        enhance_clip(out, music_path=bg_music, watermark=watermark)
+        # 2. Enhancements (Smart Music Peak)
+        enhance_clip(out, clip, music_path=bg_music)
         
         # 3. Copy to global output
         os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -267,8 +285,7 @@ with gr.Blocks(title="Clip Factory", css=_css) as demo:
                 with gr.Accordion("Enhancements", open=False):
                     face_cb = gr.Checkbox(label="Face tracking (Auto-crop)", value=True)
                     subs_cb = gr.Checkbox(label="Dynamic Captions", value=True)
-                    bg_music = gr.Audio(type="filepath", label="Background Music (Optional, loops automatically)")
-                    watermark = gr.Textbox(label="Watermark Text", placeholder="e.g. @YourBrand")
+                    bg_music = gr.Audio(type="filepath", label="Smart Background Music (Upload mp3)")
                     
                 render_btn = gr.Button("Render clip", variant="primary")
                 render_status = gr.Textbox(label="", interactive=False, lines=1)
@@ -284,7 +301,7 @@ with gr.Blocks(title="Clip Factory", css=_css) as demo:
                       lambda: gr.update(visible=True), outputs=[show_all_btn])
     clip_num.change(on_clip_select, [clip_num], [detail_html])
     show_all_btn.click(show_all, outputs=[clips_html])
-    render_btn.click(render_clip, [clip_num, face_cb, subs_cb, bg_music, watermark], [video_preview, render_status])
+    render_btn.click(render_clip, [clip_num, face_cb, subs_cb, bg_music], [video_preview, render_status])
     refresh_btn.click(get_gallery, outputs=[gallery])
     load_btn.click(load_history, [history_drop], [url_input, clips_html, detail_html, detail_group])
 

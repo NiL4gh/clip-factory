@@ -1,152 +1,119 @@
-import subprocess
 import os
-import cv2
+import subprocess
 import uuid
-import statistics
+import shutil
+import cv2
 
-FONT_NAME      = "Impact"
-FONT_SIZE      = 95
-PRIMARY_COLOR  = "&H00FFFFFF"   # white
-HIGHLIGHT_COLOR = "&H0000FFFF"  # yellow
-OUTLINE_COLOR  = "&H00000000"   # black
-BACK_COLOR     = "&H00000000"
-BOLD           = -1
-OUTLINE_WIDTH  = 5
-SHADOW         = 0
-MARGIN_V       = 160
-WORDS_PER_LINE = 3
+def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920, sample_fps=1):
+    # Fallback default crop
+    return (0, 0)
 
-
-def _sample_face_x(video_path: str, timestamps: list, frame_w: int, crop_w: int) -> int:
-    face_cc = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    offsets = []
-    cap = cv2.VideoCapture(video_path)
-    for ts in timestamps:
-        cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
-        ret, frame = cap.read()
-        if not ret:
-            continue
-        faces = face_cc.detectMultiScale(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 1.3, 5)
-        if len(faces):
-            fx, _, fw, _ = faces[0]
-            offset = int(fx + fw / 2 - crop_w / 2)
-            offsets.append(max(0, min(frame_w - crop_w, offset)))
-    cap.release()
-    if offsets:
-        return int(statistics.median(offsets))
-    return (frame_w - crop_w) // 2
-
-
-def render_short(
-    input_video: str,
-    clip_data: dict,
-    word_timestamps: list,
-    output_dir: str,
-    work_dir: str,
-    face_center: bool = True,
-    add_subs: bool = True,
-) -> str:
-    start = float(clip_data.get("start_time", clip_data.get("start", 0)))
-    end   = float(clip_data.get("end_time",   clip_data.get("end",   start + 60)))
-
-    # Validate timestamps
-    if end <= start:
-        raise ValueError(f"Invalid timestamps: start={start}, end={end}")
-    if (end - start) < 5:
-        raise ValueError(f"Clip too short: {end - start:.1f}s (minimum 5s)")
-    if (end - start) > 180:
-        end = start + 180  # cap at 3 minutes
-
-    os.makedirs(output_dir, exist_ok=True)
-    out_path = os.path.join(output_dir, f"short_{uuid.uuid4().hex[:6]}.mp4")
-
-    # Face-aware crop
-    x_offset = "(iw-ih*9/16)/2"
-    if face_center:
-        cap = cv2.VideoCapture(input_video)
-        frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
-        if frame_w > 0 and frame_h > 0:
-            crop_w = int(frame_h * 9 / 16)
-            if crop_w < frame_w:
-                sample_ts = [start, start + (end - start) * 0.5, start + (end - start) * 0.85]
-                px = _sample_face_x(input_video, sample_ts, frame_w, crop_w)
-                x_offset = str(px)
-
-    vf = [
-        f"crop=ih*9/16:ih:{x_offset}:0",
-        "scale=1080:1920:flags=lanczos",
+def _generate_ass(words, out_path, video_w, video_h, time_offset=0):
+    lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        f"PlayResX: {video_w}",
+        f"PlayResY: {video_h}",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        "Style: Main,Arial,80,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,5,10,10,250,1",
+        "Style: Highlight,Arial,80,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,5,10,10,250,1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
     ]
+    
+    def fmt_time(secs):
+        h = int(secs // 3600)
+        m = int((secs % 3600) // 60)
+        s = int(secs % 60)
+        cs = int((secs - int(secs)) * 100)
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
-    if add_subs and word_timestamps:
-        # Filter words that fall within clip range
-        clip_words = [w for w in word_timestamps
-                      if float(w["start"]) >= start and float(w["end"]) <= end]
-        if clip_words:
-            ass_path = os.path.join(work_dir, f"subs_{uuid.uuid4().hex[:4]}.ass")
-            generate_ass_file(clip_words, start, end, ass_path)
-            safe_ass = ass_path.replace("\\", "/").replace(":", r"\:")
-            vf.append(f"ass='{safe_ass}'")
+    # Group words into chunks of 3-4
+    chunks = []
+    curr = []
+    for w in words:
+        if len(curr) >= 3:
+            chunks.append(curr)
+            curr = []
+        curr.append(w)
+    if curr:
+        chunks.append(curr)
 
-    result = subprocess.run([
-        "ffmpeg", "-y", "-ss", str(start), "-to", str(end),
-        "-i", input_video,
-        "-vf", ",".join(vf),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "192k",
-        out_path,
-    ], capture_output=True, text=True)
-
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg failed:\n{result.stderr[-2000:]}")
-
-    # Verify output is valid
-    if not os.path.exists(out_path) or os.path.getsize(out_path) < 1000:
-        raise RuntimeError("Rendered clip is empty or too small — likely bad timestamps.")
-
-    return out_path
-
-
-def _to_ass_time(seconds: float) -> str:
-    seconds = max(0.0, seconds)
-    m, s = divmod(seconds, 60)
-    h, m = divmod(m, 60)
-    return f"{int(h)}:{int(m):02d}:{s:05.2f}"
-
-
-def generate_ass_file(words: list, start_time: float, end_time: float, out_path: str):
-    clip_words = [w for w in words if float(w["start"]) >= start_time and float(w["end"]) <= end_time]
-
-    header = (
-        "[Script Info]\n"
-        "ScriptType: v4.00+\n"
-        "PlayResX: 1080\n"
-        "PlayResY: 1920\n"
-        "ScaledBorderAndShadow: yes\n\n"
-        "[V4+ Styles]\n"
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
-        "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
-        "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
-        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Hormozi,{FONT_NAME},{FONT_SIZE},"
-        f"{PRIMARY_COLOR},{HIGHLIGHT_COLOR},{OUTLINE_COLOR},{BACK_COLOR},"
-        f"{BOLD},0,0,0,100,100,0,0,1,{OUTLINE_WIDTH},{SHADOW},"
-        f"2,10,10,{MARGIN_V},1\n\n"
-        "[Events]\n"
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
-    )
-
-    lines = [header]
-
-    for i in range(0, len(clip_words), WORDS_PER_LINE):
-        chunk = clip_words[i : i + WORDS_PER_LINE]
-        if not chunk:
+    for chunk in chunks:
+        # Subtract time_offset because the ffmpeg filter starts this segment at t=0
+        chunk_st = max(0, chunk[0]['start'] - time_offset)
+        chunk_et = max(0, chunk[-1]['end'] - time_offset)
+        if chunk_et <= chunk_st:
             continue
-        t_s = _to_ass_time(float(chunk[0]["start"]) - start_time)
-        t_e = _to_ass_time(float(chunk[-1]["end"])   - start_time)
-        text = r"{\c&H0000FFFF&}" + " ".join(w["word"] for w in chunk) + r"{\r}"
-        lines.append(f"Dialogue: 0,{t_s},{t_e},Hormozi,,0,0,0,,{text}\n")
+            
+        full_text = " ".join(w["word"].strip() for w in chunk)
+        
+        for w in chunk:
+            w_st = max(0, w["start"] - time_offset)
+            w_et = max(0, w["end"] - time_offset)
+            if w_et <= w_st:
+                continue
+                
+            styled = ""
+            for x in chunk:
+                if x == w:
+                    styled += f"{{\\rHighlight}}{x['word'].strip()}{{\\rMain}} "
+                else:
+                    styled += f"{x['word'].strip()} "
+            
+            lines.append(f"Dialogue: 0,{fmt_time(w_st)},{fmt_time(w_et)},Main,,0,0,0,,{styled.strip()}")
 
     with open(out_path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
+        f.write("\n".join(lines))
+
+def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir, face_center=True, add_subs=True):
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(work_dir, exist_ok=True)
+    out_id = uuid.uuid4().hex[:8]
+    final_output = os.path.join(output_dir, f"short_{out_id}.mp4")
+    
+    segments = clip_data.get("segments", [{"start_time": clip_data["start_time"], "end_time": clip_data["end_time"]}])
+    target_w, target_h = 1080, 1920
+    
+    rendered_segs = []
+    for idx, seg in enumerate(segments):
+        seg_st = float(seg["start_time"])
+        seg_et = float(seg["end_time"])
+        
+        # Simple center crop for now
+        crop_x = f"(in_w-{target_w})/2"
+        crop_y = f"(in_h-{target_h})/2"
+        
+        seg_words = [w for w in word_timestamps if w["start"] >= seg_st - 0.5 and w["end"] <= seg_et + 0.5]
+        
+        ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
+        _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st)
+        
+        seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
+        
+        cmd = ["ffmpeg", "-y", "-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
+        
+        vf = [f"crop={target_w}:{target_h}:{crop_x}:{crop_y}"]
+        if add_subs and seg_words:
+            safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
+            vf.append(f"ass='{safe_ass}'")
+            
+        cmd.extend(["-vf", ",".join(vf), "-c:v", "libx264", "-c:a", "aac", seg_out])
+        subprocess.run(cmd, check=True)
+        rendered_segs.append(seg_out)
+        
+    if len(rendered_segs) == 1:
+        shutil.copy2(rendered_segs[0], final_output)
+    else:
+        concat_txt = os.path.join(work_dir, f"concat_{out_id}.txt")
+        with open(concat_txt, "w", encoding="utf-8") as f:
+            for s in rendered_segs:
+                p = s.replace("\\", "/")
+                f.write(f"file '{p}'\n")
+        concat_cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt, "-c", "copy", final_output]
+        subprocess.run(concat_cmd, check=True)
+        
+    return final_output
