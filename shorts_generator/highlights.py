@@ -3,6 +3,7 @@ Local LLM highlight detection using llama-cpp-python.
 """
 import json
 import re
+from .logger import ui_logger
 
 _llm_cache = {}
 
@@ -20,14 +21,14 @@ CHUNK_CHARS = 40_000
 def _get_llm(llm_path: str, gpu_layers: int = 35):
     from llama_cpp import Llama
     if llm_path not in _llm_cache:
-        print(f"  [llm] Loading {llm_path} ...")
+        ui_logger.log(f"Loading local LLM model...")
         _llm_cache[llm_path] = Llama(
             model_path=llm_path,
             n_gpu_layers=gpu_layers,
             n_ctx=0,
             verbose=False,
         )
-        print("  [llm] Ready.")
+        ui_logger.log("LLM loaded into memory.")
     return _llm_cache[llm_path]
 
 def _parse_json_loose(raw: str):
@@ -103,7 +104,7 @@ def get_highlights(
     all_highlights = []
 
     for idx, chunk in enumerate(chunks):
-        print(f"  [llm] Analysing chunk {idx + 1}/{len(chunks)} ...")
+        ui_logger.log(f"LLM Analysing chunk {idx + 1}/{len(chunks)}...")
         prompt = (
             f"{VIRALITY_CRITERIA}\n\n"
             f"Analyse this transcript and extract the TOP {clips_per_chunk} most engaging COMPLETE STORIES. "
@@ -119,28 +120,29 @@ def get_highlights(
             results = _query_llm(llm, system, prompt)
             all_highlights.extend(results)
         except Exception as e:
-            print(f"  [llm] Warning: chunk {idx + 1} failed \u2014 {e}")
+            ui_logger.log(f"Warning: chunk {idx + 1} failed — {e}")
 
+    ui_logger.log(f"LLM extracted {len(all_highlights)} potential clips. Processing and scoring...")
     valid = []
     for h in all_highlights:
         try:
             st = float(h.get("start_time", 0))
             et = float(h.get("end_time", 0))
             dur = et - st
-            
+
             if dur >= 15:
                 h["duration"] = dur
                 h["score"] = max(0, min(100, int(h.get("score", 50))))
                 h["peak_moment"] = float(h.get("peak_moment", st + dur/2))
-                
+
                 theme = h.get("theme", "Storytime")
                 if theme not in ["Motivation", "Educational", "Comedy", "Suspense", "Storytime"]:
                     theme = "Storytime"
                 h["theme"] = theme
-                
+
                 h["broll_keywords"] = h.get("broll_keywords", [])
                 h["emoji_moments"] = h.get("emoji_moments", [])
-                
+
                 valid.append(h)
         except (ValueError, TypeError, KeyError):
             continue
@@ -154,6 +156,8 @@ def get_highlights(
             seen.add(key)
             deduped.append(h)
 
-    return {"highlights": deduped[:max_clips]}
+    final_clips = deduped[:max_clips]
+    ui_logger.log(f"Finished. Identified {len(final_clips)} top viral clips.")
+    return {"highlights": final_clips}
 
 get_viral_clips = get_highlights
