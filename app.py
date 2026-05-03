@@ -4,6 +4,8 @@ import glob
 import shutil
 import traceback
 import urllib.request
+import time
+import threading
 
 import gradio as gr
 from huggingface_hub import hf_hub_download
@@ -25,6 +27,7 @@ from shorts_generator.highlights import get_highlights
 from shorts_generator.clipper import render_short
 from shorts_generator.enhancer import enhance_clip
 from shorts_generator import cache
+from shorts_generator.logger import ui_logger
 
 for d in [WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR, PROJECTS_DIR]:
     os.makedirs(d, exist_ok=True)
@@ -76,7 +79,7 @@ def _cards(clips):
 
 def _get_internal_clip_data(idx):
     if not _state["clips"]: 
-        return "", "", 0, 0, "Hormozi", "Center", "None", gr.update(choices=[], value=[])
+        return "", 0, 0, "Hormozi", "Center", "None", gr.update(choices=[], value=[])
         
     i = max(0, min(int(idx)-1, len(_state["clips"])-1))
     c = _state["clips"][i]
@@ -94,7 +97,6 @@ def _get_internal_clip_data(idx):
     }
     def_music = music_map.get(theme, "Lofi / Chill")
     
-    # Process transcript into selectable sentences
     words_in_clip = [w for w in _state["word_timestamps"] if w['start'] >= st - 1 and w['end'] <= et + 1]
     
     sentences_ui = []
@@ -140,95 +142,155 @@ def on_clip_select(n):
     return html, gr.update(value=st), gr.update(value=et), gr.update(value=c_style), gr.update(value=c_pos), gr.update(value=bgm), transcript_update
 
 def analyze_video(url, num_clips):
+    ui_logger.clear()
+    yield "", "Initializing...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    
+    result_container = {}
+    
+    def worker():
+        try:
+            res = _analyze_video_core(url, num_clips)
+            result_container["status"] = "done"
+            result_container["result"] = res
+        except Exception as e:
+            traceback.print_exc()
+            result_container["status"] = "error"
+            result_container["error"] = str(e)
+            
+    t = threading.Thread(target=worker)
+    t.start()
+    
+    while t.is_alive():
+        time.sleep(0.5)
+        logs = ui_logger.get_full_log() or "Initializing..."
+        yield "", logs, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        
+    t.join()
+    
+    if result_container.get("status") == "error":
+        logs = ui_logger.get_full_log()
+        yield "", f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    else:
+        yield result_container["result"]
+
+def _analyze_video_core(url, num_clips):
     if not url or not url.strip():
-        return "", "Enter a YouTube URL.", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-    try:
-        llm_entry = LLM_CATALOG[0]
-        wsp_size  = WHISPER_CATALOG[3]["size"]
-        llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
-        n = int(num_clips)
+        raise ValueError("Enter a YouTube URL.")
+        
+    llm_entry = LLM_CATALOG[0]
+    wsp_size  = WHISPER_CATALOG[3]["size"]
+    llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
+    n = int(num_clips)
 
-        cached_h = cache.load_highlights(url.strip())
-        cached_t = cache.load_transcript(url.strip())
-        if cached_h and cached_t:
-            _state["clips"] = cached_h
-            _state["word_timestamps"] = cached_t[1]
-            _state["current_url"] = url.strip()
-            html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
-            return _cards(_state["clips"]), f"Loaded from cache.", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
-
-        if not os.path.exists(llm_path):
-            hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
-
-        source_mp4 = os.path.join(WORK_DIR, "source.mp4")
+    cached_h = cache.load_highlights(url.strip())
+    cached_t = cache.load_transcript(url.strip())
+    if cached_h and cached_t:
+        ui_logger.log("Loaded from cache.")
+        _state["clips"] = cached_h
+        _state["word_timestamps"] = cached_t[1]
         _state["current_url"] = url.strip()
-        download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
-
-        full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
-        _state["word_timestamps"] = words
-        cache.save_transcript(url.strip(), full_text, words)
-
-        result = get_highlights(full_text, num_clips=n, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20)
-        _state["clips"] = result.get("highlights", [])
-        cache.save_highlights(url.strip(), _state["clips"])
-        cache.save_metadata(url.strip())
-
-        if not _state["clips"]:
-            return "", "No clips found.", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-
         html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
-        return _cards(_state["clips"]), "Done.", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
-    except Exception as e:
-        traceback.print_exc()
-        return "", f"Error: {e}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        return _cards(_state["clips"]), f"Loaded from cache.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
 
+    if not os.path.exists(llm_path):
+        ui_logger.log(f"Downloading LLM to {LLM_DIR}...")
+        hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
+
+    source_mp4 = os.path.join(WORK_DIR, "source.mp4")
+    _state["current_url"] = url.strip()
+    download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
+
+    full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
+    _state["word_timestamps"] = words
+    cache.save_transcript(url.strip(), full_text, words)
+
+    result = get_highlights(full_text, num_clips=n, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20)
+    _state["clips"] = result.get("highlights", [])
+    cache.save_highlights(url.strip(), _state["clips"])
+    cache.save_metadata(url.strip())
+
+    if not _state["clips"]:
+        raise ValueError("No clips found.")
+
+    html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
+    return _cards(_state["clips"]), f"Done.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
 
 def render_clip(clip_num, face_center, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, transcript_selections, all_transcript_options):
+    ui_logger.clear()
+    yield None, "Initializing render..."
+    
+    result_container = {}
+    
+    def worker():
+        try:
+            res = _render_clip_core(clip_num, face_center, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, transcript_selections, all_transcript_options)
+            result_container["status"] = "done"
+            result_container["result"] = res
+        except Exception as e:
+            traceback.print_exc()
+            result_container["status"] = "error"
+            result_container["error"] = str(e)
+            
+    t = threading.Thread(target=worker)
+    t.start()
+    
+    while t.is_alive():
+        time.sleep(0.5)
+        logs = ui_logger.get_full_log() or "Initializing render..."
+        yield None, logs
+        
+    t.join()
+    
+    if result_container.get("status") == "error":
+        logs = ui_logger.get_full_log()
+        yield None, f"Error: {result_container.get('error')}\n\nLogs:\n{logs}"
+    else:
+        yield result_container["result"]
+
+def _render_clip_core(clip_num, face_center, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, transcript_selections, all_transcript_options):
     if not _state["clips"]:
-        return None, "Analyse a video first."
+        raise ValueError("Analyse a video first.")
     idx = int(clip_num) - 1
     if idx < 0 or idx >= len(_state["clips"]):
-        return None, "Invalid clip number."
-    try:
-        clip = _state["clips"][idx]
-        input_mp4 = os.path.join(WORK_DIR, "source.mp4")
-        clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
+        raise ValueError("Invalid clip number.")
         
-        theme = clip.get("theme", "Storytime")
+    clip = _state["clips"][idx]
+    input_mp4 = os.path.join(WORK_DIR, "source.mp4")
+    clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
+    
+    theme = clip.get("theme", "Storytime")
+    
+    excluded = [s for s in all_transcript_options if s not in transcript_selections]
+    
+    out = render_short(
+        input_video=input_mp4, clip_data=clip,
+        word_timestamps=_state["word_timestamps"] if cap_style_str != "None" else [],
+        output_dir=clips_dir, work_dir=WORK_DIR,
+        face_center=face_center, add_subs=(cap_style_str != "None"),
+        theme=theme, caption_style=cap_style_str, caption_pos=cap_pos_str,
+        override_start=override_st, override_end=override_et,
+        excluded_sentences=excluded
+    )
+    
+    if bg_music_genre and bg_music_genre != "None":
+        ui_logger.log(f"Adding BGM: {bg_music_genre}...")
+        music_url = BGM_TRACKS[bg_music_genre]
+        music_path = os.path.join(WORK_DIR, f"{bg_music_genre.replace(' ', '_').replace('/', '')}.mp3")
         
-        # Calculate excluded sentences
-        excluded = [s for s in all_transcript_options if s not in transcript_selections]
-        
-        out = render_short(
-            input_video=input_mp4, clip_data=clip,
-            word_timestamps=_state["word_timestamps"] if cap_style_str != "None" else [],
-            output_dir=clips_dir, work_dir=WORK_DIR,
-            face_center=face_center, add_subs=(cap_style_str != "None"),
-            theme=theme, caption_style=cap_style_str, caption_pos=cap_pos_str,
-            override_start=override_st, override_end=override_et,
-            excluded_sentences=excluded
-        )
-        
-        if bg_music_genre and bg_music_genre != "None":
-            music_url = BGM_TRACKS[bg_music_genre]
-            music_path = os.path.join(WORK_DIR, f"{bg_music_genre.replace(' ', '_').replace('/', '')}.mp3")
+        if not os.path.exists(music_path):
+            req = urllib.request.Request(music_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req) as response, open(music_path, 'wb') as out_file:
+                shutil.copyfileobj(response, out_file)
             
-            if not os.path.exists(music_path):
-                req = urllib.request.Request(music_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req) as response, open(music_path, 'wb') as out_file:
-                    shutil.copyfileobj(response, out_file)
-                
-            enhance_clip(out, clip, music_path=music_path)
+        enhance_clip(out, clip, music_path=music_path)
+    
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
+    if out != dst:
+        shutil.copy2(out, dst)
         
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
-        if out != dst:
-            shutil.copy2(out, dst)
-            
-        return out, f"Rendered successfully: {os.path.basename(out)}"
-    except Exception as e:
-        traceback.print_exc()
-        return None, f"Error: {e}"
+    ui_logger.log(f"Rendered successfully: {os.path.basename(out)}")
+    return out, f"Rendered successfully: {os.path.basename(out)}\n\nLogs:\n{ui_logger.get_full_log()}"
 
 def get_gallery():
     files = []
@@ -283,7 +345,7 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
             url_input = gr.Textbox(placeholder="Paste YouTube URL...", label="Video Source", lines=1)
             num_clips = gr.Slider(1, 15, value=10, step=1, label="Target Clips Count")
             analyze_btn = gr.Button("Analyze Video", variant="primary")
-            status_box = gr.Textbox(label="Status", interactive=False, lines=1)
+            status_box = gr.Textbox(label="Status", interactive=False, lines=10)
             
             gr.HTML("<hr style='border-color:#222;margin:20px 0;'>")
             refresh_btn = gr.Button("Refresh Gallery", variant="secondary")
@@ -298,7 +360,6 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
                         detail_html = gr.HTML("")
                         with gr.Accordion("Transcript Editor (Uncheck to Cut)", open=False):
                             transcript_cb = gr.CheckboxGroup(choices=[], label="Sentences in this clip")
-                            # Hidden component to store the full list of options
                             transcript_options_hidden = gr.State([])
                             
                     with gr.Column(scale=5):
@@ -318,7 +379,7 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
                             bg_music = gr.Dropdown(choices=list(BGM_TRACKS.keys()), value="Lofi / Chill", label="Smart BGM")
                             
                         render_btn = gr.Button("Render Final Clip", variant="primary", size="lg")
-                        render_status = gr.Textbox(label="", interactive=False, lines=1)
+                        render_status = gr.Textbox(label="Render Status", interactive=False, lines=10)
             
             with gr.Row():
                 video_preview = gr.Video(label="Preview Player", height=500, scale=4)
