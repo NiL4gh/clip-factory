@@ -218,7 +218,8 @@ def conceptualize_video(
         '  {\n'
         '    "id": "strategy_1",\n'
         '    "title": "The Controversial Debate Angle",\n'
-        '    "description": "Focus strictly on the moments where he argues against the standard diet advice. These clips will anger some and validate others, driving comments."\n'
+        '    "description": "Focus strictly on the moments where he argues against the standard diet advice. These clips will anger some and validate others, driving comments.",\n'
+        '    "estimated_clips": 6\n'
         '  }\n'
         ']'
     )
@@ -242,7 +243,7 @@ def conceptualize_video(
         ui_logger.log(f"Conceptualization failed: {e}")
         
     return [
-        {"id": "default", "title": "Standard Virality Pass", "description": "Extract the best overall moments based on engagement signals."}
+        {"id": "default", "title": "Standard Virality Pass", "description": "Extract the best overall moments based on engagement signals.", "estimated_clips": 10}
     ]
 
 def get_highlights(

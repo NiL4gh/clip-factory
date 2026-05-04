@@ -249,20 +249,21 @@ def _strategize_video_core(url):
     strategies = conceptualize_video(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"])
     
     # Build choices for Radio
-    choices = [f"{s['title']} - {s['description']}" for s in strategies]
+    choices = [f"{s['title']} - {s['description']} (Est. {s.get('estimated_clips', 5)} clips)" for s in strategies]
     _state["strategies"] = choices
+    _state["strategy_data"] = strategies
     
     return gr.update(visible=True), gr.update(choices=choices, value=choices[0]), f"Strategizing complete.\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
 
 
-def generate_clips_from_strategy(url, num_clips, selected_strategy):
+def generate_clips_from_strategy(url, selected_strategy):
     ui_logger.clear()
     yield "", f"Extracting clips based on strategy:\n{selected_strategy}\n...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
     
     result_container = {}
     def worker():
         try:
-            res = _generate_clips_core(url, num_clips, selected_strategy)
+            res = _generate_clips_core(url, selected_strategy)
             result_container["status"] = "done"
             result_container["result"] = res
         except Exception as e:
@@ -286,10 +287,16 @@ def generate_clips_from_strategy(url, num_clips, selected_strategy):
     else:
         yield result_container["result"]
 
-def _generate_clips_core(url, num_clips, selected_strategy):
+def _generate_clips_core(url, selected_strategy):
     llm_entry = LLM_CATALOG[0]
     llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
-    n = int(num_clips)
+    
+    n = 5
+    strategies = _state.get("strategy_data", [])
+    for idx, choice in enumerate(_state.get("strategies", [])):
+        if choice == selected_strategy and idx < len(strategies):
+            n = strategies[idx].get("estimated_clips", 5)
+            break
     
     if not _state.get("word_timestamps"):
          raise ValueError("Word timestamps not found. Run analysis first.")
@@ -502,7 +509,6 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
             
             with gr.Group(visible=False) as strategy_group:
                 strategy_radio = gr.Radio(choices=[], label="Select Content Strategy")
-                num_clips = gr.Slider(1, 20, value=10, step=1, label="Target Clips Count")
                 generate_btn = gr.Button("Generate Clips from Strategy", variant="primary")
             
             status_box = gr.Textbox(label="Status", interactive=False, lines=10)
@@ -567,7 +573,7 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
     analyze_btn.click(strategize_video, [url_input],
                       [strategy_group, strategy_radio, status_box, clips_html, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb])
                       
-    generate_btn.click(generate_clips_from_strategy, [url_input, num_clips, strategy_radio],
+    generate_btn.click(generate_clips_from_strategy, [url_input, strategy_radio],
                       [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
                       store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
                       
