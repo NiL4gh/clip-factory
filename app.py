@@ -23,7 +23,7 @@ from shorts_generator.config import (
 )
 from shorts_generator.downloader import download_video
 from shorts_generator.transcriber import transcribe_audio
-from shorts_generator.highlights import get_highlights
+from shorts_generator.highlights import get_highlights, get_stitched_clips
 from shorts_generator.clipper import render_short
 from shorts_generator.enhancer import enhance_clip
 from shorts_generator import cache
@@ -52,31 +52,44 @@ def _sc(s):
     if s >= 60: return "#facc15" 
     return "#f87171" 
 
+HOOK_TYPE_ICONS = {
+    "curiosity_gap": "🎯",
+    "bold_claim": "💥",
+    "controversy": "🔥",
+    "revelation": "💡",
+    "story_arc": "📖",
+    "quotable": "💬",
+}
+
 def _cards(clips):
     rows = ""
+    total = len(clips)
     for i, c in enumerate(clips):
         sc = int(c.get("score", 0))
         st = float(c.get("start_time", 0))
         et = float(c.get("end_time", 0))
-        dur = et - st
+        dur = c.get("duration", et - st)
         title = c.get("title", "")[:60]
         theme = c.get("theme", "Storytime")
-        
+        hook_icon = HOOK_TYPE_ICONS.get(c.get("hook_type", ""), "")
+        is_stitched = c.get("is_stitched", False)
+        stitch_badge = '<span class="stitch-badge">🔗 Multi-Part</span>' if is_stitched else ""
+
         rows += f"""
         <div class="clip-card" onclick="document.getElementById('clip-sel').querySelector('input').value={i+1}; document.getElementById('clip-sel').querySelector('input').dispatchEvent(new Event('input',{{bubbles:true}}));">
             <div class="card-header">
-                <span class="card-badge">#{i+1} &bull; {theme}</span>
+                <span class="card-badge">#{i+1} &bull; {theme} {hook_icon}</span>
                 <span class="card-score" style="color:{_sc(sc)}">{sc}<span class="score-max">/100</span></span>
             </div>
             <div class="card-title">{title}</div>
-            <div class="card-meta">{st:.0f}s - {et:.0f}s ({dur:.0f}s)</div>
-            
+            <div class="card-meta">{st:.0f}s - {et:.0f}s &nbsp;({dur:.0f}s) &nbsp;{stitch_badge}</div>
             <div class="viral-meter-bg">
                 <div class="viral-meter-fill" style="width:{sc}%; background:{_sc(sc)}"></div>
             </div>
         </div>
         """
-    return f"""<div class="card-grid">{rows}</div>"""
+    header = f"<div class='clip-count-header'>🎬 {total} clips found</div>" if total else ""
+    return f"""{header}<div class="card-grid">{rows}</div>"""
 
 def _get_internal_clip_data(idx):
     if not _state["clips"]: 
@@ -245,6 +258,59 @@ def _analyze_video_core(url, num_clips):
     html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
     return _cards(_state["clips"]), f"Done.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
 
+def regenerate_clips(url, num_clips, angle):
+    ui_logger.clear()
+    yield "Regenerating clips...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    
+    try:
+        if not url or not _state.get("word_timestamps"):
+            raise ValueError("Please analyze a video first.")
+            
+        llm_entry = LLM_CATALOG[0]
+        llm_path = os.path.join(LLM_DIR, llm_entry["filename"])
+        
+        result = get_highlights(_state["word_timestamps"], num_clips=int(num_clips), llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20, angle=angle)
+        
+        _state["clips"] = result.get("highlights", [])
+        cache.save_highlights(url.strip(), _state["clips"])
+        
+        if not _state["clips"]:
+            raise ValueError("No clips found.")
+            
+        html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
+        yield _cards(_state["clips"]), f"Done.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
+    except Exception as e:
+        traceback.print_exc()
+        yield "", f"Error: {str(e)}\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+
+def find_stitched_clips(url):
+    ui_logger.clear()
+    yield "Scanning for story connections...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    
+    try:
+        if not url or not _state.get("word_timestamps"):
+            raise ValueError("Please analyze a video first.")
+            
+        llm_entry = LLM_CATALOG[0]
+        llm_path = os.path.join(LLM_DIR, llm_entry["filename"])
+        
+        result = get_stitched_clips(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_stitched=5)
+        
+        stitched = result.get("highlights", [])
+        if stitched:
+            _state["clips"] = stitched + _state["clips"] # Put them at the top
+            cache.save_highlights(url.strip(), _state["clips"])
+            
+            html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
+            yield _cards(_state["clips"]), f"Done.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
+        else:
+            # We must yield 10 arguments to match the outputs
+            yield _cards(_state["clips"]), f"No story connections found.\n\nLogs:\n{ui_logger.get_full_log()}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+            
+    except Exception as e:
+        traceback.print_exc()
+        yield "", f"Error: {str(e)}\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+
 def render_clip(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options):
     ui_logger.clear()
     yield None, "Initializing render..."
@@ -385,8 +451,14 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
             gr.HTML("<h1 style='font-size:24px;font-weight:800;margin:0;background:linear-gradient(90deg,#fff,#aaa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;'>ClipFactory.ai</h1><p style='color:#666;font-size:12px;margin-top:4px'>Premium Video Re-purposing</p>")
             
             url_input = gr.Textbox(placeholder="Paste YouTube URL...", label="Video Source", lines=1)
-            num_clips = gr.Slider(1, 15, value=10, step=1, label="Target Clips Count")
+            num_clips = gr.Slider(1, 20, value=10, step=1, label="Target Clips Count")
             analyze_btn = gr.Button("Analyze Video", variant="primary")
+            
+            with gr.Accordion("Advanced Clip Tools", open=False):
+                angle_selector = gr.Dropdown(choices=["standard", "educational", "controversial", "motivational", "storytelling"], value="standard", label="Regeneration Angle")
+                regen_btn = gr.Button("Regenerate Angles", variant="secondary")
+                stitch_btn = gr.Button("Find Story Connections", variant="secondary")
+
             status_box = gr.Textbox(label="Status", interactive=False, lines=10)
             
             gr.HTML("<hr style='border-color:#222;margin:20px 0;'>")
@@ -436,6 +508,14 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
         return x
         
     analyze_btn.click(analyze_video, [url_input, num_clips],
+                      [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
+                      store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
+                      
+    regen_btn.click(regenerate_clips, [url_input, num_clips, angle_selector],
+                      [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
+                      store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
+                      
+    stitch_btn.click(find_stitched_clips, [url_input],
                       [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
                       store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
                       

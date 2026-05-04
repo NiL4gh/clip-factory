@@ -147,45 +147,62 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
     target_w, target_h = 1080, 1920
 
-    base_st = float(override_start) if override_start is not None else float(clip_data.get("start_time", 0))
-    base_et = float(override_end) if override_end is not None else float(clip_data.get("end_time", 0))
-
-    excluded_ranges = []
-    if excluded_sentences:
-        for ex_str in excluded_sentences:
-            try:
-                st_str = ex_str.split("s]")[0].replace("[", "").strip()
-                st_val = float(st_str)
-                excluded_ranges.append({"start": st_val - 0.1, "end": st_val + 5.0})
-            except: pass
-
-    block_words = []
-    for w in word_timestamps:
-        if w["start"] >= base_st - 0.5 and w["end"] <= base_et + 0.5:
-            excluded = False
-            for r in excluded_ranges:
-                if w["start"] >= r["start"] and w["start"] <= r["end"]:
-                    excluded = True
-                    break
-            if not excluded:
-                block_words.append(w)
-
-    segments = []
-    if not block_words:
-        segments.append({"start_time": base_st, "end_time": base_et})
+    # ── Stitched multi-segment clips (Q&A / Setup-Payoff) ────────────────────
+    # If clip_data has a 'segments' array (from get_stitched_clips), render each
+    # segment independently and concatenate — overrides start/end override logic.
+    is_stitched = bool(clip_data.get("is_stitched") and clip_data.get("segments"))
+    if is_stitched:
+        raw_segments = clip_data["segments"]
+        ui_logger.log(f"Stitched clip: rendering {len(raw_segments)} segments across different timestamps...")
+        # For stitched clips, collect all words across all segments for subtitles/broll
+        block_words = []
+        for seg in raw_segments:
+            seg_st = float(seg["start_time"])
+            seg_et = float(seg["end_time"])
+            block_words.extend([w for w in word_timestamps if seg_st - 0.5 <= w["start"] <= seg_et + 0.5])
+        segments = [{"start_time": float(s["start_time"]), "end_time": float(s["end_time"])}
+                    for s in raw_segments]
     else:
-        current_st = max(base_st, block_words[0]["start"] - 0.2)
-        if remove_silence:
-            gap_threshold = 0.8
-            for i in range(len(block_words) - 1):
-                w_curr = block_words[i]
-                w_next = block_words[i+1]
-                if w_next['start'] - w_curr['end'] > gap_threshold:
-                    segments.append({"start_time": current_st, "end_time": w_curr['end'] + 0.2})
-                    current_st = w_next['start'] - 0.2
-            segments.append({"start_time": current_st, "end_time": min(base_et, block_words[-1]['end'] + 0.2)})
+        # ── Standard single-range clip ────────────────────────────────────────
+        base_st = float(override_start) if override_start is not None else float(clip_data.get("start_time", 0))
+        base_et = float(override_end) if override_end is not None else float(clip_data.get("end_time", 0))
+
+        excluded_ranges = []
+        if excluded_sentences:
+            for ex_str in excluded_sentences:
+                try:
+                    st_str = ex_str.split("s]")[0].replace("[", "").strip()
+                    st_val = float(st_str)
+                    excluded_ranges.append({"start": st_val - 0.1, "end": st_val + 5.0})
+                except: pass
+
+        block_words = []
+        for w in word_timestamps:
+            if w["start"] >= base_st - 0.5 and w["end"] <= base_et + 0.5:
+                excluded = False
+                for r in excluded_ranges:
+                    if r["start"] <= w["start"] <= r["end"]:
+                        excluded = True
+                        break
+                if not excluded:
+                    block_words.append(w)
+
+        segments = []
+        if not block_words:
+            segments.append({"start_time": base_st, "end_time": base_et})
         else:
-            segments.append({"start_time": current_st, "end_time": min(base_et, block_words[-1]['end'] + 0.2)})
+            current_st = max(base_st, block_words[0]["start"] - 0.2)
+            if remove_silence:
+                gap_threshold = 0.8
+                for i in range(len(block_words) - 1):
+                    w_curr = block_words[i]
+                    w_next = block_words[i+1]
+                    if w_next['start'] - w_curr['end'] > gap_threshold:
+                        segments.append({"start_time": current_st, "end_time": w_curr['end'] + 0.2})
+                        current_st = w_next['start'] - 0.2
+                segments.append({"start_time": current_st, "end_time": min(base_et, block_words[-1]['end'] + 0.2)})
+            else:
+                segments.append({"start_time": current_st, "end_time": min(base_et, block_words[-1]['end'] + 0.2)})
 
     broll_kws = clip_data.get("broll_keywords", [])
     emoji_moms = clip_data.get("emoji_moments", [])
@@ -270,7 +287,10 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     input_idx += 1
 
         sfx_path = os.path.join(work_dir, "pop.mp3")
-        get_sfx(sfx_path)
+        sfx_ok = get_sfx(sfx_path) and os.path.exists(sfx_path)
+        if not sfx_ok:
+            ui_logger.log("SFX download failed — skipping pop sounds (clip will still render).")
+            sfx_delays = []  # clear so audio filter is skipped safely
         for delay in sfx_delays:
             inputs.extend(["-i", sfx_path])
 
@@ -278,7 +298,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         if add_subs and seg_words:
             ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
             mh_text = clip_data.get("hook_sentence") if (magic_hook and idx == 0) else None
-            _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st, 
+            _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st,
                           theme=theme, style_mode=caption_style, position=caption_pos, magic_hook_text=mh_text)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
