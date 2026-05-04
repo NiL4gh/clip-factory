@@ -3,9 +3,20 @@ import subprocess
 import uuid
 import shutil
 import cv2
+import urllib.request
 
 from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
 from .logger import ui_logger
+
+# Ensure we have our premium font
+FONT_PATH = "/usr/share/fonts/truetype/Montserrat-Black.ttf"
+if os.path.exists("/usr/share/fonts/truetype") and not os.path.exists(FONT_PATH):
+    try:
+        urllib.request.urlretrieve("https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Black.ttf", FONT_PATH)
+        subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ui_logger.log("Premium font (Montserrat-Black) installed.")
+    except:
+        pass
 
 def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
     cap = cv2.VideoCapture(video_path)
@@ -52,8 +63,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     p = palettes.get(theme, palettes["Storytime"])
 
     if style_mode == "Hormozi":
-        font_name = "Arial Black"
-        outline = 6; shadow = 4; bold = 1; font_size = 85
+        font_name = "Montserrat Black"
+        outline = 6; shadow = 4; bold = 1; font_size = 90
     elif style_mode == "Ali Abdaal":
         font_name = "Georgia"
         outline = 2; shadow = 1; bold = 0; font_size = 70

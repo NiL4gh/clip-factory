@@ -194,6 +194,57 @@ def _build_text(transcript_data) -> tuple:
     return str(transcript_data), []
 
 
+def conceptualize_video(
+    transcript_data,
+    llm_path: str = "",
+    gpu_layers: int = 35,
+    language: str = "",
+) -> list:
+    """Reads the first 25k chars and suggests 3-4 specific strategies for this video."""
+    text, _ = _build_text(transcript_data)
+    if not llm_path:
+        raise RuntimeError("llm_path is required.")
+
+    llm = _get_llm(llm_path, gpu_layers)
+    lang_hint = f" Transcript language: {language}." if language else ""
+
+    system = (
+        "You are an elite viral content strategist."
+        f"{lang_hint} Output ONLY raw JSON arrays. No markdown, no prose."
+    )
+
+    schema = (
+        '[\n'
+        '  {\n'
+        '    "id": "strategy_1",\n'
+        '    "title": "The Controversial Debate Angle",\n'
+        '    "description": "Focus strictly on the moments where he argues against the standard diet advice. These clips will anger some and validate others, driving comments."\n'
+        '  }\n'
+        ']'
+    )
+
+    chunk = text[:25000]
+    ui_logger.log("AI conceptualizing video strategy...")
+
+    prompt = (
+        "Read the following video transcript and formulate 3-4 distinct content strategies for extracting viral shorts from it.\n"
+        "Do not use generic templates. Read the actual content, figure out what the unique hooks are, and build strategies around them.\n\n"
+        f"Transcript:\n{chunk}\n\n"
+        f"Respond ONLY with a JSON array:\n{schema}"
+    )
+
+    try:
+        results = _query_llm(llm, system, prompt)
+        if results and isinstance(results, list):
+            ui_logger.log(f"Formulated {len(results)} custom strategies.")
+            return results
+    except Exception as e:
+        ui_logger.log(f"Conceptualization failed: {e}")
+        
+    return [
+        {"id": "default", "title": "Standard Virality Pass", "description": "Extract the best overall moments based on engagement signals."}
+    ]
+
 def get_highlights(
     transcript_data,
     num_clips: int = 5,
@@ -209,7 +260,12 @@ def get_highlights(
         raise RuntimeError("llm_path is required for local highlight detection.")
 
     llm = _get_llm(llm_path, gpu_layers)
-    angle_instruction = _ANGLE_INSTRUCTIONS.get(angle, _ANGLE_INSTRUCTIONS["standard"])
+    
+    if angle in _ANGLE_INSTRUCTIONS:
+        angle_instruction = _ANGLE_INSTRUCTIONS[angle]
+    else:
+        angle_instruction = f"CUSTOM STRATEGY: {angle}"
+        
     lang_hint = f" Transcript language: {language}." if language else ""
 
     system = (
@@ -271,10 +327,6 @@ def get_highlights(
             dur = et - st
             score = max(0, min(100, int(h.get("score", 50))))
 
-            # Skip low-quality clips
-            if score < MIN_CLIP_SCORE:
-                continue
-
             # Refine clips that are too long
             if dur > 90:
                 h = _refine_clip(llm, system, schema, h, lines)
@@ -304,15 +356,16 @@ def get_highlights(
 
     valid.sort(key=lambda x: x["score"], reverse=True)
 
-    # Dedup: 30-second window (was 10s — was too aggressive)
+    # Dedup: 15-second window
     seen, deduped = set(), []
     for h in valid:
-        key = int(h["start_time"] // 30)
+        key = int(h["start_time"] // 15)
         if key not in seen:
             seen.add(key)
             deduped.append(h)
 
-    final = deduped[:max_clips]
+    # Ensure we return at least the requested number if we have them
+    final = deduped[:target]
     ui_logger.log(f"Done. {len(final)} top clips identified (angle: {angle}).")
     return {"highlights": final}
 

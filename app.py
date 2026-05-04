@@ -187,6 +187,18 @@ def analyze_video(url, num_clips):
             result_container["result"] = res
         except Exception as e:
             traceback.print_exc()
+def strategize_video(url):
+    ui_logger.clear()
+    yield gr.update(visible=True), gr.update(choices=[], value=None), "Initializing AI strategy phase...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    
+    result_container = {}
+    def worker():
+        try:
+            res = _strategize_video_core(url)
+            result_container["status"] = "done"
+            result_container["result"] = res
+        except Exception as e:
+            traceback.print_exc()
             result_container["status"] = "error"
             result_container["error"] = str(e)
             
@@ -195,7 +207,75 @@ def analyze_video(url, num_clips):
     
     while t.is_alive():
         time.sleep(0.5)
-        logs = ui_logger.get_full_log() or "Initializing..."
+        logs = ui_logger.get_full_log() or "Conceptualizing video..."
+        yield gr.update(), gr.update(), logs, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        
+    t.join()
+    
+    if result_container.get("status") == "error":
+        logs = ui_logger.get_full_log()
+        yield gr.update(), gr.update(), f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    else:
+        yield result_container["result"]
+
+def _strategize_video_core(url):
+    if not url or not url.strip():
+        raise ValueError("Enter a YouTube URL.")
+        
+    llm_entry = LLM_CATALOG[0]
+    wsp_size  = WHISPER_CATALOG[3]["size"]
+    llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
+
+    if not os.path.exists(llm_path):
+        ui_logger.log(f"Downloading LLM to {LLM_DIR}...")
+        hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
+
+    source_mp4 = os.path.join(WORK_DIR, "source.mp4")
+    _state["current_url"] = url.strip()
+    
+    # Transcription / Download Phase
+    if not os.path.exists(source_mp4) or cache.load_transcript(url.strip()) is None:
+        download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
+        full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
+        _state["word_timestamps"] = words
+        cache.save_transcript(url.strip(), full_text, words)
+    else:
+        ui_logger.log("Transcript loaded from cache.")
+        cached_t = cache.load_transcript(url.strip())
+        _state["word_timestamps"] = cached_t[1]
+
+    # Conceptualization Phase
+    from shorts_generator.highlights import conceptualize_video
+    strategies = conceptualize_video(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"])
+    
+    # Build choices for Radio
+    choices = [f"{s['title']} - {s['description']}" for s in strategies]
+    _state["strategies"] = choices
+    
+    return gr.update(visible=True), gr.update(choices=choices, value=choices[0]), f"Strategizing complete.\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+
+
+def generate_clips_from_strategy(url, num_clips, selected_strategy):
+    ui_logger.clear()
+    yield "", f"Extracting clips based on strategy:\n{selected_strategy}\n...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    
+    result_container = {}
+    def worker():
+        try:
+            res = _generate_clips_core(url, num_clips, selected_strategy)
+            result_container["status"] = "done"
+            result_container["result"] = res
+        except Exception as e:
+            traceback.print_exc()
+            result_container["status"] = "error"
+            result_container["error"] = str(e)
+            
+    t = threading.Thread(target=worker)
+    t.start()
+    
+    while t.is_alive():
+        time.sleep(0.5)
+        logs = ui_logger.get_full_log() or "Extracting clips..."
         yield "", logs, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
         
     t.join()
@@ -206,48 +286,15 @@ def analyze_video(url, num_clips):
     else:
         yield result_container["result"]
 
-def _analyze_video_core(url, num_clips):
-    if not url or not url.strip():
-        raise ValueError("Enter a YouTube URL.")
-        
+def _generate_clips_core(url, num_clips, selected_strategy):
     llm_entry = LLM_CATALOG[0]
-    wsp_size  = WHISPER_CATALOG[3]["size"]
     llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
     n = int(num_clips)
+    
+    if not _state.get("word_timestamps"):
+         raise ValueError("Word timestamps not found. Run analysis first.")
 
-    cached_h = cache.load_highlights(url.strip())
-    cached_t = cache.load_transcript(url.strip())
-    if cached_h and cached_t:
-        ui_logger.log("Loaded highlights + transcript from cache.")
-        _state["clips"] = cached_h
-        _state["word_timestamps"] = cached_t[1]
-        _state["current_url"] = url.strip()
-
-        # Work dir is ephemeral (Colab session restart wipes /content/work).
-        # Re-download the video if it's missing so Render doesn't fail.
-        source_mp4 = os.path.join(WORK_DIR, "source.mp4")
-        if not os.path.exists(source_mp4):
-            ui_logger.log("source.mp4 not found in work dir — re-downloading video...")
-            download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
-        else:
-            ui_logger.log("source.mp4 already present. Ready to render.")
-
-        html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
-        return _cards(_state["clips"]), f"Loaded from cache.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
-
-    if not os.path.exists(llm_path):
-        ui_logger.log(f"Downloading LLM to {LLM_DIR}...")
-        hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
-
-    source_mp4 = os.path.join(WORK_DIR, "source.mp4")
-    _state["current_url"] = url.strip()
-    download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
-
-    full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
-    _state["word_timestamps"] = words
-    cache.save_transcript(url.strip(), full_text, words)
-
-    result = get_highlights(words, num_clips=n, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20)
+    result = get_highlights(_state["word_timestamps"], num_clips=n, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20, angle=selected_strategy)
     _state["clips"] = result.get("highlights", [])
     cache.save_highlights(url.strip(), _state["clips"])
     cache.save_metadata(url.strip())
@@ -451,18 +498,14 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
             gr.HTML("<h1 style='font-size:24px;font-weight:800;margin:0;background:linear-gradient(90deg,#fff,#aaa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;'>ClipFactory.ai</h1><p style='color:#666;font-size:12px;margin-top:4px'>Premium Video Re-purposing</p>")
             
             url_input = gr.Textbox(placeholder="Paste YouTube URL...", label="Video Source", lines=1)
-            num_clips = gr.Slider(1, 20, value=10, step=1, label="Target Clips Count")
-            analyze_btn = gr.Button("Analyze Video", variant="primary")
+            analyze_btn = gr.Button("Strategize Video", variant="primary")
             
-            with gr.Accordion("Advanced Clip Tools", open=False):
-                angle_selector = gr.Dropdown(choices=["standard", "educational", "controversial", "motivational", "storytelling"], value="standard", label="Regeneration Angle")
-                regen_btn = gr.Button("Regenerate Angles", variant="secondary")
-                stitch_btn = gr.Button("Find Story Connections", variant="secondary")
-
+            with gr.Group(visible=False) as strategy_group:
+                strategy_radio = gr.Radio(choices=[], label="Select Content Strategy")
+                num_clips = gr.Slider(1, 20, value=10, step=1, label="Target Clips Count")
+                generate_btn = gr.Button("Generate Clips from Strategy", variant="primary")
+            
             status_box = gr.Textbox(label="Status", interactive=False, lines=10)
-            
-            gr.HTML("<hr style='border-color:#222;margin:20px 0;'>")
-            refresh_btn = gr.Button("Refresh Gallery", variant="secondary")
 
         with gr.Column(scale=8, elem_classes="main-content"):
             clips_html = gr.HTML("<div style='padding:40px;text-align:center;color:#444;border:1px dashed #222;border-radius:12px;'>Awaiting video URL...</div>")
@@ -501,21 +544,30 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
                         render_status = gr.Textbox(label="Render Status", interactive=False, lines=10)
             
             with gr.Row():
-                video_preview = gr.Video(label="Preview Player", height=500, scale=4)
-                gallery = gr.Gallery(label="Library", columns=3, height=500, object_fit="contain", scale=6)
+                with gr.Tab("Studio Preview"):
+                    video_preview = gr.Video(label="Preview Player", height=500, scale=4)
+                with gr.Tab("Rendered Library"):
+                    library_dropdown = gr.Dropdown(choices=[], label="Select a generated video")
+                    refresh_library_btn = gr.Button("Refresh", size="sm")
+                    library_video = gr.Video(label="Library Player", height=400)
+                    library_file = gr.File(label="Download File")
 
     def store_all_options(x):
         return x
         
-    analyze_btn.click(analyze_video, [url_input, num_clips],
-                      [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
-                      store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
+    def update_library_view(selected_file):
+        if not selected_file: return None, None
+        return selected_file, selected_file
+        
+    def populate_library():
+        files = get_gallery()
+        choices = [f for f in files]
+        return gr.update(choices=choices, value=choices[0] if choices else None)
+        
+    analyze_btn.click(strategize_video, [url_input],
+                      [strategy_group, strategy_radio, status_box, clips_html, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb])
                       
-    regen_btn.click(regenerate_clips, [url_input, num_clips, angle_selector],
-                      [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
-                      store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
-                      
-    stitch_btn.click(find_stitched_clips, [url_input],
+    generate_btn.click(generate_clips_from_strategy, [url_input, num_clips, strategy_radio],
                       [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
                       store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
                       
@@ -524,7 +576,8 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
     
     render_btn.click(render_clip, [clip_num, face_cb, magic_hook_cb, remove_silence_cb, st_override, et_override, cap_style, cap_pos, bg_music, broll_int, transcript_cb, transcript_options_hidden], [video_preview, render_status])
     
-    refresh_btn.click(get_gallery, outputs=[gallery])
+    refresh_library_btn.click(populate_library, outputs=[library_dropdown])
+    library_dropdown.change(update_library_view, inputs=[library_dropdown], outputs=[library_video, library_file])
 
 if __name__ == "__main__":
     demo.launch(share=True, debug=True, allowed_paths=[OUTPUT_DIR, WORK_DIR, PROJECTS_DIR, BASE_DIR])
