@@ -23,7 +23,7 @@ from shorts_generator.config import (
 )
 from shorts_generator.downloader import download_video
 from shorts_generator.transcriber import transcribe_audio
-from shorts_generator.highlights import get_highlights, get_stitched_clips
+from shorts_generator.highlights import get_highlights, get_stitched_clips, detect_video_persona
 from shorts_generator.clipper import render_short
 from shorts_generator.enhancer import enhance_clip
 from shorts_generator import cache
@@ -179,14 +179,19 @@ def _get_internal_clip_data(idx):
         </div>
         
         <div class="detail-section">
-            <div class="detail-label">AI PRODUCTION PLAN</div>
-            <div class="detail-text">Generating visual hooks, fetching dynamic B-Roll & Emojis tailored for the <span style="color:#6366f1;font-weight:600;">{theme}</span> theme.</div>
+            <div class="detail-label">VISUAL STRATEGY</div>
+            <div class="detail-text">Theme: {theme} | Focus: {c.get('hook_type','')}</div>
         </div>
     </div>
     """
     
-    return html, st, et, "Hormozi", "Center", def_music, transcript_cb_update
+    persona = _state.get("persona", {})
+    s_brand = persona.get("suggested_brand_kit", "Standard")
+    s_bgm = persona.get("suggested_bgm", "Lofi / Chill")
+    if s_brand not in CAPTION_STYLES: s_brand = "Standard"
+    if s_bgm not in list(BGM_TRACKS.keys()): s_bgm = "None"
 
+    return html, st, et, s_brand, "Center", s_bgm, transcript_cb_update
 def on_clip_select(n):
     html, st, et, c_style, c_pos, bgm, transcript_update = _get_internal_clip_data(n)
     return html, gr.update(value=st), gr.update(value=et), gr.update(value=c_style), gr.update(value=c_pos), gr.update(value=bgm), transcript_update
@@ -194,7 +199,7 @@ def on_clip_select(n):
 def strategize_video(url, angle, llm_sel, whisper_sel):
     """Generator-based strategy function for real-time log streaming to Gradio UI."""
     ui_logger.clear()
-    yield gr.update(visible=False), gr.update(), "Initializing AI strategy phase...", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    yield gr.update(visible=False), gr.update(), "Initializing AI strategy phase...", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update(), gr.update()
 
     result_container = {}
 
@@ -214,13 +219,13 @@ def strategize_video(url, angle, llm_sel, whisper_sel):
     while t.is_alive():
         time.sleep(0.5)
         logs = ui_logger.get_full_log() or "Conceptualizing video..."
-        yield gr.update(), gr.update(), logs, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        yield gr.update(), gr.update(), logs, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update(), gr.update()
 
     t.join()
 
     if result_container.get("status") == "error":
         logs = ui_logger.get_full_log()
-        yield gr.update(), gr.update(), f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        yield gr.update(), gr.update(), f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update(), gr.update()
     else:
         yield result_container["result"]
 
@@ -264,6 +269,12 @@ def _strategize_video_core(url, angle, llm_label, whisper_label):
         cached_t = cache.load_transcript(url.strip())
         _state["word_timestamps"] = cached_t[1]
 
+    # Pass 0: Persona Detection
+    ui_logger.log("Phase 0/2: Analyzing Video Persona...")
+    persona = detect_video_persona(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"])
+    ui_logger.log(f"Detected Genre: {persona.get('genre', 'Unknown')} | Tone: {persona.get('tone', 'Unknown')}")
+    _state["persona"] = persona
+
     # Pass 1: Strategic extraction
     ui_logger.log(f"Phase 1/2: Extracting strategic clips (Angle: {angle})...")
     standard_result = get_highlights(_state["word_timestamps"], num_clips=5, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=5, angle=angle)
@@ -276,14 +287,43 @@ def _strategize_video_core(url, angle, llm_label, whisper_label):
     if not clips:
         raise ValueError("No viral moments found in this video.")
 
+    # Calculate duration and stitching badge for each clip
+    choices = []
+    for i, c in enumerate(clips):
+        # Calculate duration from segments if present, otherwise start/end
+        segs = c.get("segments", [])
+        dur = 0
+        is_stitched = c.get("is_stitched", False)
+        if segs and len(segs) > 1:
+            is_stitched = True
+            c["is_stitched"] = True
+            
+        if segs:
+            for s in segs:
+                dur += float(s.get("end_time", 0)) - float(s.get("start_time", 0))
+        else:
+            dur = float(c.get("end_time", 0)) - float(c.get("start_time", 0))
+            
+        dur_str = f"[{int(dur // 60):02d}:{int(dur % 60):02d}]"
+        badge = "🔗 Stitched" if is_stitched else "🎬 Single"
+        choices.append(f"{badge} {dur_str} | {c.get('title', 'Clip')} (Score: {c.get('score', 0)})")
+
     _state["clips"] = clips
+    _state["strategies"] = choices
     cache.save_highlights(url.strip(), _state["clips"])
     cache.save_metadata(url.strip())
 
-    choices = [f"{'🔗' if c.get('is_stitched') else '🎬'} {i+1}: {c['title']} (Score: {c['score']})" for i, c in enumerate(clips)]
-    _state["strategies"] = choices
+    persona = _state.get("persona", {})
+    intel_html = f"""
+    <div style='background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.2); padding:16px; border-radius:12px; margin-bottom:20px;'>
+        <h3 style='margin:0 0 10px 0; color:#818cf8; font-size:16px;'>🧠 AI Video Intelligence</h3>
+        <p style='margin:4px 0; font-size:14px;'><b>Genre:</b> {persona.get('genre', 'Unknown')} | <b>Tone:</b> {persona.get('tone', 'Unknown')}</p>
+        <p style='margin:4px 0; font-size:14px;'><b>Target Audience:</b> {persona.get('target_audience', 'Broad')}</p>
+        <p style='margin:4px 0; font-size:14px;'><b>Auto-Selected Style:</b> {persona.get('suggested_brand_kit', 'Standard')} + {persona.get('suggested_bgm', 'Lofi / Chill')} Music</p>
+    </div>
+    """
 
-    return gr.update(visible=True), gr.update(choices=choices, value=None), f"Strategy Phase Complete. Identified {len(clips)} potential clips.\n\nLogs:\n{ui_logger.get_full_log()}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    return gr.update(visible=True), gr.update(choices=choices, value=None), f"Strategy Phase Complete. Identified {len(clips)} potential clips.\n\nLogs:\n{ui_logger.get_full_log()}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update(), gr.update(value=intel_html)
 
 
 def load_strategy_clip(selected_strategy):
@@ -705,6 +745,8 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
                 
             analyze_btn = gr.Button("Strategize Video", variant="primary")
             
+            intelligence_panel = gr.HTML("")
+            
             with gr.Group(visible=False) as strategy_group:
                 gr.HTML("<div style='margin-top:24px;margin-bottom:10px;font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;'>AI Director Strategies</div>")
                 strategy_radio = gr.Radio(choices=[], label="Select Strategy")
@@ -783,7 +825,7 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
         return html, gr.update(choices=choices, value=choices[0] if choices else None)
         
     analyze_btn.click(strategize_video, [url_input, angle_input, llm_input, whisper_input],
-                      [strategy_group, strategy_radio, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb])
+                      [strategy_group, strategy_radio, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb, intelligence_panel])
                       
     strategy_radio.change(load_strategy_clip, [strategy_radio],
                           [detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(

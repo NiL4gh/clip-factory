@@ -29,14 +29,14 @@ POLL_TIMEOUT_SECONDS  = float(os.getenv("MUAPI_POLL_TIMEOUT",  "600"))
 
 # ── Local LLM catalog ────────────────────────────────────────────
 LLM_CATALOG = [
-    {"label": "⭐ Mistral 7B Instruct Q4",
-     "filename": "mistral-7b-instruct-v0.2.Q4_K_M.gguf",
-     "repo": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
-     "gpu_layers": 35},
     {"label": "🦙 LLaMA 3 8B Instruct Q4",
      "filename": "Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
      "repo": "bartowski/Meta-Llama-3-8B-Instruct-GGUF",
      "gpu_layers": 33},
+    {"label": "⭐ Mistral 7B Instruct Q4",
+     "filename": "mistral-7b-instruct-v0.2.Q4_K_M.gguf",
+     "repo": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+     "gpu_layers": 35},
     {"label": "🌟 Qwen2 7B Instruct Q4",
      "filename": "qwen2-7b-instruct-q4_k_m.gguf",
      "repo": "Qwen/Qwen2-7B-Instruct-GGUF",

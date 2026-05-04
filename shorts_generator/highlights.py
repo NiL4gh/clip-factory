@@ -36,11 +36,12 @@ WHOP VIRALITY SIGNALS (ranked by conversion power):
    - Genuine surprise, frustration, or breakthrough realizations.
    - High speaker energy or dramatic shifts in tone.
 
-QUALITY RULES:
+QUALITY & NARRATIVE RULES:
 - Every clip MUST start with a hook that grabs attention in the first 3 seconds.
-- Optimal duration: 45-75 seconds for TikTok/Reels performance.
-- The clip MUST be standalone (zero external context required).
-- NEVER clip mid-sentence at the start or end.
+- Every clip MUST have a clear narrative: Hook (Beginning) -> Context (Middle) -> Payoff (End).
+- Do NOT cut off a speaker mid-sentence or end a clip before the point is resolved.
+- FLUFF REMOVAL: You MUST use the `segments` array to cut out boring tangents, long pauses, or off-topic rants within a clip. E.g. [10s-30s] (hook), skip 30s-50s (fluff), then [50s-75s] (payoff).
+- Optimal duration: 45-75 seconds total for TikTok/Reels performance.
 - Include a 5-second buffer mentally (start slightly earlier, end slightly later)."""
 
 _ANGLE_INSTRUCTIONS = {
@@ -139,11 +140,11 @@ def _refine_clip(llm, system: str, schema: str, clip: dict, lines: list) -> dict
     if not clip_text:
         return clip
 
-    ui_logger.log(f"Refining clip '{clip.get('title', 'Untitled')}' ({int(et-st)}s) → targeting 45-75s...")
+    ui_logger.log(f"Refining clip '{clip.get('title', 'Untitled')}' → targeting 45-75s...")
     prompt = (
         f"{_VIRALITY_BASE}\n\n"
-        f"This segment is {int(et-st)}s — too long. Extract the SINGLE best 45-75 second sub-clip.\n"
-        f"It MUST be under 90 seconds. It MUST start with the strongest possible hook.\n\n"
+        f"This segment is too long. Extract the SINGLE best 45-75 second sub-clip, utilizing `segments` to remove internal fluff if necessary.\n"
+        f"It MUST be under 90 seconds total. It MUST start with the strongest possible hook.\n\n"
         f"Segment:\n" + "\n".join(clip_text) + f"\n\nRespond ONLY with a JSON array of ONE element:\n{schema}"
     )
     try:
@@ -174,6 +175,46 @@ def _build_text(transcript_data) -> tuple:
     if isinstance(transcript_data, tuple):
         return transcript_data[0], []
     return str(transcript_data), []
+
+
+def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -> dict:
+    """Run a fast pass to detect video genre, tone, target audience, and suggested styles."""
+    if not llm_path:
+        return {}
+        
+    text, _ = _build_text(transcript_data)
+    llm = _get_llm(llm_path, gpu_layers)
+    
+    system = "You are an expert video analyst. Output ONLY raw JSON. No markdown."
+    prompt = (
+        "Analyze the following video transcript chunk and determine its core persona.\n\n"
+        "Return ONLY a JSON object with this exact schema:\n"
+        "{\n"
+        '  "genre": "Podcast|Tutorial|Vlog|Rant|Interview|Comedy|Educational",\n'
+        '  "tone": "Casual|Professional|High-Energy|Calm|Controversial",\n'
+        '  "target_audience": "Brief description of who this is for",\n'
+        '  "suggested_brand_kit": "Hormozi|Ali Abdaal|MrBeast|Standard",\n'
+        '  "suggested_bgm": "Lofi / Chill|High Energy / Phonk|Suspense / Dark|Corporate / Upbeat"\n'
+        "}\n\n"
+        f"Transcript (first 5000 chars):\n{text[:5000]}"
+    )
+    
+    try:
+        results = _query_llm(llm, system, prompt)
+        if isinstance(results, list) and len(results) > 0:
+            return results[0]
+        if isinstance(results, dict):
+            return results
+    except Exception as e:
+        ui_logger.log(f"Persona detection failed: {e}")
+        
+    return {
+        "genre": "General", 
+        "tone": "Neutral", 
+        "target_audience": "Broad",
+        "suggested_brand_kit": "Standard",
+        "suggested_bgm": "Lofi / Chill"
+    }
 
 
 def get_highlights(
@@ -208,8 +249,10 @@ def get_highlights(
         '[\n'
         '  {\n'
         '    "title": "Punchy curiosity-driving title (max 10 words)",\n'
-        '    "start_time": 12.5,\n'
-        '    "end_time": 75.0,\n'
+        '    "segments": [\n'
+        '       {"start_time": 12.5, "end_time": 35.0},\n'
+        '       {"start_time": 40.0, "end_time": 75.0}\n'
+        '    ],\n'
         '    "score": 92,\n'
         '    "hook_sentence": "The exact opening sentence that will stop the scroll",\n'
         '    "virality_reason": "Specific reason this will go viral (name the signal type)",\n'

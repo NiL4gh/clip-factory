@@ -157,7 +157,10 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(work_dir, exist_ok=True)
     out_id = uuid.uuid4().hex[:8]
-    final_output = os.path.join(output_dir, f"short_{out_id}.mp4")
+    import datetime
+    date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    safe_title = "".join(c for c in clip_data.get("title", "Viral_Clip") if c.isalnum() or c in " _-").replace(" ", "_")
+    final_output = os.path.join(output_dir, f"{date_str}_{safe_title}_{out_id}.mp4")
 
     target_w, target_h = 1080, 1920
 
