@@ -151,7 +151,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  caption_style="Hormozi", caption_pos="Center",
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
-                 all_sentences=None):
+                 all_sentences=None, padding=5.0):
 
     ui_logger.log("Initializing render pipeline...")
     os.makedirs(output_dir, exist_ok=True)
@@ -181,39 +181,27 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         base_st = float(override_start) if override_start is not None else float(clip_data.get("start_time", 0))
         base_et = float(override_end) if override_end is not None else float(clip_data.get("end_time", 0))
 
-        excluded_ranges = []
-        if excluded_sentences and all_sentences:
+        # Apply user-requested padding for manual post-edit cropping
+        base_st = max(0, base_st - padding)
+        base_et = base_et + padding
+
+        # ── Word-ID based exclusions (precise word-level cuts) ────────────
+        # Sentence labels have format: "[WID:45-52] [12.3s] sentence text..."
+        # We parse the WID range to get exact global word indices to exclude.
+        import re as _re
+        excluded_word_indices = set()
+        if excluded_sentences:
             for ex_str in excluded_sentences:
-                try:
-                    idx = all_sentences.index(ex_str)
-                    st_str = ex_str.split("s]")[0].replace("[", "").strip()
-                    st_val = float(st_str)
-                    
-                    if idx + 1 < len(all_sentences):
-                        next_st_str = all_sentences[idx+1].split("s]")[0].replace("[", "").strip()
-                        et_val = float(next_st_str)
-                    else:
-                        et_val = base_et
-                        
-                    excluded_ranges.append({"start": st_val - 0.1, "end": et_val - 0.1})
-                except: pass
-        elif excluded_sentences:
-            for ex_str in excluded_sentences:
-                try:
-                    st_str = ex_str.split("s]")[0].replace("[", "").strip()
-                    st_val = float(st_str)
-                    excluded_ranges.append({"start": st_val - 0.1, "end": st_val + 5.0})
-                except: pass
+                m = _re.match(r'\[WID:(\d+)-(\d+)\]', ex_str)
+                if m:
+                    wid_start = int(m.group(1))
+                    wid_end = int(m.group(2))
+                    excluded_word_indices.update(range(wid_start, wid_end + 1))
 
         block_words = []
-        for w in word_timestamps:
+        for wi, w in enumerate(word_timestamps):
             if w["start"] >= base_st - 0.5 and w["end"] <= base_et + 0.5:
-                excluded = False
-                for r in excluded_ranges:
-                    if r["start"] <= w["start"] <= r["end"]:
-                        excluded = True
-                        break
-                if not excluded:
+                if wi not in excluded_word_indices:
                     block_words.append(w)
 
         segments = []

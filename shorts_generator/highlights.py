@@ -12,70 +12,52 @@ CHUNK_CHARS = 15_000
 MIN_CLIP_SCORE = 45
 
 # ── Virality Science ──────────────────────────────────────────────────────────
-_VIRALITY_BASE = """You are an elite short-form content strategist who has created viral content
-seen by hundreds of millions of people on TikTok, Instagram Reels, and YouTube Shorts.
+_VIRALITY_BASE = """You are an elite short-form content strategist for the Whop Content Rewards program.
+Your goal is to extract clips that maximize view-based revenue by hitting high virality metrics.
 
-VIRALITY SIGNALS (ranked by conversion power):
+WHOP VIRALITY SIGNALS (ranked by conversion power):
 
-1. SCROLL-STOPPING HOOKS (most critical — first 3 seconds decide everything)
-   - Curiosity gaps: "The reason most people fail at X is..." / "Nobody talks about this..."
-   - Bold/contrarian claims: "X is actually terrible and here's why"
-   - Pattern interrupts: unexpected facts, shocking numbers, counterintuitive takes
-   - Open loops: questions that demand the viewer stays to find out the answer
+1. SCROLL-STOPPING HOOKS (The first 3 seconds)
+   - Curiosity gaps: "The reason most people fail at X is..."
+   - Bold/contrarian claims: "X is actually a scam, here's the truth."
+   - Visual/Pattern interrupts: Start mid-action or with a shocking visual.
 
-2. EMOTIONAL PEAKS (algorithm-boosting engagement signals)
-   - Genuine unscripted moments — real surprise, laughter, anger, vulnerability
-   - Moments where speaker pace or energy shifts dramatically
-   - Breakthrough realizations caught on camera
-   - Authentic conflict or pushback in conversations
+2. OPINION BOMBS & HOT TAKES (High shareability)
+   - Statements that divide the audience.
+   - Challenging conventional wisdom.
+   - "Everyone is wrong about X" / "The secret no one tells you."
 
-3. OPINION BOMBS & CONTROVERSY (highest share velocity)
-   - Hot takes that divide audiences (agreement AND disagreement = engagement)
-   - Challenging conventional wisdom with evidence or personal experience
-   - "Everyone is wrong about X" / counterintuitive takes
+3. REVELATION & PROOF (High save rate)
+   - Insider secrets or specific "how-to" steps.
+   - Proof of results (numbers, stats, money).
+   - "Aha!" moments where a complex idea becomes simple.
 
-4. REVELATION & PROOF MOMENTS (high save/share rate)
-   - Specific statistics or facts that challenge assumptions
-   - Before/after comparisons with concrete numbers
-   - "What nobody tells you about X" / insider secrets revealed
-
-5. QUOTABLE WISDOM (high repost rate)
-   - Dense insight packed into a single sentence
-   - Metaphors that make complex ideas instantly clear
-   - Universal truths stated in a novel, memorable way
-
-6. COMPLETE STORY ARCS (highest watch-through rate)
-   - Problem → Struggle → Breakthrough → Lesson
-   - Setup → Tension → Payoff
-   - The viewer must feel emotionally SATISFIED at the end
+4. EMOTIONAL PEAKS
+   - Genuine surprise, frustration, or breakthrough realizations.
+   - High speaker energy or dramatic shifts in tone.
 
 QUALITY RULES:
-- Every clip MUST start with a hook that grabs attention in the first 3 seconds
-- Optimal duration: 45-75 seconds (peak completion rate on TikTok/Reels)
-- Acceptable range: 30-90 seconds
-- The clip MUST work as STANDALONE content — zero external context required
-- NEVER clip mid-sentence at the start or end
-- Prefer clips with HIGH speaker energy and emotional authenticity"""
+- Every clip MUST start with a hook that grabs attention in the first 3 seconds.
+- Optimal duration: 45-75 seconds for TikTok/Reels performance.
+- The clip MUST be standalone (zero external context required).
+- NEVER clip mid-sentence at the start or end.
+- Include a 5-second buffer mentally (start slightly earlier, end slightly later)."""
 
 _ANGLE_INSTRUCTIONS = {
     "standard":
         "Extract the TOP most viral clips by OVERALL engagement potential across all virality signals.",
+    "whop_rewards":
+        "Focus EXCLUSIVELY on high-performance 'Content Rewards' clips: scandalous hot takes, "
+        "insider money-making secrets, contrarian advice, and proof-of-results moments. "
+        "These clips should be designed to generate massive view counts on TikTok/Reels.",
     "educational":
-        "Focus EXCLUSIVELY on EDUCATIONAL moments — deep insights, clear explanations, "
-        "step-by-step breakdowns, and 'aha!' moments that teach something concrete and actionable. "
-        "Prioritize clips where the viewer walks away knowing something they didn't before.",
+        "Focus EXCLUSIVELY on EDUCATIONAL moments — deep insights and 'aha!' moments.",
     "controversial":
-        "Focus EXCLUSIVELY on CONTROVERSIAL and DEBATE-WORTHY moments — hot takes, strong "
-        "disagreements, counterintuitive claims, and statements that will divide opinions and "
-        "generate comment wars. These clips should make people REACT strongly.",
+        "Focus EXCLUSIVELY on CONTROVERSIAL moments that will generate comment wars.",
     "motivational":
-        "Focus EXCLUSIVELY on MOTIVATIONAL and INSPIRATIONAL moments — personal struggle stories, "
-        "mindset breakthroughs, powerful calls to action, and emotional turning points. "
-        "The viewer should feel fired up and ready to take action.",
+        "Focus EXCLUSIVELY on MOTIVATIONAL breakthroughs and mindset shifts.",
     "storytelling":
-        "Focus EXCLUSIVELY on STORY-DRIVEN moments with a clear narrative arc. "
-        "The clip must have tension, conflict, and resolution. "
-        "The viewer must feel emotionally invested within the first 5 seconds.",
+        "Focus EXCLUSIVELY on STORY-DRIVEN moments with clear tension and resolution.",
 }
 
 _STITCH_CRITERIA = """

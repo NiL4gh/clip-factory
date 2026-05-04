@@ -1,4 +1,4 @@
-# ClipFactory.ai — Premium Shorts Engine
+# Clip Factory — Premium Shorts Engine
 
 > Turn long-form YouTube videos into viral 9:16 Shorts, Reels & TikToks — **free, local AI, no watermarks, no credits.**
 
@@ -42,11 +42,11 @@ print("✅ Drive mounted.")
 ```python
 import os, sys
 
-REPO_DIR = '/content/AI-Shorts-Generator-opus'
+REPO_DIR = '/content/clip-factory'
 
 # Clone or update
 if not os.path.exists(REPO_DIR):
-    !git clone --depth 1 https://github.com/NiL4gh/AI-Shorts-Generator-opus {REPO_DIR}
+    !git clone --depth 1 https://github.com/NiL4gh/clip-factory {REPO_DIR}
 else:
     !git -C {REPO_DIR} pull
     print('Repo up to date.')
@@ -72,7 +72,7 @@ print('✅ Ready to launch.')
 ```python
 import os, sys
 
-REPO_DIR = '/content/AI-Shorts-Generator-opus'
+REPO_DIR = '/content/clip-factory'
 os.chdir(REPO_DIR)
 if REPO_DIR not in sys.path:
     sys.path.insert(0, REPO_DIR)

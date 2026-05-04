@@ -44,6 +44,14 @@ BGM_TRACKS = {
 
 CAPTION_STYLES = ["Hormozi", "Ali Abdaal", "MrBeast", "Standard", "Minimalist", "None"]
 CAPTION_POSITIONS = ["Top", "Center", "Bottom"]
+STRATEGY_ANGLES = {
+    "whop_rewards": "Whop Content Rewards (Viral focus)",
+    "standard": "Standard Virality",
+    "educational": "Educational / Insightful",
+    "controversial": "Controversial / Debate",
+    "motivational": "Motivational / Growth",
+    "storytelling": "Storytelling / Narrative",
+}
 BROLL_INTENSITIES = ["Low", "Medium", "High", "None"]
 
 def _sc(s):
@@ -113,6 +121,11 @@ def _get_internal_clip_data(idx):
     
     words_in_clip = [w for w in _state["word_timestamps"] if w['start'] >= st - 1 and w['end'] <= et + 1]
     
+    # Build a lookup from word object to its global index in _state["word_timestamps"]
+    word_to_global_idx = {}
+    for gi, gw in enumerate(_state["word_timestamps"]):
+        word_to_global_idx[id(gw)] = gi
+    
     sentences_ui = []
     current_s = []
     for w in words_in_clip:
@@ -120,11 +133,15 @@ def _get_internal_clip_data(idx):
         txt = w["word"].strip()
         if txt.endswith('.') or txt.endswith('!') or txt.endswith('?') or len(current_s) > 12:
             s_txt = " ".join([x["word"].strip() for x in current_s])
-            sentences_ui.append(f"[{current_s[0]['start']:.1f}s] {s_txt}")
+            first_gidx = word_to_global_idx.get(id(current_s[0]), 0)
+            last_gidx = word_to_global_idx.get(id(current_s[-1]), first_gidx)
+            sentences_ui.append(f"[WID:{first_gidx}-{last_gidx}] [{current_s[0]['start']:.1f}s] {s_txt}")
             current_s = []
     if current_s:
         s_txt = " ".join([x["word"].strip() for x in current_s])
-        sentences_ui.append(f"[{current_s[0]['start']:.1f}s] {s_txt}")
+        first_gidx = word_to_global_idx.get(id(current_s[0]), 0)
+        last_gidx = word_to_global_idx.get(id(current_s[-1]), first_gidx)
+        sentences_ui.append(f"[WID:{first_gidx}-{last_gidx}] [{current_s[0]['start']:.1f}s] {s_txt}")
         
     transcript_cb_update = gr.update(choices=sentences_ui, value=sentences_ui)
     
@@ -174,56 +191,47 @@ def on_clip_select(n):
     html, st, et, c_style, c_pos, bgm, transcript_update = _get_internal_clip_data(n)
     return html, gr.update(value=st), gr.update(value=et), gr.update(value=c_style), gr.update(value=c_pos), gr.update(value=bgm), transcript_update
 
-def analyze_video(url, num_clips):
+def strategize_video(url, angle):
+    """Generator-based strategy function for real-time log streaming to Gradio UI."""
     ui_logger.clear()
-    yield "", "Initializing...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-    
+    yield gr.update(visible=False), gr.update(), "Initializing AI strategy phase...", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+
     result_container = {}
-    
+
     def worker():
         try:
-            res = _analyze_video_core(url, num_clips)
-            result_container["status"] = "done"
-            result_container["result"] = res
-        except Exception as e:
-            traceback.print_exc()
-def strategize_video(url):
-    ui_logger.clear()
-    yield gr.update(visible=True), gr.update(choices=[], value=None), "Initializing AI strategy phase...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-    
-    result_container = {}
-    def worker():
-        try:
-            res = _strategize_video_core(url)
+            res = _strategize_video_core(url, angle)
             result_container["status"] = "done"
             result_container["result"] = res
         except Exception as e:
             traceback.print_exc()
             result_container["status"] = "error"
             result_container["error"] = str(e)
-            
+
     t = threading.Thread(target=worker)
     t.start()
-    
+
     while t.is_alive():
         time.sleep(0.5)
         logs = ui_logger.get_full_log() or "Conceptualizing video..."
-        yield gr.update(visible=True), gr.update(), logs, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-        
+        yield gr.update(), gr.update(), logs, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+
     t.join()
-    
+
     if result_container.get("status") == "error":
         logs = ui_logger.get_full_log()
         yield gr.update(), gr.update(), f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
     else:
         yield result_container["result"]
 
-def _strategize_video_core(url):
+
+def _strategize_video_core(url, angle):
+    """Heavy-lifting core that runs in a background thread."""
     if not url or not url.strip():
         raise ValueError("Enter a YouTube URL.")
-        
-    llm_entry = LLM_CATALOG[0]
-    wsp_size  = WHISPER_CATALOG[3]["size"]
+
+    llm_entry = LLM_CATALOG[0]  # Mistral 7B (first entry in list)
+    wsp_size  = WHISPER_CATALOG[3]["size"]  # "medium"
     llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
 
     if not os.path.exists(llm_path):
@@ -232,7 +240,7 @@ def _strategize_video_core(url):
 
     source_mp4 = os.path.join(WORK_DIR, "source.mp4")
     _state["current_url"] = url.strip()
-    
+
     # Transcription / Download Phase
     if not os.path.exists(source_mp4) or cache.load_transcript(url.strip()) is None:
         download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
@@ -244,27 +252,26 @@ def _strategize_video_core(url):
         cached_t = cache.load_transcript(url.strip())
         _state["word_timestamps"] = cached_t[1]
 
-    from shorts_generator.highlights import get_highlights
-    ui_logger.log("Analyzing video for the best strategic clips...")
-    
-    # Run the main clip extraction pass immediately. 
-    # The AI director will find 3-5 distinct viral moments (Strategies).
-    angle_prompt = "Find 3 to 5 absolute best distinct clips in this video. Each clip must represent a completely different aspect, angle, or theme of the video."
-    result = get_highlights(_state["word_timestamps"], num_clips=5, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=5, angle=angle_prompt)
-    
-    clips = result.get("highlights", [])
+    # Pass 1: Strategic extraction
+    ui_logger.log(f"Phase 1/2: Extracting strategic clips (Angle: {angle})...")
+    standard_result = get_highlights(_state["word_timestamps"], num_clips=5, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=5, angle=angle)
+
+    # Pass 2: Story stitching (Q&A / Arcs)
+    ui_logger.log("Phase 2/2: Scanning for cross-timestamp story connections...")
+    stitch_result = get_stitched_clips(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_stitched=3)
+
+    clips = standard_result.get("highlights", []) + stitch_result.get("highlights", [])
     if not clips:
-        raise ValueError("No clips found.")
-        
+        raise ValueError("No viral moments found in this video.")
+
     _state["clips"] = clips
     cache.save_highlights(url.strip(), _state["clips"])
     cache.save_metadata(url.strip())
-    
-    # Build choices for Radio based on the clips found
-    choices = [f"Angle {i+1}: {c['title']} (Score: {c['score']})" for i, c in enumerate(clips)]
+
+    choices = [f"{'🔗' if c.get('is_stitched') else '🎬'} {i+1}: {c['title']} (Score: {c['score']})" for i, c in enumerate(clips)]
     _state["strategies"] = choices
-    
-    return gr.update(visible=True), gr.update(choices=choices, value=None), f"Strategizing complete.\n\nLogs:\n{ui_logger.get_full_log()}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+
+    return gr.update(visible=True), gr.update(choices=choices, value=None), f"Strategy Phase Complete. Identified {len(clips)} potential clips.\n\nLogs:\n{ui_logger.get_full_log()}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
 
 
 def load_strategy_clip(selected_strategy):
@@ -388,6 +395,50 @@ def _render_clip_core(face_cb, magic_hook_cb, remove_silence_cb, override_st, ov
     ui_logger.log(f"Rendered successfully: {os.path.basename(out)}")
     return out, f"Rendered successfully: {os.path.basename(out)}\n\nLogs:\n{ui_logger.get_full_log()}"
 
+def batch_render(face_cb, magic_hook_cb, remove_silence_cb, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str):
+    if not _state["clips"]:
+        yield None, "No clips to render. Please strategize a video first."
+        return
+        
+    total = len(_state["clips"])
+    ui_logger.clear()
+    ui_logger.log(f"Starting batch render for {total} clips...")
+    yield None, ui_logger.get_full_log()
+
+    result_container = {}
+
+    def worker():
+        try:
+            rendered = []
+            for i in range(total):
+                _state["current_clip_index"] = i
+                clip = _state["clips"][i]
+                ui_logger.log(f"--- Rendering Clip {i+1}/{total}: {clip.get('title')} ---")
+                out = _render_clip_core(face_cb, magic_hook_cb, remove_silence_cb, None, None, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, [], [])
+                rendered.append(out)
+            result_container["status"] = "done"
+            result_container["rendered"] = rendered
+        except Exception as e:
+            traceback.print_exc()
+            result_container["status"] = "error"
+            result_container["error"] = str(e)
+
+    t = threading.Thread(target=worker)
+    t.start()
+
+    while t.is_alive():
+        time.sleep(1.0)
+        yield None, ui_logger.get_full_log()
+
+    t.join()
+
+    if result_container.get("status") == "error":
+        ui_logger.log(f"Batch render failed: {result_container.get('error')}")
+        yield None, f"Error: {result_container.get('error')}\n\nLogs:\n{ui_logger.get_full_log()}"
+    else:
+        ui_logger.log("Batch render complete!")
+        yield None, f"Batch render of {total} clips finished successfully.\n\nLogs:\n{ui_logger.get_full_log()}"
+
 def get_gallery():
     files = []
     for d in [OUTPUT_DIR]:
@@ -401,6 +452,28 @@ def get_gallery():
             seen.add(b)
             unique.append(f)
     return unique[:12]
+
+def _gallery_html(files):
+    """Build a visual grid of rendered video cards."""
+    if not files:
+        return "<div class='gallery-empty'>No rendered clips yet. Strategize and render a video to see results here.</div>"
+    cards = ""
+    for i, fp in enumerate(files):
+        name = os.path.basename(fp)
+        try:
+            size_mb = os.path.getsize(fp) / (1024 * 1024)
+            mtime = time.strftime('%b %d, %H:%M', time.localtime(os.path.getmtime(fp)))
+        except:
+            size_mb = 0
+            mtime = "Unknown"
+        cards += f"""
+        <div class="gallery-card" data-idx="{i}">
+            <div class="gallery-icon">🎬</div>
+            <div class="gallery-name">{name}</div>
+            <div class="gallery-meta">{size_mb:.1f} MB &bull; {mtime}</div>
+        </div>
+        """
+    return f"<div class='gallery-grid'>{cards}</div>"
 
 _css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -574,6 +647,35 @@ input[type="checkbox"], input[type="radio"] {
 
 footer { display: none !important; }
 .hidden-clip-sel { display: none !important; }
+
+/* Gallery Grid */
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin: 12px 0; }
+.gallery-card { 
+    background: rgba(22, 22, 22, 0.8); 
+    border: 1px solid rgba(255,255,255,0.06); 
+    border-radius: 12px; 
+    padding: 16px; 
+    text-align: center;
+    cursor: pointer; 
+    transition: all 0.25s ease;
+}
+.gallery-card:hover { 
+    border-color: #6366f1; 
+    transform: translateY(-2px); 
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.2);
+}
+.gallery-icon { font-size: 36px; margin-bottom: 8px; }
+.gallery-name { font-size: 12px; color: #e2e8f0; font-weight: 600; word-break: break-all; margin-bottom: 4px; }
+.gallery-meta { font-size: 11px; color: #64748b; }
+.gallery-empty { 
+    text-align: center; 
+    padding: 40px 20px; 
+    color: #64748b; 
+    font-size: 14px; 
+    border: 1px dashed rgba(255,255,255,0.1); 
+    border-radius: 12px; 
+    margin: 12px 0;
+}
 """
 
 with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
@@ -583,6 +685,7 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
             
             gr.HTML("<div style='margin-top:20px;margin-bottom:10px;font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;'>New Project</div>")
             url_input = gr.Textbox(placeholder="Paste YouTube URL...", label="Video Source", lines=1)
+            angle_input = gr.Dropdown(choices=list(STRATEGY_ANGLES.keys()), value="whop_rewards", label="AI Director Vibe")
             analyze_btn = gr.Button("Strategize Video", variant="primary")
             
             with gr.Group(visible=False) as strategy_group:
@@ -620,21 +723,38 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
                                     bg_music = gr.Dropdown(choices=list(BGM_TRACKS.keys()), value="Lofi / Chill", label="Smart BGM", interactive=True)
                                     broll_int = gr.Dropdown(choices=BROLL_INTENSITIES, value="Medium", label="B-Roll Intensity", interactive=True)
 
-                            render_btn = gr.Button("Render Final Clip", variant="primary", size="lg")
+                            with gr.Row():
+                                render_btn = gr.Button("Render Final Clip", variant="primary", size="lg")
+                                batch_render_btn = gr.Button("Batch Render All Strategies", variant="secondary", size="lg")
                             render_status = gr.Textbox(label="Render Status", interactive=False, lines=4)
             
             with gr.Row():
                 with gr.Tab("Studio Preview"):
                     video_preview = gr.Video(label="Preview Player", height=500, scale=4)
                 with gr.Tab("Rendered Library"):
-                    library_dropdown = gr.Dropdown(choices=[], label="Select a generated video")
-                    refresh_library_btn = gr.Button("Refresh", size="sm")
-                    library_video = gr.Video(label="Library Player", height=400)
-                    library_file = gr.File(label="Download File")
+                    gallery_html = gr.HTML("<div class='gallery-empty'>No rendered clips yet. Strategize and render a video to see results here.</div>")
+                    with gr.Row():
+                        refresh_library_btn = gr.Button("🔄 Refresh Library", size="sm", scale=2)
+                        delete_btn = gr.Button("🗑️ Delete Selected", variant="stop", size="sm", scale=1)
+                    library_dropdown = gr.Dropdown(choices=[], label="Selected Clip", visible=True, scale=1)
+                    with gr.Row():
+                        library_video = gr.Video(label="Preview", height=400)
+                        library_file = gr.File(label="Download")
 
     def store_all_options(x):
         return x
         
+    def delete_video(selected_file):
+        if not selected_file or not os.path.exists(selected_file):
+            return gr.update(), gr.update(), None, None, "File not found."
+        try:
+            os.remove(selected_file)
+            ui_logger.log(f"Deleted: {os.path.basename(selected_file)}")
+            g_html, dd_update = populate_library()
+            return g_html, dd_update, None, None, f"Deleted {os.path.basename(selected_file)}"
+        except Exception as e:
+            return gr.update(), gr.update(), None, None, f"Error deleting: {e}"
+
     def update_library_view(selected_file):
         if not selected_file: return None, None
         return selected_file, selected_file
@@ -642,9 +762,10 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
     def populate_library():
         files = get_gallery()
         choices = [f for f in files]
-        return gr.update(choices=choices, value=choices[0] if choices else None)
+        html = _gallery_html(files)
+        return html, gr.update(choices=choices, value=choices[0] if choices else None)
         
-    analyze_btn.click(strategize_video, [url_input],
+    analyze_btn.click(strategize_video, [url_input, angle_input],
                       [strategy_group, strategy_radio, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb])
                       
     strategy_radio.change(load_strategy_clip, [strategy_radio],
@@ -653,8 +774,11 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
     
     render_btn.click(render_clip, [face_cb, magic_hook_cb, remove_silence_cb, st_override, et_override, cap_style, cap_pos, bg_music, broll_int, transcript_cb, transcript_options_hidden], [video_preview, render_status])
     
-    refresh_library_btn.click(populate_library, outputs=[library_dropdown])
+    batch_render_btn.click(batch_render, [face_cb, magic_hook_cb, remove_silence_cb, cap_style, cap_pos, bg_music, broll_int], [video_preview, render_status])
+
+    refresh_library_btn.click(populate_library, outputs=[gallery_html, library_dropdown])
     library_dropdown.change(update_library_view, inputs=[library_dropdown], outputs=[library_video, library_file])
+    delete_btn.click(delete_video, [library_dropdown], [gallery_html, library_dropdown, library_video, library_file, render_status])
 
 if __name__ == "__main__":
     demo.launch(share=True, debug=True, allowed_paths=[OUTPUT_DIR, WORK_DIR, PROJECTS_DIR, BASE_DIR])
