@@ -356,7 +356,7 @@ def _render_clip_core(face_cb, magic_hook_cb, remove_silence_cb, override_st, ov
     
     out = render_short(
         input_video=input_mp4, clip_data=clip,
-        word_timestamps=_state["word_timestamps"] if cap_style_str != "None" else [],
+        word_timestamps=_state["word_timestamps"],
         output_dir=clips_dir, work_dir=WORK_DIR,
         face_center=face_cb, add_subs=(cap_style_str != "None"),
         theme=theme, caption_style=cap_style_str, caption_pos=cap_pos_str,
@@ -364,7 +364,8 @@ def _render_clip_core(face_cb, magic_hook_cb, remove_silence_cb, override_st, ov
         excluded_sentences=excluded,
         magic_hook=magic_hook_cb,
         remove_silence=remove_silence_cb,
-        broll_intensity=broll_int_str
+        broll_intensity=broll_int_str,
+        all_sentences=all_transcript_options
     )
     
     if bg_music_genre and bg_music_genre != "None":

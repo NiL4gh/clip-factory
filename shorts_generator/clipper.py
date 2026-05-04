@@ -150,7 +150,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  face_center=True, add_subs=True, theme="Storytime", 
                  caption_style="Hormozi", caption_pos="Center",
                  override_start=None, override_end=None, excluded_sentences=None,
-                 magic_hook=False, remove_silence=True, broll_intensity="Medium"):
+                 magic_hook=False, remove_silence=True, broll_intensity="Medium",
+                 all_sentences=None):
 
     ui_logger.log("Initializing render pipeline...")
     os.makedirs(output_dir, exist_ok=True)
@@ -181,7 +182,22 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         base_et = float(override_end) if override_end is not None else float(clip_data.get("end_time", 0))
 
         excluded_ranges = []
-        if excluded_sentences:
+        if excluded_sentences and all_sentences:
+            for ex_str in excluded_sentences:
+                try:
+                    idx = all_sentences.index(ex_str)
+                    st_str = ex_str.split("s]")[0].replace("[", "").strip()
+                    st_val = float(st_str)
+                    
+                    if idx + 1 < len(all_sentences):
+                        next_st_str = all_sentences[idx+1].split("s]")[0].replace("[", "").strip()
+                        et_val = float(next_st_str)
+                    else:
+                        et_val = base_et
+                        
+                    excluded_ranges.append({"start": st_val - 0.1, "end": et_val - 0.1})
+                except: pass
+        elif excluded_sentences:
             for ex_str in excluded_sentences:
                 try:
                     st_str = ex_str.split("s]")[0].replace("[", "").strip()
