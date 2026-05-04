@@ -21,16 +21,18 @@ if os.path.exists("/usr/share/fonts/truetype") and not os.path.exists(FONT_PATH)
 def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2" 
+        return "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
 
     cap.set(cv2.CAP_PROP_POS_MSEC, time_offset * 1000)
     ret, frame = cap.read()
     cap.release()
 
     if not ret:
-        return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
+        return "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
 
     h, w = frame.shape[:2]
+    crop_w = int(h * 9 / 16)
+    crop_h = h
 
     try:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -43,12 +45,12 @@ def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
             fx, fy, fw, fh = faces[0]
             face_center_x = fx + (fw // 2)
 
-            crop_x = max(0, min(w - target_w, face_center_x - (target_w // 2)))
-            return str(int(crop_x)), f"(in_h-{target_h})/2"
+            crop_x = max(0, min(w - crop_w, face_center_x - (crop_w // 2)))
+            return str(int(crop_x)), "0", str(crop_w), str(crop_h)
     except Exception as e:
         pass
 
-    return f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
+    return "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
 
 
 def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Hormozi", position="Center", **kwargs):
@@ -237,23 +239,33 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         is_peak = (seg_st <= float(clip_data.get("peak_moment", 0)) <= seg_et)
 
-        crop_x, crop_y = "0", "0"
+        crop_x, crop_y, crop_w, crop_h = "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
         if face_center:
-            crop_x, crop_y = _get_crop_params(input_video, seg_st, target_w, target_h)
+            crop_params = _get_crop_params(input_video, seg_st, target_w, target_h)
+            if len(crop_params) == 4:
+                crop_x, crop_y, crop_w, crop_h = crop_params
+            else:
+                crop_x, crop_y = crop_params
         else:
-            crop_x, crop_y = f"(in_w-{target_w})/2", f"(in_h-{target_h})/2"
+            crop_x, crop_y = "in_w/2-ih*9/32", "0"
 
         if is_peak and face_center:
             try:
                 z_f = 1.2
-                cw, ch = int(target_w / z_f), int(target_h / z_f)
-                cx = int(float(crop_x) + (target_w - cw)/2)
-                cy = int(float(crop_y) + (target_h - ch)/2)
+                cw = int(float(crop_w) / z_f) if crop_w.isdigit() else "ih*9/16/1.2"
+                ch = int(float(crop_h) / z_f) if crop_h.isdigit() else "ih/1.2"
+                
+                if crop_x.isdigit() and crop_w.isdigit():
+                    cx = int(float(crop_x) + (float(crop_w) - float(cw))/2)
+                else:
+                    cx = crop_x
+                    
+                cy = "0"
                 base_crop = f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h}"
             except:
-                base_crop = f"crop={target_w}:{target_h}:{crop_x}:{crop_y}"
+                base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}"
         else:
-            base_crop = f"crop={target_w}:{target_h}:{crop_x}:{crop_y}"
+            base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}"
 
         seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
 

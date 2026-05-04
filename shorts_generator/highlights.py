@@ -194,58 +194,6 @@ def _build_text(transcript_data) -> tuple:
     return str(transcript_data), []
 
 
-def conceptualize_video(
-    transcript_data,
-    llm_path: str = "",
-    gpu_layers: int = 35,
-    language: str = "",
-) -> list:
-    """Reads the first 25k chars and suggests 3-4 specific strategies for this video."""
-    text, _ = _build_text(transcript_data)
-    if not llm_path:
-        raise RuntimeError("llm_path is required.")
-
-    llm = _get_llm(llm_path, gpu_layers)
-    lang_hint = f" Transcript language: {language}." if language else ""
-
-    system = (
-        "You are an elite viral content strategist."
-        f"{lang_hint} Output ONLY raw JSON arrays. No markdown, no prose."
-    )
-
-    schema = (
-        '[\n'
-        '  {\n'
-        '    "id": "strategy_1",\n'
-        '    "title": "The Controversial Debate Angle",\n'
-        '    "description": "Focus strictly on the moments where he argues against the standard diet advice. These clips will anger some and validate others, driving comments.",\n'
-        '    "estimated_clips": 6\n'
-        '  }\n'
-        ']'
-    )
-
-    chunk = text[:25000]
-    ui_logger.log("AI conceptualizing video strategy...")
-
-    prompt = (
-        "Read the following video transcript and formulate 3-4 distinct content strategies for extracting viral shorts from it.\n"
-        "Do not use generic templates. Read the actual content, figure out what the unique hooks are, and build strategies around them.\n\n"
-        f"Transcript:\n{chunk}\n\n"
-        f"Respond ONLY with a JSON array:\n{schema}"
-    )
-
-    try:
-        results = _query_llm(llm, system, prompt)
-        if results and isinstance(results, list):
-            ui_logger.log(f"Formulated {len(results)} custom strategies.")
-            return results
-    except Exception as e:
-        ui_logger.log(f"Conceptualization failed: {e}")
-        
-    return [
-        {"id": "default", "title": "Standard Virality Pass", "description": "Extract the best overall moments based on engagement signals.", "estimated_clips": 10}
-    ]
-
 def get_highlights(
     transcript_data,
     num_clips: int = 5,
@@ -270,7 +218,7 @@ def get_highlights(
     lang_hint = f" Transcript language: {language}." if language else ""
 
     system = (
-        "You are an elite viral content strategist for TikTok, Instagram Reels, and YouTube Shorts."
+        "You are an elite AI director for TikTok, Instagram Reels, and YouTube Shorts."
         f"{lang_hint} Output ONLY raw JSON arrays. No prose, no markdown, no explanation whatsoever."
     )
 

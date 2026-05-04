@@ -208,13 +208,13 @@ def strategize_video(url):
     while t.is_alive():
         time.sleep(0.5)
         logs = ui_logger.get_full_log() or "Conceptualizing video..."
-        yield gr.update(), gr.update(), logs, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        yield gr.update(visible=True), gr.update(), logs, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
         
     t.join()
     
     if result_container.get("status") == "error":
         logs = ui_logger.get_full_log()
-        yield gr.update(), gr.update(), f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        yield gr.update(), gr.update(), f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
     else:
         yield result_container["result"]
 
@@ -244,73 +244,42 @@ def _strategize_video_core(url):
         cached_t = cache.load_transcript(url.strip())
         _state["word_timestamps"] = cached_t[1]
 
-    # Conceptualization Phase
-    from shorts_generator.highlights import conceptualize_video
-    strategies = conceptualize_video(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"])
+    from shorts_generator.highlights import get_highlights
+    ui_logger.log("Analyzing video for the best strategic clips...")
     
-    # Build choices for Radio
-    choices = [f"{s['title']} - {s['description']} (Est. {s.get('estimated_clips', 5)} clips)" for s in strategies]
-    _state["strategies"] = choices
-    _state["strategy_data"] = strategies
+    # Run the main clip extraction pass immediately. 
+    # The AI director will find 3-5 distinct viral moments (Strategies).
+    angle_prompt = "Find 3 to 5 absolute best distinct clips in this video. Each clip must represent a completely different aspect, angle, or theme of the video."
+    result = get_highlights(_state["word_timestamps"], num_clips=5, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=5, angle=angle_prompt)
     
-    return gr.update(visible=True), gr.update(choices=choices, value=choices[0]), f"Strategizing complete.\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-
-
-def generate_clips_from_strategy(url, selected_strategy):
-    ui_logger.clear()
-    yield "", f"Extracting clips based on strategy:\n{selected_strategy}\n...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-    
-    result_container = {}
-    def worker():
-        try:
-            res = _generate_clips_core(url, selected_strategy)
-            result_container["status"] = "done"
-            result_container["result"] = res
-        except Exception as e:
-            traceback.print_exc()
-            result_container["status"] = "error"
-            result_container["error"] = str(e)
-            
-    t = threading.Thread(target=worker)
-    t.start()
-    
-    while t.is_alive():
-        time.sleep(0.5)
-        logs = ui_logger.get_full_log() or "Extracting clips..."
-        yield "", logs, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    clips = result.get("highlights", [])
+    if not clips:
+        raise ValueError("No clips found.")
         
-    t.join()
-    
-    if result_container.get("status") == "error":
-        logs = ui_logger.get_full_log()
-        yield "", f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-    else:
-        yield result_container["result"]
-
-def _generate_clips_core(url, selected_strategy):
-    llm_entry = LLM_CATALOG[0]
-    llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
-    
-    n = 5
-    strategies = _state.get("strategy_data", [])
-    for idx, choice in enumerate(_state.get("strategies", [])):
-        if choice == selected_strategy and idx < len(strategies):
-            n = strategies[idx].get("estimated_clips", 5)
-            break
-    
-    if not _state.get("word_timestamps"):
-         raise ValueError("Word timestamps not found. Run analysis first.")
-
-    result = get_highlights(_state["word_timestamps"], num_clips=n, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=20, angle=selected_strategy)
-    _state["clips"] = result.get("highlights", [])
+    _state["clips"] = clips
     cache.save_highlights(url.strip(), _state["clips"])
     cache.save_metadata(url.strip())
+    
+    # Build choices for Radio based on the clips found
+    choices = [f"Angle {i+1}: {c['title']} (Score: {c['score']})" for i, c in enumerate(clips)]
+    _state["strategies"] = choices
+    
+    return gr.update(visible=True), gr.update(choices=choices, value=None), f"Strategizing complete.\n\nLogs:\n{ui_logger.get_full_log()}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
 
-    if not _state["clips"]:
-        raise ValueError("No clips found.")
 
-    html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
-    return _cards(_state["clips"]), f"Done.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
+def load_strategy_clip(selected_strategy):
+    # Map the selected string back to the clip index
+    idx = 0
+    for i, choice in enumerate(_state.get("strategies", [])):
+        if choice == selected_strategy:
+            idx = i
+            break
+            
+    _state["current_clip_index"] = idx
+    # Get internal clip data for this clip (1-indexed for _get_internal_clip_data)
+    html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(idx + 1)
+    
+    return html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
 
 def regenerate_clips(url, num_clips, angle):
     ui_logger.clear()
@@ -337,35 +306,7 @@ def regenerate_clips(url, num_clips, angle):
         traceback.print_exc()
         yield "", f"Error: {str(e)}\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
 
-def find_stitched_clips(url):
-    ui_logger.clear()
-    yield "Scanning for story connections...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-    
-    try:
-        if not url or not _state.get("word_timestamps"):
-            raise ValueError("Please analyze a video first.")
-            
-        llm_entry = LLM_CATALOG[0]
-        llm_path = os.path.join(LLM_DIR, llm_entry["filename"])
-        
-        result = get_stitched_clips(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_stitched=5)
-        
-        stitched = result.get("highlights", [])
-        if stitched:
-            _state["clips"] = stitched + _state["clips"] # Put them at the top
-            cache.save_highlights(url.strip(), _state["clips"])
-            
-            html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
-            yield _cards(_state["clips"]), f"Done.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
-        else:
-            # We must yield 10 arguments to match the outputs
-            yield _cards(_state["clips"]), f"No story connections found.\n\nLogs:\n{ui_logger.get_full_log()}", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-            
-    except Exception as e:
-        traceback.print_exc()
-        yield "", f"Error: {str(e)}\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
-
-def render_clip(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options):
+def render_clip(face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options):
     ui_logger.clear()
     yield None, "Initializing render..."
     
@@ -373,7 +314,7 @@ def render_clip(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st
     
     def worker():
         try:
-            res = _render_clip_core(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options)
+            res = _render_clip_core(face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options)
             result_container["status"] = "done"
             result_container["result"] = res
         except Exception as e:
@@ -397,12 +338,13 @@ def render_clip(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st
     else:
         yield result_container["result"]
 
-def _render_clip_core(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options):
+def _render_clip_core(face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options):
     if not _state["clips"]:
-        raise ValueError("Analyse a video first.")
-    idx = int(clip_num) - 1
-    if idx < 0 or idx >= len(_state["clips"]):
-        raise ValueError("Invalid clip number.")
+        raise ValueError("No clips available to render.")
+        
+    idx = _state.get("current_clip_index", 0)
+    if idx >= len(_state["clips"]):
+        idx = 0
         
     clip = _state["clips"][idx]
     input_mp4 = os.path.join(WORK_DIR, "source.mp4")
@@ -508,14 +450,11 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
             analyze_btn = gr.Button("Strategize Video", variant="primary")
             
             with gr.Group(visible=False) as strategy_group:
-                strategy_radio = gr.Radio(choices=[], label="Select Content Strategy")
-                generate_btn = gr.Button("Generate Clips from Strategy", variant="primary")
+                strategy_radio = gr.Radio(choices=[], label="Select AI Director Strategy")
             
             status_box = gr.Textbox(label="Status", interactive=False, lines=10)
 
         with gr.Column(scale=8, elem_classes="main-content"):
-            clips_html = gr.HTML("<div style='padding:40px;text-align:center;color:#444;border:1px dashed #222;border-radius:12px;'>Awaiting video URL...</div>")
-            
             with gr.Group(visible=False) as editor_group:
                 gr.HTML("<h2 style='margin:20px 0 10px 0;font-size:18px;'>Edit & Render</h2>")
                 with gr.Row():
@@ -526,8 +465,6 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
                             transcript_options_hidden = gr.State([])
                             
                     with gr.Column(scale=5):
-                        clip_num = gr.Number(value=1, label="Selected Clip", precision=0, minimum=1, maximum=20, elem_id="clip-sel", elem_classes="hidden-clip-sel")
-                        
                         with gr.Accordion("Timeline Edit", open=False):
                             gr.HTML("<p style='font-size:11px;color:#888;margin:0 0 10px 0;'>Adjust Master Bounds. (Or use Transcript Editor on the left to cut out middle sections).</p>")
                             with gr.Row():
@@ -571,16 +508,13 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
         return gr.update(choices=choices, value=choices[0] if choices else None)
         
     analyze_btn.click(strategize_video, [url_input],
-                      [strategy_group, strategy_radio, status_box, clips_html, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb])
+                      [strategy_group, strategy_radio, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb])
                       
-    generate_btn.click(generate_clips_from_strategy, [url_input, strategy_radio],
-                      [clips_html, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
-                      store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
-                      
-    clip_num.change(on_clip_select, [clip_num], [detail_html, st_override, et_override, cap_style, cap_pos, bg_music, transcript_cb]).then(
-                      store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
+    strategy_radio.change(load_strategy_clip, [strategy_radio],
+                          [detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb]).then(
+                          store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
     
-    render_btn.click(render_clip, [clip_num, face_cb, magic_hook_cb, remove_silence_cb, st_override, et_override, cap_style, cap_pos, bg_music, broll_int, transcript_cb, transcript_options_hidden], [video_preview, render_status])
+    render_btn.click(render_clip, [face_cb, magic_hook_cb, remove_silence_cb, st_override, et_override, cap_style, cap_pos, bg_music, broll_int, transcript_cb, transcript_options_hidden], [video_preview, render_status])
     
     refresh_library_btn.click(populate_library, outputs=[library_dropdown])
     library_dropdown.change(update_library_view, inputs=[library_dropdown], outputs=[library_video, library_file])
