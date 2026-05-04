@@ -3,9 +3,11 @@ import sys
 import uuid
 import time
 import asyncio
+import datetime as _dt
 from typing import List, Optional
 from fastapi import FastAPI, BackgroundTasks, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Ensure repo root is in sys.path
@@ -38,6 +40,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve rendered clips as static media
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+app.mount("/media", StaticFiles(directory=OUTPUT_DIR), name="media")
 
 # In-memory state for the active project
 _state = {
@@ -270,6 +276,17 @@ async def render(req: RenderRequest, background_tasks: BackgroundTasks):
 async def get_gallery():
     import glob
     files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
-    # Sort by creation time
     files.sort(key=os.path.getmtime, reverse=True)
-    return [{"filename": os.path.basename(f), "path": f} for f in files]
+    result = []
+    for f in files:
+        try:
+            stat = os.stat(f)
+            result.append({
+                "filename": os.path.basename(f),
+                "url": f"/media/{os.path.basename(f)}",
+                "size_mb": round(stat.st_size / (1024 * 1024), 1),
+                "created_at": _dt.datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %H:%M"),
+            })
+        except OSError:
+            continue
+    return result
