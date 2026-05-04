@@ -205,10 +205,20 @@ def _analyze_video_core(url, num_clips):
     cached_h = cache.load_highlights(url.strip())
     cached_t = cache.load_transcript(url.strip())
     if cached_h and cached_t:
-        ui_logger.log("Loaded from cache.")
+        ui_logger.log("Loaded highlights + transcript from cache.")
         _state["clips"] = cached_h
         _state["word_timestamps"] = cached_t[1]
         _state["current_url"] = url.strip()
+
+        # Work dir is ephemeral (Colab session restart wipes /content/work).
+        # Re-download the video if it's missing so Render doesn't fail.
+        source_mp4 = os.path.join(WORK_DIR, "source.mp4")
+        if not os.path.exists(source_mp4):
+            ui_logger.log("source.mp4 not found in work dir — re-downloading video...")
+            download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
+        else:
+            ui_logger.log("source.mp4 already present. Ready to render.")
+
         html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
         return _cards(_state["clips"]), f"Loaded from cache.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
 
