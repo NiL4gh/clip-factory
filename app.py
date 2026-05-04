@@ -189,7 +189,7 @@ def analyze_video(url, num_clips):
             traceback.print_exc()
 def strategize_video(url):
     ui_logger.clear()
-    yield gr.update(visible=True), gr.update(choices=[], value=None), "Initializing AI strategy phase...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    yield gr.update(visible=True), gr.update(choices=[], value=None), "Initializing AI strategy phase...", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
     
     result_container = {}
     def worker():
@@ -208,13 +208,13 @@ def strategize_video(url):
     while t.is_alive():
         time.sleep(0.5)
         logs = ui_logger.get_full_log() or "Conceptualizing video..."
-        yield gr.update(), gr.update(), logs, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        yield gr.update(), gr.update(), logs, "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
         
     t.join()
     
     if result_container.get("status") == "error":
         logs = ui_logger.get_full_log()
-        yield gr.update(), gr.update(), f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+        yield gr.update(), gr.update(), f"Error: {result_container.get('error')}\n\nLogs:\n{logs}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
     else:
         yield result_container["result"]
 
@@ -252,7 +252,7 @@ def _strategize_video_core(url):
     choices = [f"{s['title']} - {s['description']}" for s in strategies]
     _state["strategies"] = choices
     
-    return gr.update(visible=True), gr.update(choices=choices, value=choices[0]), f"Strategizing complete.\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
+    return gr.update(visible=True), gr.update(choices=choices, value=choices[0]), f"Strategizing complete.\n\nLogs:\n{ui_logger.get_full_log()}", "", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
 
 
 def generate_clips_from_strategy(url, num_clips, selected_strategy):
