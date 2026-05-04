@@ -64,6 +64,50 @@ def _query_llm(llm, system: str, prompt: str) -> list:
         return parsed.get("highlights", [parsed])
     return []
 
+def _refine_clip(llm, system: str, schema: str, clip: dict, lines: list) -> dict:
+    st = float(clip.get("start_time", 0))
+    et = float(clip.get("end_time", 0))
+    margin = 10
+    
+    clip_text = []
+    for line in lines:
+        m = re.match(r'^\[([\d\.]+)s\]', line.strip())
+        if m:
+            t = float(m.group(1))
+            if st - margin <= t <= et + margin:
+                clip_text.append(line)
+                
+    if not clip_text:
+        return clip
+        
+    segment_text = "\n".join(clip_text)
+    
+    ui_logger.log(f"Refining clip '{clip.get('title', 'Untitled')}' (duration {int(et-st)}s) down to 30-90s...")
+    prompt = (
+        f"{VIRALITY_CRITERIA}\n\n"
+        f"This segment is too long. Extract the SINGLE most engaging, viral 30 to 90 second sub-clip from this exact segment.\n"
+        f"It MUST be less than 90 seconds. Do not exceed 90 seconds.\n"
+        f"Identify 'peak_moment', 'theme', 'broll_keywords', and 'emoji_moments' as before.\n\n"
+        f"Segment:\n{segment_text}\n\n"
+        f"Respond ONLY with a JSON array containing ONE element:\n{schema}"
+    )
+    
+    try:
+        results = _query_llm(llm, system, prompt)
+        if results and len(results) > 0:
+            new_clip = results[0]
+            new_st = float(new_clip.get("start_time", 0))
+            new_et = float(new_clip.get("end_time", 0))
+            if 15 <= (new_et - new_st) <= 120:
+                if not new_clip.get("title") or len(new_clip.get("title", "")) < 5:
+                    new_clip["title"] = clip.get("title", "Refined Clip")
+                return new_clip
+    except Exception as e:
+        ui_logger.log(f"Refinement failed: {e}")
+        
+    return clip
+
+
 def get_highlights(
     transcript_data,
     num_clips: int = 5,
@@ -142,11 +186,18 @@ def get_highlights(
 
     ui_logger.log(f"LLM extracted {len(all_highlights)} potential clips. Processing and scoring...")
     valid = []
+    lines = text.split('\n')
     for h in all_highlights:
         try:
             st = float(h.get("start_time", 0))
             et = float(h.get("end_time", 0))
             dur = et - st
+
+            if dur > 90:
+                h = _refine_clip(llm, system, schema, h, lines)
+                st = float(h.get("start_time", 0))
+                et = float(h.get("end_time", 0))
+                dur = et - st
 
             if dur >= 15:
                 h["duration"] = dur

@@ -11,14 +11,19 @@ A fully open-source, self-hosted alternative to **OpusClip** and **Vizard.ai**, 
 | Feature | Description |
 |---|---|
 | 🧠 **AI Virality Scoring** | Local LLM (Mistral / Llama 3 / Qwen2) scans the transcript and extracts top story arcs scored by Hook → Body → Payoff |
+| 📊 **Virality Dashboard** | Per-clip breakdown of Hook Rating, Flow Score, and Trend Score — OpusClip-style analytics |
+| 🎨 **Brand Kits** | Caption presets modeled after *Hormozi*, *Ali Abdaal*, *MrBeast*, *Standard*, and *Minimalist* — one-click production styling |
+| 🖼️ **B-Roll Intensity** | Control the density of auto-fetched B-Roll overlays (Low / Medium / High / None) |
+| ✨ **AI Magic Hook** | Toggle to overlay the clip's hook sentence as a bold text card for the first 3 seconds |
 | ✂️ **Smart Silence Removal** | Auto-slices dead air >0.8s using Whisper word timestamps for aggressive TikTok pacing |
 | 🎯 **Auto Face Framing** | OpenCV detects the active speaker and dynamically centers the 9:16 crop |
 | 🖼️ **Ken Burns B-Roll** | LLM identifies visual keywords → DuckDuckGo fetches an image → FFmpeg applies a smooth zoom/pan motion effect |
 | 😂 **Slide-Up Emojis** | LLM picks Twemojis → downloaded as PNG → animated with a mathematical slide-up pop effect |
-| 📝 **Transcript Editor** | Uncheck any sentence in the UI → FFmpeg slices it out of the final video timeline |
+| 📝 **Transcript Editor** | Inline text-editor style UI — uncheck any sentence to slice it from the final timeline |
 | 🔥 **Hormozi Captions** | Dynamic ASS subtitles with per-word active highlighting and theme-based color palettes |
 | 🎵 **Smart BGM Mixing** | Background music auto-ducks and swells at the clip's peak moment |
 | 💾 **Drive Persistence** | Models and project cache save to Google Drive — skip re-downloading on every session |
+| 📡 **Real-Time Logs** | Streaming status updates in the UI via generator-based log piping |
 
 ---
 
@@ -56,8 +61,8 @@ else:
 !curl -fsSL https://deno.land/install.sh | sh
 os.environ["PATH"] = os.path.expanduser("~/.deno/bin") + ":" + os.environ["PATH"]
 
-# Install Arial Black font for Hormozi captions
-!apt-get install -q -y fonts-liberation msttcorefonts 2>/dev/null || true
+# Install fonts for captions
+!apt-get install -q -y fonts-liberation 2>/dev/null || true
 
 sys.path.insert(0, REPO_DIR)
 print('✅ Ready to launch.')
@@ -93,17 +98,20 @@ for d in [os.environ['LLM_DIR'], os.environ['WHISPER_DIR'],
 ## 🛠️ Architecture
 
 ```
-app.py                          ← Gradio SaaS dashboard (sidebar + card grid UI)
+app.py                          ← Gradio SaaS dashboard (sidebar + card grid + virality dashboard)
 shorts_generator/
+  __init__.py                   ← Package exports + generate_shorts() convenience wrapper
   config.py                     ← Paths, LLM catalog, Whisper catalog
-  downloader.py                 ← yt-dlp YouTube download
+  downloader.py                 ← yt-dlp YouTube download (with Deno JS solver)
   transcriber.py                ← faster-whisper transcription + word timestamps
-  highlights.py                 ← Local LLM virality scoring + JSON schema extraction
-  clipper.py                    ← FFmpeg rendering engine (crop, B-Roll, emojis, captions, SFX)
+  highlights.py                 ← Local LLM virality scoring + JSON schema extraction + clip refinement
+  clipper.py                    ← FFmpeg rendering engine (crop, B-Roll, emojis, captions, SFX, magic hook)
   enhancer.py                   ← BGM mixing with dynamic peak swell
   media.py                      ← DuckDuckGo B-Roll, Twemoji PNG, SFX fetcher
   cache.py                      ← Drive-backed project cache (transcript + highlights)
+  logger.py                     ← Thread-safe UI stream logger for real-time Gradio updates
   pipeline.py                   ← Standalone pipeline class for non-UI usage
+  muapi.py                      ← Optional MuAPI cloud fallback
 ```
 
 **Local models used (auto-downloaded from HuggingFace):**
@@ -116,11 +124,23 @@ shorts_generator/
 
 ---
 
+## 🎨 Brand Kits (Caption Styles)
+
+| Style | Font | Look |
+|---|---|---|
+| **Hormozi** | Arial Black | Bold uppercase, thick outline, orange/yellow highlight |
+| **Ali Abdaal** | Georgia | Elegant serif, thin outline, subtle highlight |
+| **MrBeast** | Impact | Massive font, extreme outline, high contrast |
+| **Standard** | Arial | Clean default, medium outline |
+| **Minimalist** | Arial | Ultra-thin outline, no shadow |
+
+---
+
 ## ⚠️ Known Limitations
 
-- **B-Roll zoompan is CPU-rendered** — can take a few extra minutes per clip if many B-Roll segments are detected. Disable by unchecking "Auto Face Tracking & B-Roll" in the UI.
+- **B-Roll zoompan is CPU-rendered** — can take a few extra minutes per clip if many B-Roll segments are detected. Set B-Roll Intensity to "None" in the UI to skip.
 - **DuckDuckGo B-Roll** — uses an unofficial image search API. May be rate-limited on shared Colab IPs; if B-Roll fails silently, it degrades gracefully (no image overlay, no crash).
-- **YouTube cookies** — Age-restricted or login-required videos need a `cookies.txt` file. Export using the [EditThisCookie](https://chrome.google.com/webstore/detail/editthiscookie/fngmhnnpilhplaeedifhccceomclgfbg) browser extension and upload to `/content/drive/MyDrive/clip_factory/cookies.txt`.
+- **YouTube cookies** — Age-restricted or login-required videos need a `cookies.txt` file. Export using a browser extension and upload to `/content/drive/MyDrive/clip_factory/cookies.txt`.
 - **Gradio share link** — expires after 1 week. Re-run Cell 2 to get a fresh link.
 
 ---

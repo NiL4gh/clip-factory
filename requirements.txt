@@ -9,10 +9,13 @@ gradio>=4.0
 
 # Video
 opencv-python-headless>=4.8
-moviepy>=1.0.3
 
 # Transcription (GPU-accelerated)
 faster-whisper>=1.0
+torch>=2.0
+
+# Media fetching (B-Roll images via DuckDuckGo)
+duckduckgo-search>=5.0
 
 # LLM — installed separately in setup.sh with CUDA flags
 # llama-cpp-python

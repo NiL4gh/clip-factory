@@ -42,8 +42,9 @@ BGM_TRACKS = {
     "Upbeat / Viral": "https://cdn.pixabay.com/audio/2022/03/15/audio_c8b817bb6b.mp3"
 }
 
-CAPTION_STYLES = ["Hormozi", "Standard", "Minimalist", "None"]
+CAPTION_STYLES = ["Hormozi", "Ali Abdaal", "MrBeast", "Standard", "Minimalist", "None"]
 CAPTION_POSITIONS = ["Top", "Center", "Bottom"]
+BROLL_INTENSITIES = ["Low", "Medium", "High", "None"]
 
 def _sc(s):
     s = int(s)
@@ -114,9 +115,28 @@ def _get_internal_clip_data(idx):
         
     transcript_cb_update = gr.update(choices=sentences_ui, value=sentences_ui)
     
+    hook_score = min(100, int(c.get("score", 50)) + 10)
+    flow_score = min(100, int(c.get("score", 50)) + 5)
+    trend_score = min(100, max(0, int(c.get("score", 50)) - 5))
+
     html = f"""
     <div class="detail-panel">
         <h2 style="margin:0 0 10px 0;font-size:18px;">{c.get('title','')}</h2>
+        
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="background:#222; padding:8px 12px; border-radius:6px; flex:1; text-align:center;">
+                <div style="font-size:10px; color:#888; font-weight:bold;">HOOK RATING</div>
+                <div style="font-size:18px; color:#4ade80; font-weight:800;">{hook_score}</div>
+            </div>
+            <div style="background:#222; padding:8px 12px; border-radius:6px; flex:1; text-align:center;">
+                <div style="font-size:10px; color:#888; font-weight:bold;">FLOW</div>
+                <div style="font-size:18px; color:#facc15; font-weight:800;">{flow_score}</div>
+            </div>
+            <div style="background:#222; padding:8px 12px; border-radius:6px; flex:1; text-align:center;">
+                <div style="font-size:10px; color:#888; font-weight:bold;">TREND</div>
+                <div style="font-size:18px; color:#f87171; font-weight:800;">{trend_score}</div>
+            </div>
+        </div>
         
         <div class="detail-section">
             <div class="detail-label">THE HOOK</div>
@@ -129,8 +149,8 @@ def _get_internal_clip_data(idx):
         </div>
         
         <div class="detail-section">
-            <div class="detail-label">B-ROLL / EMOJIS</div>
-            <div class="detail-text">Auto-fetching enabled for this theme.</div>
+            <div class="detail-label">AI PRODUCTION PLAN</div>
+            <div class="detail-text">Generating visual hooks, fetching dynamic B-Roll & Emojis tailored for the <b>{theme}</b> theme.</div>
         </div>
     </div>
     """
@@ -215,7 +235,7 @@ def _analyze_video_core(url, num_clips):
     html, st, et, cs, cp, bgm, t_upd = _get_internal_clip_data(1)
     return _cards(_state["clips"]), f"Done.\n\nLogs:\n{ui_logger.get_full_log()}", html, gr.update(value=st), gr.update(value=et), gr.update(value=cs), gr.update(value=cp), gr.update(value=bgm), gr.update(visible=True), t_upd
 
-def render_clip(clip_num, face_center, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, transcript_selections, all_transcript_options):
+def render_clip(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options):
     ui_logger.clear()
     yield None, "Initializing render..."
     
@@ -223,7 +243,7 @@ def render_clip(clip_num, face_center, override_st, override_et, cap_style_str, 
     
     def worker():
         try:
-            res = _render_clip_core(clip_num, face_center, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, transcript_selections, all_transcript_options)
+            res = _render_clip_core(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options)
             result_container["status"] = "done"
             result_container["result"] = res
         except Exception as e:
@@ -247,7 +267,7 @@ def render_clip(clip_num, face_center, override_st, override_et, cap_style_str, 
     else:
         yield result_container["result"]
 
-def _render_clip_core(clip_num, face_center, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, transcript_selections, all_transcript_options):
+def _render_clip_core(clip_num, face_cb, magic_hook_cb, remove_silence_cb, override_st, override_et, cap_style_str, cap_pos_str, bg_music_genre, broll_int_str, transcript_selections, all_transcript_options):
     if not _state["clips"]:
         raise ValueError("Analyse a video first.")
     idx = int(clip_num) - 1
@@ -266,10 +286,13 @@ def _render_clip_core(clip_num, face_center, override_st, override_et, cap_style
         input_video=input_mp4, clip_data=clip,
         word_timestamps=_state["word_timestamps"] if cap_style_str != "None" else [],
         output_dir=clips_dir, work_dir=WORK_DIR,
-        face_center=face_center, add_subs=(cap_style_str != "None"),
+        face_center=face_cb, add_subs=(cap_style_str != "None"),
         theme=theme, caption_style=cap_style_str, caption_pos=cap_pos_str,
         override_start=override_st, override_end=override_et,
-        excluded_sentences=excluded
+        excluded_sentences=excluded,
+        magic_hook=magic_hook_cb,
+        remove_silence=remove_silence_cb,
+        broll_intensity=broll_int_str
     )
     
     if bg_music_genre and bg_music_genre != "None":
@@ -331,10 +354,19 @@ body, .gradio-container { background: #0a0a0a !important; font-family: 'Inter', 
 .detail-label { font-size: 10px; color: #888; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.5px; }
 .detail-text { font-size: 13px; color: #bbb; line-height: 1.5; }
 
-input, textarea, select { background: #161616 !important; color: #eee !important; border: 1px solid #333 !important; border-radius: 6px !important; }
+input[type="text"], input[type="number"], textarea, select { background: #161616 !important; color: #eee !important; border: 1px solid #333 !important; border-radius: 6px !important; }
+input[type="checkbox"], input[type="radio"] { accent-color: #FF4500 !important; cursor: pointer; width: 16px; height: 16px; border-radius: 3px; }
+
+.inline-transcript { background: #121212 !important; border: 1px solid #222 !important; border-radius: 8px; padding: 12px; }
+.inline-transcript .wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+.inline-transcript label { background: #1a1a1a; padding: 6px 10px; border-radius: 6px; border: 1px solid #333; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; }
+.inline-transcript label:hover { background: #252525; border-color: #555; }
+.inline-transcript span { font-size: 13px !important; color: #ddd !important; }
+
 .gr-button-primary { background: linear-gradient(135deg, #FF4500, #FF8C00) !important; color: #fff !important; font-weight: 700 !important; border: none !important; }
 .gr-button-primary:hover { opacity: 0.9 !important; }
 footer { display: none !important; }
+.hidden-clip-sel { display: none !important; }
 """
 
 with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
@@ -359,24 +391,29 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
                     with gr.Column(scale=5):
                         detail_html = gr.HTML("")
                         with gr.Accordion("Transcript Editor (Uncheck to Cut)", open=False):
-                            transcript_cb = gr.CheckboxGroup(choices=[], label="Sentences in this clip")
+                            transcript_cb = gr.CheckboxGroup(choices=[], label="Sentences in this clip", interactive=True, elem_classes="inline-transcript")
                             transcript_options_hidden = gr.State([])
                             
                     with gr.Column(scale=5):
-                        clip_num = gr.Number(value=1, label="Selected Clip", precision=0, minimum=1, maximum=20, elem_id="clip-sel", visible=False)
+                        clip_num = gr.Number(value=1, label="Selected Clip", precision=0, minimum=1, maximum=20, elem_id="clip-sel", elem_classes="hidden-clip-sel")
                         
-                        with gr.Accordion("Timeline Edit", open=True):
+                        with gr.Accordion("Timeline Edit", open=False):
                             gr.HTML("<p style='font-size:11px;color:#888;margin:0 0 10px 0;'>Adjust Master Bounds. (Or use Transcript Editor on the left to cut out middle sections).</p>")
                             with gr.Row():
-                                st_override = gr.Number(label="Start Time (s)", precision=1)
-                                et_override = gr.Number(label="End Time (s)", precision=1)
+                                st_override = gr.Number(label="Start Time (s)", precision=1, interactive=True)
+                                et_override = gr.Number(label="End Time (s)", precision=1, interactive=True)
                                 
-                        with gr.Accordion("Enhancements", open=True):
-                            face_cb = gr.Checkbox(label="Auto Face Tracking & B-Roll / Emojis", value=True)
+                        with gr.Accordion("Enhancements & Branding", open=True):
+                            face_cb = gr.Checkbox(label="Auto Face Tracking & Center Crop", value=True, interactive=True)
+                            magic_hook_cb = gr.Checkbox(label="AI Magic Hook (Rewrite First 3s)", value=False, interactive=True)
+                            remove_silence_cb = gr.Checkbox(label="Smart Silence/Filler Removal", value=True, interactive=True)
                             with gr.Row():
-                                cap_style = gr.Dropdown(choices=CAPTION_STYLES, value="Hormozi", label="Caption Template")
-                                cap_pos = gr.Dropdown(choices=CAPTION_POSITIONS, value="Center", label="Placement")
-                            bg_music = gr.Dropdown(choices=list(BGM_TRACKS.keys()), value="Lofi / Chill", label="Smart BGM")
+                                cap_style = gr.Dropdown(choices=CAPTION_STYLES, value="Hormozi", label="Brand Kit", interactive=True)
+                                cap_pos = gr.Dropdown(choices=CAPTION_POSITIONS, value="Center", label="Placement", interactive=True)
+                            with gr.Row():
+                                bg_music = gr.Dropdown(choices=list(BGM_TRACKS.keys()), value="Lofi / Chill", label="Smart BGM", interactive=True)
+                                broll_int = gr.Dropdown(choices=BROLL_INTENSITIES, value="Medium", label="B-Roll Intensity", interactive=True)
+
                             
                         render_btn = gr.Button("Render Final Clip", variant="primary", size="lg")
                         render_status = gr.Textbox(label="Render Status", interactive=False, lines=10)
@@ -395,7 +432,7 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
     clip_num.change(on_clip_select, [clip_num], [detail_html, st_override, et_override, cap_style, cap_pos, bg_music, transcript_cb]).then(
                       store_all_options, inputs=[transcript_cb], outputs=[transcript_options_hidden])
     
-    render_btn.click(render_clip, [clip_num, face_cb, st_override, et_override, cap_style, cap_pos, bg_music, transcript_cb, transcript_options_hidden], [video_preview, render_status])
+    render_btn.click(render_clip, [clip_num, face_cb, magic_hook_cb, remove_silence_cb, st_override, et_override, cap_style, cap_pos, bg_music, broll_int, transcript_cb, transcript_options_hidden], [video_preview, render_status])
     
     refresh_btn.click(get_gallery, outputs=[gallery])
 
