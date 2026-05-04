@@ -196,7 +196,7 @@ def on_clip_select(n):
     html, st, et, c_style, c_pos, bgm, transcript_update = _get_internal_clip_data(n)
     return html, gr.update(value=st), gr.update(value=et), gr.update(value=c_style), gr.update(value=c_pos), gr.update(value=bgm), transcript_update
 
-def strategize_video(url, angle, llm_sel, whisper_sel):
+def strategize_video(url, llm_sel, whisper_sel):
     """Generator-based strategy function for real-time log streaming to Gradio UI."""
     ui_logger.clear()
     yield gr.update(visible=False), gr.update(), "Initializing AI strategy phase...", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update(), gr.update()
@@ -205,7 +205,7 @@ def strategize_video(url, angle, llm_sel, whisper_sel):
 
     def worker():
         try:
-            res = _strategize_video_core(url, angle, llm_sel, whisper_sel)
+            res = _strategize_video_core(url, llm_sel, whisper_sel)
             result_container["status"] = "done"
             result_container["result"] = res
         except Exception as e:
@@ -230,7 +230,7 @@ def strategize_video(url, angle, llm_sel, whisper_sel):
         yield result_container["result"]
 
 
-def _strategize_video_core(url, angle, llm_label, whisper_label):
+def _strategize_video_core(url, llm_label, whisper_label):
     """Heavy-lifting core that runs in a background thread."""
     if not url or not url.strip():
         raise ValueError("Enter a YouTube URL.")
@@ -276,7 +276,20 @@ def _strategize_video_core(url, angle, llm_label, whisper_label):
     _state["persona"] = persona
 
     # Pass 1: Strategic extraction
-    ui_logger.log(f"Phase 1/2: Extracting strategic clips (Angle: {angle})...")
+    # Map persona to angle
+    detected_genre = persona.get('genre', '').lower()
+    if 'education' in detected_genre or 'tutorial' in detected_genre:
+        angle = "educational"
+    elif 'debate' in detected_genre or 'argument' in detected_genre or 'controversial' in detected_genre:
+        angle = "controversial"
+    elif 'motivat' in detected_genre:
+        angle = "motivational"
+    elif 'story' in detected_genre:
+        angle = "storytelling"
+    else:
+        angle = "whop_rewards"
+
+    ui_logger.log(f"Phase 1/2: Extracting strategic clips (Auto-Angle: {angle})...")
     standard_result = get_highlights(_state["word_timestamps"], num_clips=5, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=5, angle=angle)
 
     # Pass 2: Story stitching (Q&A / Arcs)
@@ -737,7 +750,6 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
             
             gr.HTML("<div style='margin-top:20px;margin-bottom:10px;font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;'>New Project</div>")
             url_input = gr.Textbox(placeholder="Paste YouTube URL...", label="Video Source", lines=1)
-            angle_input = gr.Dropdown(choices=list(STRATEGY_ANGLES.keys()), value="whop_rewards", label="AI Director Vibe")
             
             with gr.Accordion("AI Model Settings", open=False):
                 llm_input = gr.Dropdown(choices=[m["label"] for m in LLM_CATALOG], value=LLM_CATALOG[0]["label"], label="LLM (Strategy & Logic)")
@@ -824,7 +836,7 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
         html = _gallery_html(files)
         return html, gr.update(choices=choices, value=choices[0] if choices else None)
         
-    analyze_btn.click(strategize_video, [url_input, angle_input, llm_input, whisper_input],
+    analyze_btn.click(strategize_video, [url_input, llm_input, whisper_input],
                       [strategy_group, strategy_radio, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb, intelligence_panel])
                       
     strategy_radio.change(load_strategy_clip, [strategy_radio],
