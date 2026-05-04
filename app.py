@@ -191,7 +191,7 @@ def on_clip_select(n):
     html, st, et, c_style, c_pos, bgm, transcript_update = _get_internal_clip_data(n)
     return html, gr.update(value=st), gr.update(value=et), gr.update(value=c_style), gr.update(value=c_pos), gr.update(value=bgm), transcript_update
 
-def strategize_video(url, angle):
+def strategize_video(url, angle, llm_sel, whisper_sel):
     """Generator-based strategy function for real-time log streaming to Gradio UI."""
     ui_logger.clear()
     yield gr.update(visible=False), gr.update(), "Initializing AI strategy phase...", gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(visible=False), gr.update()
@@ -200,7 +200,7 @@ def strategize_video(url, angle):
 
     def worker():
         try:
-            res = _strategize_video_core(url, angle)
+            res = _strategize_video_core(url, angle, llm_sel, whisper_sel)
             result_container["status"] = "done"
             result_container["result"] = res
         except Exception as e:
@@ -225,14 +225,26 @@ def strategize_video(url, angle):
         yield result_container["result"]
 
 
-def _strategize_video_core(url, angle):
+def _strategize_video_core(url, angle, llm_label, whisper_label):
     """Heavy-lifting core that runs in a background thread."""
     if not url or not url.strip():
         raise ValueError("Enter a YouTube URL.")
 
-    llm_entry = LLM_CATALOG[0]  # Mistral 7B (first entry in list)
-    wsp_size  = WHISPER_CATALOG[3]["size"]  # "medium"
-    llm_path  = os.path.join(LLM_DIR, llm_entry["filename"])
+    # Find LLM in catalog
+    llm_entry = LLM_CATALOG[0] # Fallback
+    for entry in LLM_CATALOG:
+        if entry["label"] == llm_label:
+            llm_entry = entry
+            break
+            
+    # Find Whisper in catalog
+    wsp_size = "medium" # Fallback
+    for entry in WHISPER_CATALOG:
+        if entry["label"] == whisper_label:
+            wsp_size = entry["size"]
+            break
+
+    llm_path = os.path.join(LLM_DIR, llm_entry["filename"])
 
     if not os.path.exists(llm_path):
         ui_logger.log(f"Downloading LLM to {LLM_DIR}...")
@@ -686,6 +698,11 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
             gr.HTML("<div style='margin-top:20px;margin-bottom:10px;font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;'>New Project</div>")
             url_input = gr.Textbox(placeholder="Paste YouTube URL...", label="Video Source", lines=1)
             angle_input = gr.Dropdown(choices=list(STRATEGY_ANGLES.keys()), value="whop_rewards", label="AI Director Vibe")
+            
+            with gr.Accordion("AI Model Settings", open=False):
+                llm_input = gr.Dropdown(choices=[m["label"] for m in LLM_CATALOG], value=LLM_CATALOG[0]["label"], label="LLM (Strategy & Logic)")
+                whisper_input = gr.Dropdown(choices=[w["label"] for w in WHISPER_CATALOG], value=WHISPER_CATALOG[3]["label"], label="Whisper (Transcription)")
+                
             analyze_btn = gr.Button("Strategize Video", variant="primary")
             
             with gr.Group(visible=False) as strategy_group:
@@ -765,7 +782,7 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
         html = _gallery_html(files)
         return html, gr.update(choices=choices, value=choices[0] if choices else None)
         
-    analyze_btn.click(strategize_video, [url_input, angle_input],
+    analyze_btn.click(strategize_video, [url_input, angle_input, llm_input, whisper_input],
                       [strategy_group, strategy_radio, status_box, detail_html, st_override, et_override, cap_style, cap_pos, bg_music, editor_group, transcript_cb])
                       
     strategy_radio.change(load_strategy_clip, [strategy_radio],
