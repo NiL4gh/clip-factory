@@ -134,26 +134,26 @@ def _get_internal_clip_data(idx):
 
     html = f"""
     <div class="detail-panel">
-        <h2 style="margin:0 0 10px 0;font-size:18px;">{c.get('title','')}</h2>
+        <h2 style="margin:0 0 16px 0;font-size:20px;font-weight:700;color:#f8fafc;">{c.get('title','')}</h2>
         
-        <div style="display:flex; gap:10px; margin-bottom: 16px;">
-            <div style="background:#222; padding:8px 12px; border-radius:6px; flex:1; text-align:center;">
-                <div style="font-size:10px; color:#888; font-weight:bold;">HOOK RATING</div>
-                <div style="font-size:18px; color:#4ade80; font-weight:800;">{hook_score}</div>
+        <div style="display:flex; gap:12px; margin-bottom: 24px;">
+            <div class="metric-box">
+                <div class="metric-label">HOOK RATING</div>
+                <div class="metric-value" style="color:#4ade80;">{hook_score}</div>
             </div>
-            <div style="background:#222; padding:8px 12px; border-radius:6px; flex:1; text-align:center;">
-                <div style="font-size:10px; color:#888; font-weight:bold;">FLOW</div>
-                <div style="font-size:18px; color:#facc15; font-weight:800;">{flow_score}</div>
+            <div class="metric-box">
+                <div class="metric-label">FLOW</div>
+                <div class="metric-value" style="color:#facc15;">{flow_score}</div>
             </div>
-            <div style="background:#222; padding:8px 12px; border-radius:6px; flex:1; text-align:center;">
-                <div style="font-size:10px; color:#888; font-weight:bold;">TREND</div>
-                <div style="font-size:18px; color:#f87171; font-weight:800;">{trend_score}</div>
+            <div class="metric-box">
+                <div class="metric-label">TREND</div>
+                <div class="metric-value" style="color:#f87171;">{trend_score}</div>
             </div>
         </div>
         
         <div class="detail-section">
             <div class="detail-label">THE HOOK</div>
-            <div class="detail-text" style="color:#fff;">\u201c{c.get('hook_sentence','')}\u201d</div>
+            <div class="detail-text" style="color:#fff;font-size:16px;font-weight:500;font-style:italic;">\u201c{c.get('hook_sentence','')}\u201d</div>
         </div>
         
         <div class="detail-section">
@@ -163,7 +163,7 @@ def _get_internal_clip_data(idx):
         
         <div class="detail-section">
             <div class="detail-label">AI PRODUCTION PLAN</div>
-            <div class="detail-text">Generating visual hooks, fetching dynamic B-Roll & Emojis tailored for the <b>{theme}</b> theme.</div>
+            <div class="detail-text">Generating visual hooks, fetching dynamic B-Roll & Emojis tailored for the <span style="color:#6366f1;font-weight:600;">{theme}</span> theme.</div>
         </div>
     </div>
     """
@@ -403,41 +403,175 @@ def get_gallery():
     return unique[:12]
 
 _css = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-body, .gradio-container { background: #0a0a0a !important; font-family: 'Inter', system-ui, sans-serif !important; color: #ededed !important; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+body, .gradio-container { 
+    background: radial-gradient(circle at 50% 0%, #1a1a24 0%, #0a0a0a 100%) !important; 
+    font-family: 'Inter', system-ui, sans-serif !important; 
+    color: #e2e8f0 !important; 
+}
 
-.sidebar { background: #121212 !important; border-right: 1px solid #222 !important; padding: 20px !important; border-radius: 12px; }
-.main-content { background: #0a0a0a !important; }
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+.sidebar { 
+    background: rgba(18, 18, 18, 0.6) !important; 
+    backdrop-filter: blur(12px) !important; 
+    border-right: 1px solid rgba(255,255,255,0.05) !important; 
+    padding: 24px !important; 
+    border-radius: 16px; 
+    box-shadow: 4px 0 24px rgba(0,0,0,0.2);
+}
+.main-content { 
+    background: transparent !important; 
+    padding: 10px 20px !important;
+}
+
+/* Typography & Headings */
+h1, h2, h3 { color: #f8fafc; font-weight: 700; letter-spacing: -0.02em; }
+.brand-text {
+    font-size: 28px;
+    font-weight: 800;
+    margin: 0;
+    background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+}
+.brand-sub { color: #818cf8; font-size: 13px; margin-top: 2px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
+
+/* Panels & Cards */
+.detail-panel { 
+    background: rgba(22, 22, 22, 0.7); 
+    border: 1px solid rgba(255,255,255,0.08); 
+    border-radius: 16px; 
+    padding: 24px; 
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+.glass-panel {
+    background: rgba(22, 22, 22, 0.5); 
+    border: 1px solid rgba(255,255,255,0.05); 
+    border-radius: 12px; 
+    padding: 20px;
+}
+
+/* Detail Section Typography */
+.detail-section { margin-top: 20px; }
+.detail-label { font-size: 11px; color: #64748b; font-weight: 700; margin-bottom: 6px; letter-spacing: 1px; text-transform: uppercase; }
+.detail-text { font-size: 14px; color: #cbd5e1; line-height: 1.6; }
+
+/* Form Controls */
+input[type="text"], input[type="number"], textarea, select { 
+    background: rgba(0,0,0,0.2) !important; 
+    color: #f8fafc !important; 
+    border: 1px solid rgba(255,255,255,0.1) !important; 
+    border-radius: 8px !important; 
+    padding: 10px 14px !important;
+    transition: all 0.2s ease;
+}
+input[type="text"]:focus, input[type="number"]:focus, select:focus {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+    outline: none !important;
+}
+input[type="checkbox"], input[type="radio"] { 
+    accent-color: #6366f1 !important; 
+    cursor: pointer; 
+    width: 18px; 
+    height: 18px; 
+    border-radius: 4px; 
+}
+
+/* Transcript Editor */
+.inline-transcript { 
+    background: rgba(0,0,0,0.2) !important; 
+    border: 1px solid rgba(255,255,255,0.05) !important; 
+    border-radius: 12px; 
+    padding: 16px; 
+    max-height: 400px;
+    overflow-y: auto;
+}
+.inline-transcript .wrap { display: flex; flex-wrap: wrap; gap: 10px; }
+.inline-transcript label { 
+    background: rgba(255,255,255,0.03); 
+    padding: 8px 12px; 
+    border-radius: 8px; 
+    border: 1px solid rgba(255,255,255,0.08); 
+    cursor: pointer; 
+    transition: all 0.2s ease; 
+    display: inline-flex; 
+    align-items: center; 
+}
+.inline-transcript label:hover { 
+    background: rgba(255,255,255,0.08); 
+    border-color: rgba(255,255,255,0.2); 
+}
+.inline-transcript span { font-size: 14px !important; color: #cbd5e1 !important; line-height: 1.4 !important; }
+
+/* Buttons */
+.gr-button-primary { 
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important; 
+    color: #fff !important; 
+    font-weight: 600 !important; 
+    border: none !important; 
+    border-radius: 8px !important;
+    padding: 12px 24px !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3) !important;
+    transition: all 0.3s ease !important;
+}
+.gr-button-primary:hover { 
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4) !important;
+}
+
+/* Accordions */
+.gradio-accordion {
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 12px !important;
+    background: rgba(22,22,22,0.6) !important;
+    margin-bottom: 12px !important;
+}
+
+/* Tabs */
+.gr-tabs > .gr-tab-button {
+    border-radius: 8px 8px 0 0 !important;
+    padding: 10px 20px !important;
+    font-weight: 600 !important;
+}
+.gr-tabs > .gr-tab-button.selected {
+    background: rgba(22,22,22,0.8) !important;
+    border-top: 2px solid #6366f1 !important;
+    color: #f8fafc !important;
+}
+
+/* Metrics Cards */
+.metric-box {
+    background: rgba(0,0,0,0.3);
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.05);
+    flex: 1;
+    text-align: center;
+}
+.metric-label { font-size: 11px; color: #94a3b8; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.5px; }
+.metric-value { font-size: 22px; font-weight: 800; }
 
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 10px; }
-.clip-card { background: #161616; border: 1px solid #2a2a2a; border-radius: 10px; padding: 16px; cursor: pointer; transition: all 0.2s ease; }
-.clip-card:hover { border-color: #555; transform: translateY(-2px); background: #1c1c1c; }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.card-badge { background: #2a2a2a; color: #aaa; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; }
-.card-score { font-size: 20px; font-weight: 800; }
-.score-max { font-size: 11px; color: #666; font-weight: 500; }
-.card-title { font-size: 14px; font-weight: 600; color: #eee; margin-bottom: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.card-meta { font-size: 12px; color: #888; }
+.clip-card { background: rgba(22, 22, 22, 0.8); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 18px; cursor: pointer; transition: all 0.2s ease; backdrop-filter: blur(8px); }
+.clip-card:hover { border-color: #6366f1; transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.card-badge { background: rgba(255,255,255,0.05); color: #cbd5e1; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 6px; text-transform: uppercase; }
+.card-score { font-size: 22px; font-weight: 800; }
+.score-max { font-size: 12px; color: #64748b; font-weight: 600; }
+.card-title { font-size: 15px; font-weight: 600; color: #f8fafc; margin-bottom: 8px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-meta { font-size: 13px; color: #94a3b8; font-weight: 500; }
 
-.viral-meter-bg { width: 100%; height: 4px; background: #222; border-radius: 2px; margin-top: 12px; overflow: hidden; }
-.viral-meter-fill { height: 100%; border-radius: 2px; }
+.viral-meter-bg { width: 100%; height: 6px; background: rgba(0,0,0,0.4); border-radius: 3px; margin-top: 14px; overflow: hidden; }
+.viral-meter-fill { height: 100%; border-radius: 3px; transition: width 1s ease-in-out; }
 
-.detail-panel { background: #121212; border: 1px solid #222; border-radius: 10px; padding: 20px; }
-.detail-section { margin-top: 16px; }
-.detail-label { font-size: 10px; color: #888; font-weight: 700; margin-bottom: 4px; letter-spacing: 0.5px; }
-.detail-text { font-size: 13px; color: #bbb; line-height: 1.5; }
-
-input[type="text"], input[type="number"], textarea, select { background: #161616 !important; color: #eee !important; border: 1px solid #333 !important; border-radius: 6px !important; }
-input[type="checkbox"], input[type="radio"] { accent-color: #FF4500 !important; cursor: pointer; width: 16px; height: 16px; border-radius: 3px; }
-
-.inline-transcript { background: #121212 !important; border: 1px solid #222 !important; border-radius: 8px; padding: 12px; }
-.inline-transcript .wrap { display: flex; flex-wrap: wrap; gap: 8px; }
-.inline-transcript label { background: #1a1a1a; padding: 6px 10px; border-radius: 6px; border: 1px solid #333; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; }
-.inline-transcript label:hover { background: #252525; border-color: #555; }
-.inline-transcript span { font-size: 13px !important; color: #ddd !important; }
-
-.gr-button-primary { background: linear-gradient(135deg, #FF4500, #FF8C00) !important; color: #fff !important; font-weight: 700 !important; border: none !important; }
-.gr-button-primary:hover { opacity: 0.9 !important; }
 footer { display: none !important; }
 .hidden-clip-sel { display: none !important; }
 """
@@ -445,19 +579,21 @@ footer { display: none !important; }
 with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
     with gr.Row():
         with gr.Column(scale=2, elem_classes="sidebar"):
-            gr.HTML("<h1 style='font-size:24px;font-weight:800;margin:0;background:linear-gradient(90deg,#fff,#aaa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;'>ClipFactory.ai</h1><p style='color:#666;font-size:12px;margin-top:4px'>Premium Video Re-purposing</p>")
+            gr.HTML("<h1 class='brand-text'>ClipFactory.ai</h1><div class='brand-sub'>Premium Video Re-purposing</div>")
             
+            gr.HTML("<div style='margin-top:20px;margin-bottom:10px;font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;'>New Project</div>")
             url_input = gr.Textbox(placeholder="Paste YouTube URL...", label="Video Source", lines=1)
             analyze_btn = gr.Button("Strategize Video", variant="primary")
             
             with gr.Group(visible=False) as strategy_group:
-                strategy_radio = gr.Radio(choices=[], label="Select AI Director Strategy")
+                gr.HTML("<div style='margin-top:24px;margin-bottom:10px;font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;'>AI Director Strategies</div>")
+                strategy_radio = gr.Radio(choices=[], label="Select Strategy")
             
-            status_box = gr.Textbox(label="Status", interactive=False, lines=10)
+            status_box = gr.Textbox(label="Status Console", interactive=False, lines=8)
 
         with gr.Column(scale=8, elem_classes="main-content"):
             with gr.Group(visible=False) as editor_group:
-                gr.HTML("<h2 style='margin:20px 0 10px 0;font-size:18px;'>Edit & Render</h2>")
+                gr.HTML("<h2 style='margin:10px 0 20px 0;font-size:24px;'>Workspace & Editor</h2>")
                 with gr.Row():
                     with gr.Column(scale=5):
                         detail_html = gr.HTML("")
@@ -466,26 +602,26 @@ with gr.Blocks(title="Clip Factory SaaS", css=_css) as demo:
                             transcript_options_hidden = gr.State([])
                             
                     with gr.Column(scale=5):
-                        with gr.Accordion("Timeline Edit", open=False):
-                            gr.HTML("<p style='font-size:11px;color:#888;margin:0 0 10px 0;'>Adjust Master Bounds. (Or use Transcript Editor on the left to cut out middle sections).</p>")
-                            with gr.Row():
-                                st_override = gr.Number(label="Start Time (s)", precision=1, interactive=True)
-                                et_override = gr.Number(label="End Time (s)", precision=1, interactive=True)
-                                
-                        with gr.Accordion("Enhancements & Branding", open=True):
-                            face_cb = gr.Checkbox(label="Auto Face Tracking & Center Crop", value=True, interactive=True)
-                            magic_hook_cb = gr.Checkbox(label="AI Magic Hook (Rewrite First 3s)", value=False, interactive=True)
-                            remove_silence_cb = gr.Checkbox(label="Smart Silence/Filler Removal", value=True, interactive=True)
-                            with gr.Row():
-                                cap_style = gr.Dropdown(choices=CAPTION_STYLES, value="Hormozi", label="Brand Kit", interactive=True)
-                                cap_pos = gr.Dropdown(choices=CAPTION_POSITIONS, value="Center", label="Placement", interactive=True)
-                            with gr.Row():
-                                bg_music = gr.Dropdown(choices=list(BGM_TRACKS.keys()), value="Lofi / Chill", label="Smart BGM", interactive=True)
-                                broll_int = gr.Dropdown(choices=BROLL_INTENSITIES, value="Medium", label="B-Roll Intensity", interactive=True)
+                        with gr.Group(elem_classes="glass-panel"):
+                            with gr.Accordion("Timeline Edit", open=False):
+                                gr.HTML("<p style='font-size:11px;color:#888;margin:0 0 10px 0;'>Adjust Master Bounds. (Or use Transcript Editor on the left to cut out middle sections).</p>")
+                                with gr.Row():
+                                    st_override = gr.Number(label="Start Time (s)", precision=1, interactive=True)
+                                    et_override = gr.Number(label="End Time (s)", precision=1, interactive=True)
+                                    
+                            with gr.Accordion("Enhancements & Branding", open=True):
+                                face_cb = gr.Checkbox(label="Auto Face Tracking & Center Crop", value=True, interactive=True)
+                                magic_hook_cb = gr.Checkbox(label="AI Magic Hook (Rewrite First 3s)", value=False, interactive=True)
+                                remove_silence_cb = gr.Checkbox(label="Smart Silence/Filler Removal", value=True, interactive=True)
+                                with gr.Row():
+                                    cap_style = gr.Dropdown(choices=CAPTION_STYLES, value="Hormozi", label="Brand Kit", interactive=True)
+                                    cap_pos = gr.Dropdown(choices=CAPTION_POSITIONS, value="Center", label="Placement", interactive=True)
+                                with gr.Row():
+                                    bg_music = gr.Dropdown(choices=list(BGM_TRACKS.keys()), value="Lofi / Chill", label="Smart BGM", interactive=True)
+                                    broll_int = gr.Dropdown(choices=BROLL_INTENSITIES, value="Medium", label="B-Roll Intensity", interactive=True)
 
-                            
-                        render_btn = gr.Button("Render Final Clip", variant="primary", size="lg")
-                        render_status = gr.Textbox(label="Render Status", interactive=False, lines=10)
+                            render_btn = gr.Button("Render Final Clip", variant="primary", size="lg")
+                            render_status = gr.Textbox(label="Render Status", interactive=False, lines=4)
             
             with gr.Row():
                 with gr.Tab("Studio Preview"):
