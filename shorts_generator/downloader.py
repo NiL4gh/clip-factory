@@ -1,4 +1,3 @@
-import yt_dlp
 import subprocess
 import os
 import glob
@@ -12,25 +11,23 @@ def download_video(url, work_dir, cookie_path=None):
     for f in glob.glob(f"{work_dir}/source.*"):
         os.remove(f)
 
-    ydl_opts = {
-        "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best",
-        "outtmpl": f"{work_dir}/source.%(ext)s",
-        "cookiefile": cookie_path if cookie_path and os.path.exists(cookie_path) else None,
-        "quiet": False,
-        "ignoreerrors": False,
-        "socket_timeout": 60,
-        "merge_output_format": "mp4",
-        "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
-        "extractor_args": {"youtube": {"player_client": ["ios", "android"]}},
-    }
+    cmd = [
+        "yt-dlp",
+        "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best",
+        "-o", f"{work_dir}/source.%(ext)s",
+        "--merge-output-format", "mp4",
+        "--impersonate", "chrome",
+        url
+    ]
+    if cookie_path and os.path.exists(cookie_path):
+        cmd.extend(["--cookies", cookie_path])
 
     ui_logger.log("yt-dlp: Fetching remote components and downloading...")
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-    except Exception as e:
-        ui_logger.log(f"yt-dlp failed: {e}")
-        raise
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        ui_logger.log(f"yt-dlp failed: {e.stderr}")
+        raise RuntimeError(f"yt-dlp failed: {e.stderr}")
 
     # Fast remux fallback — no re-encoding
     if not os.path.exists(output_mp4):
