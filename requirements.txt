@@ -2,6 +2,7 @@
 requests>=2.31
 python-dotenv>=1.0
 yt-dlp @ git+https://github.com/yt-dlp/yt-dlp.git
+curl-cffi>=0.5.10
 huggingface-hub>=0.20
 
 # UI
