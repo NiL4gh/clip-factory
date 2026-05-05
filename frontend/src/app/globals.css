@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0f172a; /* Slate 900 */
-  --foreground: #f8fafc; /* Slate 50 */
-  --card-bg: #1e293b;    /* Slate 800 */
+  --background: #f8fafc; /* Slate 50 */
+  --foreground: #0f172a; /* Slate 900 */
+  --card-bg: #ffffff;    /* White */
   --accent: #6366f1;     /* Indigo 500 */
-  --accent-glow: rgba(99, 102, 241, 0.3);
-  --border: rgba(255, 255, 255, 0.08);
-  --input-bg: #020617;   /* Slate 950 */
+  --accent-glow: rgba(99, 102, 241, 0.15);
+  --border: rgba(15, 23, 42, 0.08); /* Dark transparent border */
+  --input-bg: #f1f5f9;   /* Slate 100 */
 }
 
 body {
@@ -23,12 +23,12 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.05);
   border-radius: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
   border-radius: 4px;
 }
 
@@ -65,22 +65,22 @@ body {
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   animation: cardSlideIn 0.5s ease-out forwards;
   opacity: 0;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 }
 
 .gallery-card:hover {
   border-color: rgba(99, 102, 241, 0.4);
   transform: translateY(-4px);
   box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(99, 102, 241, 0.15);
+    0 10px 25px -5px rgba(0, 0, 0, 0.1),
+    0 8px 10px -6px rgba(0, 0, 0, 0.1);
 }
 
 .gallery-preview {
   position: relative;
   width: 100%;
   aspect-ratio: 9 / 14;
-  background: linear-gradient(135deg, #111118 0%, #1a1a2e 100%);
+  background: #0f172a; /* keep previews dark so videos stand out */
   overflow: hidden;
 }
 
@@ -105,7 +105,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.2);
   opacity: 0;
   transition: opacity 0.25s ease;
 }
