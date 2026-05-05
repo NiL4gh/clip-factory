@@ -16,11 +16,11 @@ def download_video(url, work_dir, cookie_path=None):
         "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best",
         "-o", f"{work_dir}/source.%(ext)s",
         "--merge-output-format", "mp4",
+        "--extractor-args", "youtube:player_client=ios,android",
         "--impersonate", "chrome",
         url
     ]
-    if cookie_path and os.path.exists(cookie_path):
-        cmd.extend(["--cookies", cookie_path])
+
 
     ui_logger.log("yt-dlp: Fetching remote components and downloading...")
     try:
