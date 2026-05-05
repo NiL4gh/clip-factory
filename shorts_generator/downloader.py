@@ -16,7 +16,7 @@ def download_video(url, work_dir, cookie_path=None):
         "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best",
         "-o", f"{work_dir}/source.%(ext)s",
         "--merge-output-format", "mp4",
-        "--extractor-args", "youtube:player_client=ios,android",
+        "--extractor-args", "youtube:player_client=ios,android;player_skip=webpage,configs",
         "--impersonate", "chrome",
         url
     ]
