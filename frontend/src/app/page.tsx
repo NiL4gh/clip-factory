@@ -5,7 +5,7 @@ import {
   Play, Scissors, Sparkles,
   Activity, Zap, CheckCircle2,
   Clock, TrendingUp, Music, Type, Download,
-  Film, RefreshCw, Eye, EyeOff, ArrowRight
+  Film, RefreshCw, Eye, EyeOff, ArrowRight, Settings2, Volume2
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -91,6 +91,16 @@ function buildSentences(words: WordTimestamp[], clipStart: number, clipEnd: numb
 /* ------------------------------------------------------------------ */
 /*  Main Dashboard                                                     */
 /* ------------------------------------------------------------------ */
+const DEFAULT_SETTINGS = {
+  face_center: true,
+  magic_hook: true,
+  remove_silence: true,
+  caption_style: "Hormozi",
+  caption_pos: "Center",
+  bg_music_genre: "None",
+  broll_intensity: "Medium",
+};
+
 export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle");
@@ -102,20 +112,52 @@ export default function Dashboard() {
   const [excludedMap, setExcludedMap] = useState<Record<number, Set<string>>>({});
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // Model selectors
+  const [llmLabel, setLlmLabel] = useState("\u{1F999} LLaMA 3 8B Instruct Q4");
+  const [whisperLabel, setWhisperLabel] = useState("\u2B50 medium");
+  const [catalogData, setCatalogData] = useState<{llm_catalog:{label:string}[], whisper_catalog:{label:string}[]}>({llm_catalog:[], whisper_catalog:[]});
+  const [renderSettings, setRenderSettings] = useState<Record<number, typeof DEFAULT_SETTINGS>>({});
+
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  // Fetch gallery on view switch
   useEffect(() => {
     if (activeView === "gallery") fetchGallery();
   }, [activeView]);
+
+  // Fetch model catalogs on mount
+  useEffect(() => {
+    axios.get(`${API_BASE}/config`).then(res => setCatalogData(res.data)).catch(() => {});
+  }, []);
+
+  // Auto-populate render settings from persona
+  useEffect(() => {
+    if (results?.clips?.length && results?.persona) {
+      const base = {
+        ...DEFAULT_SETTINGS,
+        caption_style: results.persona.suggested_brand_kit || "Hormozi",
+        bg_music_genre: results.persona.suggested_bgm || "None",
+      };
+      const init: Record<number, typeof DEFAULT_SETTINGS> = {};
+      results.clips.forEach((_: any, idx: number) => { init[idx] = { ...base }; });
+      setRenderSettings(init);
+    }
+  }, [results]);
 
   const fetchGallery = async () => {
     try {
       const res = await axios.get(`${API_BASE}/gallery`);
       setGallery(res.data);
     } catch { /* silently fail */ }
+  };
+
+  const getSettings = (clipIdx: number) => renderSettings[clipIdx] || DEFAULT_SETTINGS;
+  const updateSetting = (clipIdx: number, key: string, value: any) => {
+    setRenderSettings(prev => ({
+      ...prev,
+      [clipIdx]: { ...(prev[clipIdx] || DEFAULT_SETTINGS), [key]: value }
+    }));
   };
 
   /* ---- Strategize ---- */
@@ -132,7 +174,7 @@ export default function Dashboard() {
     };
 
     try {
-      await axios.post(`${API_BASE}/strategize`, { url });
+      await axios.post(`${API_BASE}/strategize`, { url, llm_label: llmLabel, whisper_label: whisperLabel });
 
       const poll = setInterval(async () => {
         const res = await axios.get(`${API_BASE}/results`);
@@ -161,7 +203,7 @@ export default function Dashboard() {
     const excludedArr = excluded ? Array.from(excluded) : [];
 
     try {
-      await axios.post(`${API_BASE}/render`, { clip_id: index, excluded_sentences: excludedArr });
+      await axios.post(`${API_BASE}/render`, { clip_id: index, excluded_sentences: excludedArr, ...getSettings(index) });
 
       const poll = setInterval(async () => {
         const res = await axios.get(`${API_BASE}/status`);
@@ -311,6 +353,25 @@ export default function Dashboard() {
                     <><Sparkles className="w-5 h-5" /> Strategize Video</>
                   )}
                 </button>
+              </div>
+              {/* Model Selectors */}
+              <div className="model-selector-row relative z-10">
+                <div>
+                  <label className="model-selector-label">Main LLM</label>
+                  <select id="llm-select" className="setting-select w-full" value={llmLabel} onChange={(e) => setLlmLabel(e.target.value)} disabled={status === "strategizing" || status === "rendering"}>
+                    {catalogData.llm_catalog.length > 0
+                      ? catalogData.llm_catalog.map(m => <option key={m.label} value={m.label}>{m.label}</option>)
+                      : <option value={llmLabel}>{llmLabel}</option>}
+                  </select>
+                </div>
+                <div>
+                  <label className="model-selector-label">Whisper Model</label>
+                  <select id="whisper-select" className="setting-select w-full" value={whisperLabel} onChange={(e) => setWhisperLabel(e.target.value)} disabled={status === "strategizing" || status === "rendering"}>
+                    {catalogData.whisper_catalog.length > 0
+                      ? catalogData.whisper_catalog.map(m => <option key={m.label} value={m.label}>{m.label}</option>)
+                      : <option value={whisperLabel}>{whisperLabel}</option>}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -485,6 +546,51 @@ export default function Dashboard() {
                                 </div>
                               </div>
                             )}
+
+                            {/* ══════ Render Settings ══════ */}
+                            <div className="render-settings">
+                              <div className="render-settings-header">
+                                <Settings2 className="w-3.5 h-3.5" /> Render Settings
+                              </div>
+                              <div className="render-settings-grid">
+                                <div className="setting-row">
+                                  <span className="setting-label">Face Tracking</span>
+                                  <label className="setting-toggle"><input type="checkbox" checked={getSettings(i).face_center} onChange={() => updateSetting(i, 'face_center', !getSettings(i).face_center)} /><span className="toggle-track" /></label>
+                                </div>
+                                <div className="setting-row">
+                                  <span className="setting-label">AI Magic Hook</span>
+                                  <label className="setting-toggle"><input type="checkbox" checked={getSettings(i).magic_hook} onChange={() => updateSetting(i, 'magic_hook', !getSettings(i).magic_hook)} /><span className="toggle-track" /></label>
+                                </div>
+                                <div className="setting-row">
+                                  <span className="setting-label">Remove Silence</span>
+                                  <label className="setting-toggle"><input type="checkbox" checked={getSettings(i).remove_silence} onChange={() => updateSetting(i, 'remove_silence', !getSettings(i).remove_silence)} /><span className="toggle-track" /></label>
+                                </div>
+                                <div className="setting-row">
+                                  <span className="setting-label">Caption Style</span>
+                                  <select className="setting-select" value={getSettings(i).caption_style} onChange={(e) => updateSetting(i, 'caption_style', e.target.value)}>
+                                    {["Hormozi","Ali Abdaal","MrBeast","Minimalist","None"].map(v => <option key={v}>{v}</option>)}
+                                  </select>
+                                </div>
+                                <div className="setting-row">
+                                  <span className="setting-label">Caption Position</span>
+                                  <select className="setting-select" value={getSettings(i).caption_pos} onChange={(e) => updateSetting(i, 'caption_pos', e.target.value)}>
+                                    {["Top","Center","Bottom"].map(v => <option key={v}>{v}</option>)}
+                                  </select>
+                                </div>
+                                <div className="setting-row">
+                                  <span className="setting-label">B-Roll</span>
+                                  <select className="setting-select" value={getSettings(i).broll_intensity} onChange={(e) => updateSetting(i, 'broll_intensity', e.target.value)}>
+                                    {["None","Low","Medium","High"].map(v => <option key={v}>{v}</option>)}
+                                  </select>
+                                </div>
+                                <div className="setting-row">
+                                  <span className="setting-label">🎵 Background Music</span>
+                                  <select className="setting-select" value={getSettings(i).bg_music_genre} onChange={(e) => updateSetting(i, 'bg_music_genre', e.target.value)}>
+                                    {["None","Lofi / Chill","High Energy / Phonk","Suspense / Dark","Corporate / Upbeat"].map(v => <option key={v}>{v}</option>)}
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
 
                             <div className="flex justify-end pt-2">
                               <button 

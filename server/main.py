@@ -4,10 +4,12 @@ import uuid
 import time
 import asyncio
 import datetime as _dt
+import urllib.request as _urlreq
 from typing import List, Optional
 from fastapi import FastAPI, BackgroundTasks, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # Ensure repo root is in sys.path
@@ -45,6 +47,32 @@ app.add_middleware(
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 app.mount("/media", StaticFiles(directory=OUTPUT_DIR), name="media")
 
+# ── Bundled CC0 Background Music (direct download, no API key) ───────────
+BGM_CATALOG = {
+    "Lofi / Chill":        {"url": "https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3", "file": "bgm_lofi.mp3"},
+    "High Energy / Phonk": {"url": "https://cdn.pixabay.com/audio/2022/10/09/audio_c714eab8c3.mp3", "file": "bgm_energy.mp3"},
+    "Suspense / Dark":     {"url": "https://cdn.pixabay.com/audio/2022/03/15/audio_8cb749d484.mp3", "file": "bgm_suspense.mp3"},
+    "Corporate / Upbeat":  {"url": "https://cdn.pixabay.com/audio/2023/07/30/audio_e08fa075b6.mp3", "file": "bgm_corporate.mp3"},
+}
+BGM_DIR = os.path.join(WORK_DIR, "bgm")
+
+def _get_bgm(genre: str) -> str:
+    """Download and cache a CC0 BGM track. Returns file path or empty string."""
+    entry = BGM_CATALOG.get(genre)
+    if not entry:
+        return ""
+    os.makedirs(BGM_DIR, exist_ok=True)
+    path = os.path.join(BGM_DIR, entry["file"])
+    if not os.path.exists(path):
+        try:
+            ui_logger.log(f"Downloading BGM: {genre}...")
+            _urlreq.urlretrieve(entry["url"], path)
+            ui_logger.log(f"BGM cached: {entry['file']}")
+        except Exception as e:
+            ui_logger.log(f"BGM download failed ({e}) — rendering without music.")
+            return ""
+    return path
+
 # In-memory state for the active project
 _state = {
     "clips": [], 
@@ -70,6 +98,14 @@ class RenderRequest(BaseModel):
     bg_music_genre: str = "None"
     broll_intensity: str = "Medium"
     excluded_sentences: List[str] = []
+
+@app.get("/api/config")
+async def get_config():
+    return {
+        "llm_catalog": [{"label": e["label"]} for e in LLM_CATALOG],
+        "whisper_catalog": [{"label": e["label"]} for e in WHISPER_CATALOG],
+        "bgm_genres": list(BGM_CATALOG.keys()),
+    }
 
 @app.get("/api/status")
 async def get_status():
@@ -242,13 +278,16 @@ def _run_render(req: RenderRequest):
             all_sentences=all_sentences
         )
         
+        # ── BGM mixing via enhance_clip ──
         if req.bg_music_genre and req.bg_music_genre != "None":
-            ui_logger.log(f"Adding BGM: {req.bg_music_genre}...")
-            # Simple mapping, can be expanded
-            music_path = os.path.join(WORK_DIR, f"bgm.mp3")
-            # Skipping actual download here for brevity, assuming standard enhancement
-            # enhance_clip(out, clip, music_path=music_path)
-            
+            music_path = _get_bgm(req.bg_music_genre)
+            if music_path:
+                ui_logger.log(f"Mixing BGM ({req.bg_music_genre}) with dynamic peak swell...")
+                try:
+                    enhance_clip(out, clip, music_path=music_path)
+                except Exception as bgm_err:
+                    ui_logger.log(f"BGM mixing failed ({bgm_err}) — clip saved without music.")
+
         import shutil
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
@@ -290,3 +329,8 @@ async def get_gallery():
         except OSError:
             continue
     return result
+
+# ── Serve Next.js static build (must be LAST mount — catch-all) ──────────
+FRONTEND_DIR = os.path.join(REPO_DIR, "frontend", "out")
+if os.path.isdir(FRONTEND_DIR):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
