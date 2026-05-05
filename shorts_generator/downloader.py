@@ -13,7 +13,7 @@ def download_video(url, work_dir, cookie_path=None):
         os.remove(f)
 
     ydl_opts = {
-        "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+        "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best",
         "outtmpl": f"{work_dir}/source.%(ext)s",
         "cookiefile": cookie_path if cookie_path and os.path.exists(cookie_path) else None,
         "quiet": False,
@@ -21,6 +21,8 @@ def download_video(url, work_dir, cookie_path=None):
         "socket_timeout": 60,
         "merge_output_format": "mp4",
         "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
+        "extractor_args": {"youtube": {"player_client": ["ios", "android"]}},
+        "impersonate": "chrome",
     }
 
     ui_logger.log("yt-dlp: Fetching remote components and downloading...")
