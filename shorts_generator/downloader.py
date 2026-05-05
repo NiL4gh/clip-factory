@@ -22,7 +22,6 @@ def download_video(url, work_dir, cookie_path=None):
         "merge_output_format": "mp4",
         "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
         "extractor_args": {"youtube": {"player_client": ["ios", "android"]}},
-        "impersonate": "chrome",
     }
 
     ui_logger.log("yt-dlp: Fetching remote components and downloading...")
