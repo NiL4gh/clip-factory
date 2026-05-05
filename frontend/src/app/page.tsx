@@ -39,55 +39,6 @@ interface WordTimestamp {
   end: number;
 }
 
-interface Sentence {
-  id: string;      // WID:start-end
-  text: string;
-  startTime: number;
-  endTime: number;
-  widStart: number;
-  widEnd: number;
-}
-
-function buildSentences(words: WordTimestamp[], clipStart: number, clipEnd: number): Sentence[] {
-  const inRange = words
-    .map((w, i) => ({ ...w, globalIdx: i }))
-    .filter(w => w.start >= clipStart - 1 && w.end <= clipEnd + 1);
-
-  const sentences: Sentence[] = [];
-  let current: typeof inRange = [];
-
-  for (const w of inRange) {
-    current.push(w);
-    const trimmed = w.word.trim();
-    if (trimmed.endsWith('.') || trimmed.endsWith('!') || trimmed.endsWith('?') || current.length > 12) {
-      const first = current[0];
-      const last = current[current.length - 1];
-      sentences.push({
-        id: `WID:${first.globalIdx}-${last.globalIdx}`,
-        text: current.map(x => x.word.trim()).join(' '),
-        startTime: first.start,
-        endTime: last.end,
-        widStart: first.globalIdx,
-        widEnd: last.globalIdx,
-      });
-      current = [];
-    }
-  }
-  if (current.length) {
-    const first = current[0];
-    const last = current[current.length - 1];
-    sentences.push({
-      id: `WID:${first.globalIdx}-${last.globalIdx}`,
-      text: current.map(x => x.word.trim()).join(' '),
-      startTime: first.start,
-      endTime: last.end,
-      widStart: first.globalIdx,
-      widEnd: last.globalIdx,
-    });
-  }
-  return sentences;
-}
-
 /* ------------------------------------------------------------------ */
 /*  Main Dashboard                                                     */
 /* ------------------------------------------------------------------ */
@@ -109,12 +60,11 @@ export default function Dashboard() {
   const [selectedClip, setSelectedClip] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<"workspace" | "gallery">("workspace");
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
-  const [excludedMap, setExcludedMap] = useState<Record<number, Set<string>>>({});
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Model selectors
-  const [llmLabel, setLlmLabel] = useState("\u{1F999} LLaMA 3 8B Instruct Q4");
-  const [whisperLabel, setWhisperLabel] = useState("\u2B50 medium");
+  const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3 8B Instruct Q4");
+  const [whisperLabel, setWhisperLabel] = useState("⭐ medium");
   const [catalogData, setCatalogData] = useState<{llm_catalog:{label:string}[], whisper_catalog:{label:string}[]}>({llm_catalog:[], whisper_catalog:[]});
   const [renderSettings, setRenderSettings] = useState<Record<number, typeof DEFAULT_SETTINGS>>({});
 
@@ -126,7 +76,6 @@ export default function Dashboard() {
     if (activeView === "gallery") fetchGallery();
   }, [activeView]);
 
-  // Fetch model catalogs on mount
   useEffect(() => {
     axios.get(`${API_BASE}/config`).then(res => setCatalogData(res.data)).catch(() => {});
   }, []);
@@ -160,22 +109,17 @@ export default function Dashboard() {
     }));
   };
 
-  /* ---- Strategize ---- */
   const handleStrategize = async () => {
     if (!url) return;
     setStatus("strategizing");
     setLogs(["Initializing AI Director Pipeline..."]);
     setSelectedClip(null);
-    setExcludedMap({});
 
     const ws = new WebSocket(wsUrl());
-    ws.onmessage = (event) => {
-      setLogs(prev => [...prev, event.data]);
-    };
+    ws.onmessage = (event) => setLogs(prev => [...prev, event.data]);
 
     try {
       await axios.post(`${API_BASE}/strategize`, { url, llm_label: llmLabel, whisper_label: whisperLabel });
-
       const poll = setInterval(async () => {
         const res = await axios.get(`${API_BASE}/results`);
         if (res.data.status === "done") {
@@ -185,7 +129,6 @@ export default function Dashboard() {
           ws.close();
         }
       }, 2000);
-
     } catch {
       setLogs(prev => [...prev, "Error starting strategize phase."]);
       setStatus("error");
@@ -193,422 +136,252 @@ export default function Dashboard() {
     }
   };
 
-  /* ---- Render ---- */
   const renderClip = async (index: number) => {
     setStatus("rendering");
     const ws = new WebSocket(wsUrl());
     ws.onmessage = (event) => setLogs(prev => [...prev, event.data]);
 
-    const excluded = excludedMap[index];
-    const excludedArr = excluded ? Array.from(excluded) : [];
-
     try {
-      await axios.post(`${API_BASE}/render`, { clip_id: index, excluded_sentences: excludedArr, ...getSettings(index) });
-
+      const settings = getSettings(index);
+      await axios.post(`${API_BASE}/render`, {
+        url,
+        clip_index: index,
+        ...settings
+      });
+      
       const poll = setInterval(async () => {
-        const res = await axios.get(`${API_BASE}/status`);
-        if (!res.data.is_rendering) {
+        const res = await axios.get(`${API_BASE}/render_status?url=${encodeURIComponent(url)}&index=${index}`);
+        if (res.data.status === "done") {
           clearInterval(poll);
           setStatus("done");
           ws.close();
           fetchGallery();
+          setActiveView("gallery");
         }
       }, 2000);
-
     } catch {
-      setLogs(prev => [...prev, "Error rendering clip."]);
-      setStatus("done");
+      setStatus("error");
       ws.close();
     }
   };
 
-  /* ---- Exclusion toggling ---- */
-  const toggleSentence = (clipIdx: number, sentenceId: string) => {
-    setExcludedMap(prev => {
-      const next = { ...prev };
-      const set = new Set(next[clipIdx] || []);
-      if (set.has(sentenceId)) set.delete(sentenceId);
-      else set.add(sentenceId);
-      next[clipIdx] = set;
-      return next;
-    });
-  };
-
-  /* ---- Computed: sentences for selected clip ---- */
-  const selectedSentences = useMemo(() => {
-    if (selectedClip === null || !results) return [];
-    const clip = results.clips[selectedClip];
-    if (!clip || !results.word_timestamps?.length) return [];
-    const st = parseFloat(clip.start_time || clip.segments?.[0]?.start_time || 0);
-    const et = parseFloat(clip.end_time || clip.segments?.[clip.segments.length - 1]?.end_time || 0);
-    return buildSentences(results.word_timestamps, st, et);
-  }, [selectedClip, results]);
-
-  const excludedSet = selectedClip !== null ? (excludedMap[selectedClip] || new Set()) : new Set<string>();
-  const excludedCount = excludedSet.size;
-  const excludedDuration = selectedSentences
-    .filter(s => excludedSet.has(s.id))
-    .reduce((sum, s) => sum + (s.endTime - s.startTime), 0);
-
-  /* ---- Derive media base for gallery playback ---- */
-  const MEDIA_BASE = API_BASE.replace(/\/api\/?$/, "");
-
   return (
-    <div className="min-h-screen bg-[#0A0A0B] text-slate-200 font-sans selection:bg-indigo-500/30">
-      {/* ══════════ Navbar ══════════ */}
-      <nav className="border-b border-white/5 bg-black/20 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <Scissors className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-xl tracking-tight text-white">ClipFactory<span className="text-indigo-400">.ai</span></span>
-            <span className="ml-3 px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-              Director Phase 4
-            </span>
+    <div className="min-h-screen custom-scrollbar flex flex-col">
+      {/* ── Sticky Navbar ────────────────────────────────── */}
+      <header className="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-white/5 py-3 px-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <Film className="w-5 h-5 text-white" />
           </div>
-          <div className="flex items-center gap-1 text-sm font-medium">
-            <button
-              id="nav-workspace"
-              onClick={() => setActiveView("workspace")}
-              className={`px-4 py-2 rounded-lg transition-all ${activeView === "workspace" ? "bg-white/10 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
-            >Workspace</button>
-            <button
-              id="nav-gallery"
-              onClick={() => setActiveView("gallery")}
-              className={`px-4 py-2 rounded-lg transition-all ${activeView === "gallery" ? "bg-white/10 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
-            >Gallery</button>
-            <div className="ml-3 w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              U
-            </div>
-          </div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-100">
+            ClipFactory<span className="text-indigo-400">.ai</span>
+          </h1>
         </div>
-      </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-
-        {/* ══════════════════════════════════════════════════════════ */}
-        {/*  GALLERY VIEW                                             */}
-        {/* ══════════════════════════════════════════════════════════ */}
-        {activeView === "gallery" && (
-          <div className="animate-fadeIn">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h1 className="text-3xl font-bold text-white mb-1">Rendered Library</h1>
-                <p className="text-slate-400 text-sm">{gallery.length} clip{gallery.length !== 1 ? 's' : ''} rendered</p>
-              </div>
-              <button onClick={fetchGallery} className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl border border-white/10">
-                <RefreshCw className="w-4 h-4" /> Refresh
-              </button>
-            </div>
-
-            {gallery.length === 0 ? (
-              <div className="h-72 border border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center text-slate-500">
-                <Film className="w-14 h-14 mb-4 opacity-20" />
-                <p className="text-lg font-medium mb-1">No rendered clips yet</p>
-                <p className="text-sm">Strategize and render a video to see results here.</p>
-                <button onClick={() => setActiveView("workspace")} className="mt-6 text-indigo-400 hover:text-indigo-300 text-sm flex items-center gap-1 transition-colors">
-                  Go to Workspace <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="gallery-grid">
-                {gallery.map((item, i) => (
-                  <GalleryCard key={item.filename} item={item} mediaBase={MEDIA_BASE} idx={i} />
-                ))}
-              </div>
-            )}
+        <div className="flex items-center gap-4">
+          <div className="flex bg-slate-950/50 p-1 rounded-lg border border-white/5">
+            <button
+              onClick={() => setActiveView("workspace")}
+              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                activeView === "workspace" ? "bg-slate-800 text-indigo-400 shadow-sm" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Workspace
+            </button>
+            <button
+              onClick={() => setActiveView("gallery")}
+              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                activeView === "gallery" ? "bg-slate-800 text-indigo-400 shadow-sm" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Gallery
+            </button>
           </div>
-        )}
+          <div className={`w-3 h-3 rounded-full ${status === "idle" ? "bg-slate-600" : "bg-green-500 animate-pulse"}`} />
+        </div>
+      </header>
 
-        {/* ══════════════════════════════════════════════════════════ */}
-        {/*  WORKSPACE VIEW                                           */}
-        {/* ══════════════════════════════════════════════════════════ */}
-        {activeView === "workspace" && (
-          <>
-            {/* Input Section */}
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 mb-8 relative overflow-hidden group">
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative z-10 flex gap-4">
-                <div className="flex-1 relative">
-                  <input 
-                    id="url-input"
-                    type="text" 
+      <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-10">
+        
+        {activeView === "workspace" ? (
+          <div className="animate-fadeIn">
+            {/* ── Project Setup Card ─────────────────────────── */}
+            <div className="bg-slate-800/50 border border-white/5 rounded-2xl p-8 mb-10 shadow-xl backdrop-blur-sm">
+              <div className="max-w-2xl mx-auto text-center mb-8">
+                <h2 className="text-3xl font-bold mb-3 text-white">Create New Project</h2>
+                <p className="text-slate-400 text-sm">Paste a YouTube URL to let the AI Director strategize your viral shorts.</p>
+              </div>
+
+              <div className="flex flex-col gap-6 max-w-3xl mx-auto">
+                <div className="relative group">
+                  <input
+                    type="text"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
-                    placeholder="Paste YouTube URL here to engage the AI Director..."
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-6 py-4 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all text-lg"
-                    disabled={status === "strategizing" || status === "rendering"}
+                    placeholder="https://youtube.com/watch?v=..."
+                    className="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 rounded-xl py-4 px-5 pl-14 text-slate-100 placeholder:text-slate-600 transition-all text-lg"
                   />
+                  <Film className="absolute left-5 top-4.5 w-6 h-6 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
                 </div>
-                <button 
-                  id="strategize-btn"
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
+                    <label className="model-selector-label">Main AI Director</label>
+                    <select
+                      value={llmLabel}
+                      onChange={(e) => setLlmLabel(e.target.value)}
+                      className="w-full bg-transparent text-slate-200 text-sm font-medium outline-none cursor-pointer"
+                    >
+                      {catalogData.llm_catalog.map((m: any) => (
+                        <option key={m.label} value={m.label} className="bg-slate-900">{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
+                    <label className="model-selector-label">Transcription Engine</label>
+                    <select
+                      value={whisperLabel}
+                      onChange={(e) => setWhisperLabel(e.target.value)}
+                      className="w-full bg-transparent text-slate-200 text-sm font-medium outline-none cursor-pointer"
+                    >
+                      {catalogData.whisper_catalog.map((m: any) => (
+                        <option key={m.label} value={m.label} className="bg-slate-900">{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <button
                   onClick={handleStrategize}
-                  disabled={status === "strategizing" || status === "rendering" || !url}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-semibold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex items-center gap-2 whitespace-nowrap"
+                  disabled={status !== "idle" || !url}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:opacity-50 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg shadow-indigo-600/20 active:scale-[0.98]"
                 >
-                  {status === "strategizing" ? (
-                    <><Activity className="w-5 h-5 animate-pulse" /> Analyzing...</>
-                  ) : (
-                    <><Sparkles className="w-5 h-5" /> Strategize Video</>
-                  )}
+                  {status === "strategizing" ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                  {status === "strategizing" ? "Strategizing..." : "Analyze & Strategize"}
                 </button>
-              </div>
-              {/* Model Selectors */}
-              <div className="model-selector-row relative z-10">
-                <div>
-                  <label className="model-selector-label">Main LLM</label>
-                  <select id="llm-select" className="setting-select w-full" value={llmLabel} onChange={(e) => setLlmLabel(e.target.value)} disabled={status === "strategizing" || status === "rendering"}>
-                    {catalogData.llm_catalog.length > 0
-                      ? catalogData.llm_catalog.map(m => <option key={m.label} value={m.label}>{m.label}</option>)
-                      : <option value={llmLabel}>{llmLabel}</option>}
-                  </select>
-                </div>
-                <div>
-                  <label className="model-selector-label">Whisper Model</label>
-                  <select id="whisper-select" className="setting-select w-full" value={whisperLabel} onChange={(e) => setWhisperLabel(e.target.value)} disabled={status === "strategizing" || status === "rendering"}>
-                    {catalogData.whisper_catalog.length > 0
-                      ? catalogData.whisper_catalog.map(m => <option key={m.label} value={m.label}>{m.label}</option>)
-                      : <option value={whisperLabel}>{whisperLabel}</option>}
-                  </select>
-                </div>
               </div>
             </div>
 
-            {/* Dual Pane Layout */}
+            {/* ── Activity Console ───────────────────────────── */}
+            {(logs.length > 0 || status !== "idle") && (
+              <div className="bg-slate-950 border border-white/5 rounded-xl p-5 mb-10 font-mono text-[11px] leading-relaxed max-h-[160px] overflow-y-auto custom-scrollbar">
+                <div className="flex items-center gap-2 mb-3 text-slate-500 font-sans uppercase tracking-widest font-bold">
+                  <Activity className="w-3 h-3" /> System Logs
+                </div>
+                {logs.map((log, i) => (
+                  <div key={i} className="text-slate-400 mb-1 flex gap-3">
+                    <span className="text-slate-700 shrink-0">[{new Date().toLocaleTimeString()}]</span>
+                    <span className={log.includes("✅") ? "text-green-400" : log.includes("❌") ? "text-red-400" : ""}>{log}</span>
+                  </div>
+                ))}
+                <div ref={logEndRef} />
+              </div>
+            )}
+
+            {/* ── Results Canvas ─────────────────────────────── */}
             {results ? (
-              <div className="grid grid-cols-12 gap-8">
-
-                {/* Left Pane: Intelligence & Preview */}
-                <div className="col-span-12 lg:col-span-4 space-y-6">
-
-                  {/* Intelligence Panel */}
-                  <div className="bg-indigo-950/20 border border-indigo-500/20 rounded-2xl p-6 backdrop-blur-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                      <Zap className="w-24 h-24 text-indigo-400" />
-                    </div>
-                    <h3 className="flex items-center gap-2 text-indigo-400 font-semibold mb-6">
-                      <Activity className="w-4 h-4" /> AI Video Intelligence
-                    </h3>
-
-                    <div className="space-y-4 relative z-10">
-                      <div>
-                        <div className="text-[10px] text-indigo-300/60 uppercase tracking-widest font-semibold mb-1">Detected Persona</div>
-                        <div className="text-white font-medium flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                          {results.persona.genre} • {results.persona.tone}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="text-[10px] text-indigo-300/60 uppercase tracking-widest font-semibold mb-1">Target Audience</div>
-                        <div className="text-slate-300 text-sm leading-relaxed">
-                          {results.persona.target_audience}
-                        </div>
-                      </div>
-
-                      <div className="pt-4 border-t border-indigo-500/10">
-                        <div className="text-[10px] text-indigo-300/60 uppercase tracking-widest font-semibold mb-2">Auto-Selected Kit</div>
-                        <div className="flex gap-2">
-                          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/40 border border-indigo-500/20 text-xs font-medium text-indigo-300">
-                            <Type className="w-3.5 h-3.5" /> {results.persona.suggested_brand_kit}
-                          </span>
-                          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/40 border border-indigo-500/20 text-xs font-medium text-indigo-300">
-                            <Music className="w-3.5 h-3.5" /> {results.persona.suggested_bgm}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+              <div className="space-y-8 animate-fadeIn">
+                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Clip Strategy Result</h3>
+                    <p className="text-slate-400 text-xs">Persona: <span className="text-indigo-400 font-semibold">{results.persona?.type || "General"}</span></p>
                   </div>
-
-                  {/* Console Logs */}
-                  <div className="bg-black/60 border border-white/5 rounded-2xl p-4 h-64 flex flex-col font-mono text-[11px] leading-relaxed relative">
-                    <div className="text-slate-500 mb-2 font-semibold uppercase tracking-wider sticky top-0 bg-black/60 backdrop-blur pb-2">Terminal Logs</div>
-                    <div className="overflow-y-auto flex-1 space-y-1 text-slate-400 custom-scrollbar pr-2">
-                      {logs.map((log, i) => (
-                        <div key={i}>{log}</div>
-                      ))}
-                      <div ref={logEndRef} />
-                    </div>
+                  <div className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-xs font-bold border border-indigo-500/20">
+                    {results.clips?.length || 0} Clips Identified
                   </div>
                 </div>
 
-                {/* Right Pane: Strategies & Transcript */}
-                <div className="col-span-12 lg:col-span-8 space-y-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-2xl font-bold text-white">Extracted Strategies</h2>
-                    <div className="flex items-center gap-2 text-sm text-slate-400">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      {results.clips.length} Clips Ready
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4">
-                    {results.clips.map((clip: any, i: number) => (
-                      <div 
-                        key={i}
-                        onClick={() => setSelectedClip(selectedClip === i ? null : i)}
-                        className={`p-5 rounded-2xl border transition-all cursor-pointer group/card
-                          ${selectedClip === i 
-                            ? 'bg-indigo-600/10 border-indigo-500/50' 
-                            : 'bg-white/[0.02] border-white/5 hover:border-white/20'}`}
-                      >
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className={`px-2.5 py-1 rounded text-xs font-bold tracking-wider uppercase
-                              ${clip.badge?.includes('Stitched') ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
-                              {clip.badge}
-                            </div>
-                            <div className="flex items-center gap-1.5 text-slate-400 text-sm font-medium">
-                              <Clock className="w-4 h-4" />
-                              {Math.floor(clip.duration / 60)}:{(clip.duration % 60).toFixed(0).padStart(2, '0')}
-                            </div>
+                <div className="gallery-grid">
+                  {results.clips.map((clip: any, i: number) => (
+                    <div key={i} className="gallery-card group flex flex-col border border-white/5 bg-slate-900/40 backdrop-blur-sm hover:border-indigo-500/40 transition-all duration-300">
+                      <div className="gallery-preview bg-slate-950 aspect-[9/16] relative overflow-hidden">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-4">
+                          <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
+                            <Scissors className="w-6 h-6" />
                           </div>
-                          <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded text-xs font-bold border border-emerald-500/20">
-                            <TrendingUp className="w-3.5 h-3.5" />
-                            Score: {clip.score}/100
+                          <div>
+                            <div className="text-white font-bold text-sm mb-1 leading-tight">{clip.title || "Untitled Clip"}</div>
+                            <div className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">
+                              {Math.round(clip.end - clip.start)}s Duration
+                            </div>
                           </div>
                         </div>
+                        <div className="gallery-play-overlay bg-indigo-900/40 backdrop-blur-[2px]">
+                          <button 
+                            onClick={() => setSelectedClip(i)}
+                            className="bg-white text-slate-900 w-12 h-12 rounded-full flex items-center justify-center shadow-2xl hover:scale-110 transition-all active:scale-95"
+                          >
+                            <Settings2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                        <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur text-[10px] font-bold text-white px-2 py-1 rounded border border-white/10 uppercase tracking-tighter">
+                          AI Rank: {Math.round(clip.score || 0)}
+                        </div>
+                      </div>
 
-                        <h4 className="text-lg font-semibold text-white mb-2">{clip.title}</h4>
-                        <p className="text-slate-400 text-sm leading-relaxed mb-4 line-clamp-2">"{clip.hook_sentence}"</p>
+                      <div className="p-4 flex-1 flex flex-col justify-between">
+                        <p className="text-slate-400 text-xs line-clamp-2 italic mb-4 leading-relaxed">
+                          "{clip.description || "No description generated."}"
+                        </p>
+                        
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setSelectedClip(i)}
+                            className="flex-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 text-[11px] font-bold py-2.5 rounded-lg border border-indigo-500/20 transition-all flex items-center justify-center gap-2"
+                          >
+                            <Settings2 className="w-3.5 h-3.5" />
+                            Settings
+                          </button>
+                          <button
+                            onClick={() => renderClip(i)}
+                            disabled={status === "rendering"}
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white text-[11px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/10"
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                            Render
+                          </button>
+                        </div>
+                      </div>
 
-                        {selectedClip === i && (
-                          <div className="mt-4 pt-4 border-t border-white/10 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300" onClick={(e) => e.stopPropagation()}>
-                            {/* Director's Reasoning */}
-                            <div className="bg-black/40 rounded-xl p-4 border border-white/5">
-                              <div className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-2">Director's Reasoning</div>
-                              <p className="text-sm text-slate-300 leading-relaxed">{clip.virality_reason}</p>
-                            </div>
-
-                            {/* ══════ Stitch Timeline Visualization ══════ */}
-                            {clip.segments && clip.segments.length > 1 && (
-                              <div className="stitch-timeline-container">
-                                <div className="text-[10px] text-purple-300/60 uppercase tracking-widest font-semibold mb-3 flex items-center gap-2">
-                                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                                  AI Stitched Timeline ({clip.segments.length} segments)
-                                </div>
-                                <div className="stitch-timeline">
-                                  {clip.segments.map((seg: any, si: number) => {
-                                    const segDur = parseFloat(seg.end_time) - parseFloat(seg.start_time);
-                                    return (
-                                      <div key={si} className="flex items-center gap-0">
-                                        <div
-                                          className="stitch-segment"
-                                          style={{ flex: segDur }}
-                                        >
-                                          <span className="text-[9px] font-mono">{parseFloat(seg.start_time).toFixed(0)}s – {parseFloat(seg.end_time).toFixed(0)}s</span>
-                                        </div>
-                                        {si < clip.segments.length - 1 && (
-                                          <div className="stitch-gap">
-                                            <span className="text-[8px]">✂️ fluff removed</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                      {/* Expanded Settings */}
+                      {selectedClip === i && (
+                        <div className="p-4 pt-0 border-t border-white/5 animate-fadeIn">
+                          <div className="render-settings border-none p-0 bg-transparent space-y-4">
+                            <div className="render-settings-grid !grid-cols-1">
+                              <div className="setting-row !bg-slate-950/50">
+                                <span className="setting-label text-[10px]">Caption Style</span>
+                                <select 
+                                  value={getSettings(i).caption_style}
+                                  onChange={(e) => updateSetting(i, "caption_style", e.target.value)}
+                                  className="setting-select !bg-slate-900 !text-[10px]"
+                                >
+                                  {["Hormozi", "Modern", "Beast", "Bold", "Minimal"].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
                               </div>
-                            )}
-
-                            {/* ══════ Transcript Editor ══════ */}
-                            {selectedSentences.length > 0 && (
-                              <div className="transcript-editor">
-                                <div className="flex items-center justify-between mb-3">
-                                  <div className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold flex items-center gap-2">
-                                    <Type className="w-3.5 h-3.5" />
-                                    Transcript Editor — Click to Cut
-                                  </div>
-                                  {excludedCount > 0 && (
-                                    <div className="fluff-counter">
-                                      <EyeOff className="w-3 h-3" />
-                                      {excludedCount} cut ({excludedDuration.toFixed(1)}s saved)
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar pr-1">
-                                  {selectedSentences.map((s) => {
-                                    const isExcluded = excludedSet.has(s.id);
-                                    return (
-                                      <button
-                                        key={s.id}
-                                        onClick={() => toggleSentence(i, s.id)}
-                                        className={`sentence-chip ${isExcluded ? 'excluded' : ''}`}
-                                      >
-                                        <span className="sentence-toggle">
-                                          {isExcluded ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                                        </span>
-                                        <span className="sentence-time">[{s.startTime.toFixed(1)}s]</span>
-                                        <span className="sentence-text">{s.text}</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
+                              <div className="setting-row !bg-slate-950/50">
+                                <span className="setting-label text-[10px]">Music</span>
+                                <select 
+                                  value={getSettings(i).bg_music_genre}
+                                  onChange={(e) => updateSetting(i, "bg_music_genre", e.target.value)}
+                                  className="setting-select !bg-slate-900 !text-[10px]"
+                                >
+                                  {["None", "Lofi", "Energy", "Suspense", "Corporate"].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
                               </div>
-                            )}
-
-                            {/* ══════ Render Settings ══════ */}
-                            <div className="render-settings">
-                              <div className="render-settings-header">
-                                <Settings2 className="w-3.5 h-3.5" /> Render Settings
+                              <div className="flex items-center justify-between px-3 py-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Face Tracking</span>
+                                <label className="setting-toggle">
+                                  <input type="checkbox" checked={getSettings(i).face_center} onChange={(e) => updateSetting(i, "face_center", e.target.checked)} />
+                                  <div className="toggle-track" />
+                                </label>
                               </div>
-                              <div className="render-settings-grid">
-                                <div className="setting-row">
-                                  <span className="setting-label">Face Tracking</span>
-                                  <label className="setting-toggle"><input type="checkbox" checked={getSettings(i).face_center} onChange={() => updateSetting(i, 'face_center', !getSettings(i).face_center)} /><span className="toggle-track" /></label>
-                                </div>
-                                <div className="setting-row">
-                                  <span className="setting-label">AI Magic Hook</span>
-                                  <label className="setting-toggle"><input type="checkbox" checked={getSettings(i).magic_hook} onChange={() => updateSetting(i, 'magic_hook', !getSettings(i).magic_hook)} /><span className="toggle-track" /></label>
-                                </div>
-                                <div className="setting-row">
-                                  <span className="setting-label">Remove Silence</span>
-                                  <label className="setting-toggle"><input type="checkbox" checked={getSettings(i).remove_silence} onChange={() => updateSetting(i, 'remove_silence', !getSettings(i).remove_silence)} /><span className="toggle-track" /></label>
-                                </div>
-                                <div className="setting-row">
-                                  <span className="setting-label">Caption Style</span>
-                                  <select className="setting-select" value={getSettings(i).caption_style} onChange={(e) => updateSetting(i, 'caption_style', e.target.value)}>
-                                    {["Hormozi","Ali Abdaal","MrBeast","Minimalist","None"].map(v => <option key={v}>{v}</option>)}
-                                  </select>
-                                </div>
-                                <div className="setting-row">
-                                  <span className="setting-label">Caption Position</span>
-                                  <select className="setting-select" value={getSettings(i).caption_pos} onChange={(e) => updateSetting(i, 'caption_pos', e.target.value)}>
-                                    {["Top","Center","Bottom"].map(v => <option key={v}>{v}</option>)}
-                                  </select>
-                                </div>
-                                <div className="setting-row">
-                                  <span className="setting-label">B-Roll</span>
-                                  <select className="setting-select" value={getSettings(i).broll_intensity} onChange={(e) => updateSetting(i, 'broll_intensity', e.target.value)}>
-                                    {["None","Low","Medium","High"].map(v => <option key={v}>{v}</option>)}
-                                  </select>
-                                </div>
-                                <div className="setting-row">
-                                  <span className="setting-label">🎵 Background Music</span>
-                                  <select className="setting-select" value={getSettings(i).bg_music_genre} onChange={(e) => updateSetting(i, 'bg_music_genre', e.target.value)}>
-                                    {["None","Lofi / Chill","High Energy / Phonk","Suspense / Dark","Corporate / Upbeat"].map(v => <option key={v}>{v}</option>)}
-                                  </select>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex justify-end pt-2">
-                              <button 
-                                id={`render-btn-${i}`}
-                                onClick={() => renderClip(i)}
-                                disabled={status === "rendering"}
-                                className="bg-white text-black hover:bg-slate-200 px-6 py-2.5 rounded-lg font-semibold flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
-                              >
-                                <Play className="w-4 h-4" /> Render Clip
-                              </button>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-
               </div>
             ) : (
               <div className="h-64 border border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center text-slate-500">
@@ -616,74 +389,67 @@ export default function Dashboard() {
                 <p>Ready for a URL. The AI Director is standing by.</p>
               </div>
             )}
-          </>
-        )}
-
-      </main>
-    </div>
-  );
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  Gallery Card Component                                             */
-/* ------------------------------------------------------------------ */
-function GalleryCard({ item, mediaBase, idx }: { item: GalleryItem; mediaBase: string; idx: number }) {
-  const [hovering, setHovering] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const fullUrl = `${mediaBase}${item.url}`;
-
-  useEffect(() => {
-    if (hovering && videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
-    } else if (!hovering && videoRef.current) {
-      videoRef.current.pause();
-    }
-  }, [hovering]);
-
-  return (
-    <div
-      className="gallery-card"
-      style={{ animationDelay: `${idx * 60}ms` }}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
-    >
-      <div className="gallery-preview">
-        {hovering ? (
-          <video
-            ref={videoRef}
-            src={fullUrl}
-            muted
-            playsInline
-            loop
-            className="gallery-video"
-          />
+          </div>
         ) : (
-          <div className="gallery-placeholder">
-            <Film className="w-10 h-10 text-indigo-400/40" />
+          <div className="animate-fadeIn">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-2xl font-bold text-white">Render Gallery</h2>
+                <p className="text-slate-400 text-sm">Your completed viral shorts, ready for download.</p>
+              </div>
+              <button 
+                onClick={fetchGallery}
+                className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 transition-colors"
+              >
+                <RefreshCw className={`w-5 h-5 ${status === "rendering" ? "animate-spin" : ""}`} />
+              </button>
+            </div>
+
+            <div className="gallery-grid">
+              {gallery.map((video, i) => (
+                <div key={i} className="gallery-card bg-slate-900/60 border border-white/5 flex flex-col">
+                  <div className="gallery-preview bg-slate-950 aspect-[9/16]">
+                    <video
+                      className="gallery-video"
+                      src={video.url}
+                      muted
+                      onMouseOver={e => (e.target as HTMLVideoElement).play()}
+                      onMouseOut={e => (e.target as HTMLVideoElement).pause()}
+                    />
+                    <div className="gallery-play-overlay">
+                      <Play className="w-10 h-10 text-white fill-white shadow-xl" />
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <div className="gallery-name truncate mb-1 text-xs font-bold text-white">{video.filename}</div>
+                    <div className="text-[10px] text-slate-500 mb-4 uppercase tracking-wider">{(video.size_mb).toFixed(1)} MB • {new Date(video.created_at).toLocaleDateString()}</div>
+                    <a 
+                      href={video.url} 
+                      download 
+                      className="w-full bg-slate-800 hover:bg-slate-700 text-indigo-400 text-[11px] font-bold py-2.5 rounded-lg border border-indigo-500/20 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download MP4
+                    </a>
+                  </div>
+                </div>
+              ))}
+              {gallery.length === 0 && (
+                <div className="col-span-full py-20 text-center bg-slate-800/30 rounded-2xl border border-dashed border-white/5">
+                  <Film className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+                  <p className="text-slate-500 font-medium">No rendered clips yet. Start by strategizing a video.</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
-        <div className="gallery-play-overlay">
-          <Play className="w-8 h-8 text-white/80" />
-        </div>
-      </div>
-      <div className="gallery-info">
-        <div className="gallery-name" title={item.filename}>
-          {item.filename.length > 30 ? item.filename.slice(0, 28) + '…' : item.filename}
-        </div>
-        <div className="gallery-meta">
-          {item.size_mb} MB • {item.created_at}
-        </div>
-        <a
-          href={fullUrl}
-          download={item.filename}
-          onClick={(e) => e.stopPropagation()}
-          className="gallery-download"
-        >
-          <Download className="w-3.5 h-3.5" /> Download
-        </a>
-      </div>
+      </main>
+
+      <footer className="py-6 border-t border-white/5 text-center">
+        <p className="text-slate-600 text-[10px] font-bold uppercase tracking-widest">
+          Powered by ClipFactory v4.1 — SaaS Stability Engine
+        </p>
+      </footer>
     </div>
   );
 }

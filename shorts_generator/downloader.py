@@ -13,7 +13,8 @@ def download_video(url, work_dir, cookie_path=None):
         os.remove(f)
 
     ydl_opts = {
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
+        # Select best video up to 720p (saves bandwidth/time) + best audio, or best available
+        "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
         "outtmpl": f"{work_dir}/source.%(ext)s",
         "cookiefile": cookie_path if cookie_path and os.path.exists(cookie_path) else None,
         "quiet": False,
@@ -21,7 +22,6 @@ def download_video(url, work_dir, cookie_path=None):
         "socket_timeout": 60,
         "merge_output_format": "mp4",
         "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
-        "remote_components": ["ejs:github"],
         "extractor_args": {"youtube": ["player_client=web"]},
     }
 
