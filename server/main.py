@@ -382,7 +382,30 @@ async def get_gallery():
             continue
     return result
 
-# ── Serve Next.js static build (must be LAST mount — catch-all) ──────────
+# ── Serve Next.js static build (Catch-all for SPA) ──────────
 FRONTEND_DIR = os.path.join(REPO_DIR, "frontend", "out")
-if os.path.isdir(FRONTEND_DIR):
-    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+
+@app.get("/")
+async def serve_index():
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"detail": "Frontend not built. Run Cell 1 in Colab."}
+
+@app.get("/{path:path}")
+async def catch_all(path: str):
+    # Skip API and Media routes
+    if path.startswith("api") or path.startswith("media") or path.startswith("ws"):
+        raise HTTPException(status_code=404)
+        
+    # Check if file exists in out dir (e.g. _next/static/...)
+    file_path = os.path.join(FRONTEND_DIR, path)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+        
+    # Fallback to index.html for client-side routing
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+        
+    return FileResponse(index_path) if os.path.exists(index_path) else {"detail": "Not Found"}
