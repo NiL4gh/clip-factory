@@ -224,8 +224,18 @@ export default function Dashboard() {
     const words = results.word_timestamps;
     
     // Find words in clip range
+    const clipSt = parseFloat(clip.start_time || 0);
+    const clipEt = parseFloat(clip.end_time || 0);
     const clipWords = words.map((w: any, i: number) => ({ ...w, idx: i }))
-      .filter((w: any) => w.start >= clip.start - 0.5 && w.end <= clip.end + 0.5);
+      .filter((w: any) => {
+        if (clip.is_stitched && clip.segments && clip.segments.length > 0) {
+          return clip.segments.some((seg: any) => 
+            w.start >= parseFloat(seg.start_time) - 0.5 && 
+            w.end <= parseFloat(seg.end_time) + 0.5
+          );
+        }
+        return w.start >= clipSt - 0.5 && w.end <= clipEt + 0.5;
+      });
 
     // Group into "sentences" (~12 words each)
     const sentences = [];
@@ -550,32 +560,40 @@ export default function Dashboard() {
                                 </div>
                               </div>
 
-                              <div className="mt-4 pt-4 border-t border-slate-200">
-                                <div className="flex items-center justify-between mb-3">
-                                  <span className="text-[10px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                                    <Type className="w-3 h-3 text-indigo-500" /> Transcript Editor
-                                  </span>
-                                  <span className="text-[8px] text-slate-400 uppercase">Click to cut</span>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar p-1">
-                                  {getClipSentences(i).map((s: any, si: number) => {
-                                    const isExcluded = (excludedSentences[i] || []).some(ex => ex.start_idx === s.start_idx);
-                                    return (
-                                      <button
-                                        key={si}
-                                        onClick={() => toggleSentence(i, s)}
-                                        className={`text-left text-[10px] px-2 py-1.5 rounded-md border transition-all ${
-                                          isExcluded 
-                                            ? "bg-slate-50 text-slate-300 border-slate-100 line-through opacity-60" 
-                                            : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:shadow-sm"
-                                        }`}
+                                <div className="mt-4 pt-4 border-t border-slate-200">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <span className="text-[10px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                                      <Type className="w-3 h-3 text-indigo-500" /> Transcript Editor
+                                    </span>
+                                    <div className="flex items-center gap-3">
+                                      <button 
+                                        onClick={() => setExcludedSentences(prev => ({...prev, [i]: []}))} 
+                                        className="text-[9px] text-slate-400 hover:text-indigo-500 font-bold uppercase transition-colors"
                                       >
-                                        {s.text}
+                                        Reset Cuts
                                       </button>
-                                    );
-                                  })}
+                                      <span className="text-[8px] text-slate-400 uppercase">Click to cut</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2 max-h-[250px] overflow-y-auto custom-scrollbar p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                    {getClipSentences(i).map((s: any, si: number) => {
+                                      const isExcluded = (excludedSentences[i] || []).some(ex => ex.start_idx === s.start_idx);
+                                      return (
+                                        <button
+                                          key={si}
+                                          onClick={() => toggleSentence(i, s)}
+                                          className={`text-left text-xs px-2.5 py-1.5 rounded-md border transition-all ${
+                                            isExcluded 
+                                              ? "bg-rose-50 text-rose-400 border-rose-200 line-through" 
+                                              : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:shadow-sm"
+                                          }`}
+                                        >
+                                          {s.text}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
-                              </div>
 
                             </div>
                           </div>

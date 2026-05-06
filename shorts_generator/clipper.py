@@ -282,7 +282,9 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         input_idx = 1
         sfx_delays = []
-        for b in broll_kws:
+        for i_b, b in enumerate(broll_kws):
+            if isinstance(b, str):
+                b = {"keyword": b, "start_time": seg_st + i_b * 2.0}
             b_st = float(b.get("start_time", 0))
             if b_st >= seg_st and b_st <= seg_et:
                 b_img_path = os.path.join(work_dir, f"broll_{out_id}_{input_idx}.jpg")
@@ -299,7 +301,9 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     filter_complex += f"[{current_v}][broll{input_idx}]overlay=0:0:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
                     current_v = next_v
                     input_idx += 1
-        for e in emoji_moms:
+        for i_e, e in enumerate(emoji_moms):
+            if isinstance(e, str):
+                e = {"emoji_unicode": e, "start_time": seg_st + i_e * 1.5}
             e_st = float(e.get("start_time", 0))
             if e_st >= seg_st and e_st <= seg_et:
                 e_img_path = os.path.join(work_dir, f"emoji_{out_id}_{input_idx}.png")
