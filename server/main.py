@@ -80,13 +80,15 @@ _state = {
     "current_url": None, 
     "persona": {},
     "is_strategizing": False,
-    "is_rendering": False
+    "is_rendering": False,
+    "is_cancelled": False
 }
 
 class StrategizeRequest(BaseModel):
     url: str
     llm_label: Optional[str] = "🦙 LLaMA 3 8B Instruct Q4"
     whisper_label: Optional[str] = "Medium (Fast/Accurate)"
+    target_platform: Optional[str] = "TikTok / Shorts (Vertical)"
 
 class RenderRequest(BaseModel):
     clip_id: int # index in _state["clips"]
@@ -128,11 +130,12 @@ async def websocket_logs(websocket: WebSocket):
     except Exception:
         pass
 
-def _run_strategize(url: str, llm_label: str, whisper_label: str):
+def _run_strategize(url: str, llm_label: str, whisper_label: str, target_platform: str = "TikTok / Shorts (Vertical)"):
     try:
         _state["is_strategizing"] = True
+        _state["is_cancelled"] = False
         ui_logger.clear()
-        ui_logger.log(f"Initializing AI strategy phase for {url}...")
+        ui_logger.log("PROGRESS|0|Initializing AI strategy phase...")
 
         # Find LLM in catalog
         llm_entry = LLM_CATALOG[0]
@@ -160,30 +163,37 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         fast_llm_path = os.path.join(LLM_DIR, fast_llm_entry["filename"])
 
         if not os.path.exists(llm_path):
-            ui_logger.log(f"Downloading main LLM...")
+            ui_logger.log("PROGRESS|5|Downloading main LLM...")
             hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
             
         if not os.path.exists(fast_llm_path):
-            ui_logger.log(f"Downloading fast-pass LLM...")
+            ui_logger.log("PROGRESS|10|Downloading fast-pass LLM...")
             hf_hub_download(repo_id=fast_llm_entry["repo"], filename=fast_llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
 
         source_mp4 = os.path.join(WORK_DIR, "source.mp4")
         _state["current_url"] = url.strip()
 
+        if _state["is_cancelled"]: return
+
         if not os.path.exists(source_mp4) or cache.load_transcript(url.strip()) is None:
+            ui_logger.log("PROGRESS|15|Downloading video...")
             download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
+            if _state["is_cancelled"]: return
+            ui_logger.log("PROGRESS|25|Transcribing audio (this may take a few minutes)...")
             full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
             _state["word_timestamps"] = words
             cache.save_transcript(url.strip(), full_text, words)
         else:
-            ui_logger.log("Transcript loaded from cache.")
+            ui_logger.log("PROGRESS|25|Transcript loaded from cache.")
             cached_t = cache.load_transcript(url.strip())
             _state["word_timestamps"] = cached_t[1]
 
+        if _state["is_cancelled"]: return
+
         # Phase 0: Persona Detection (Fast Pass)
-        ui_logger.log(f"Phase 0/2: Analyzing Video Persona with {fast_llm_entry['label']}...")
+        ui_logger.log(f"PROGRESS|40|Phase 0/2: Analyzing Video Persona with {fast_llm_entry['label']}...")
         persona = detect_video_persona(_state["word_timestamps"], llm_path=fast_llm_path, gpu_layers=fast_llm_entry["gpu_layers"])
-        ui_logger.log(f"Detected Genre: {persona.get('genre', 'Unknown')} | Tone: {persona.get('tone', 'Unknown')}")
+        ui_logger.log(f"PROGRESS|50|Detected Genre: {persona.get('genre', 'Unknown')} | Tone: {persona.get('tone', 'Unknown')}")
         _state["persona"] = persona
         
         # Decide the strategy angle automatically based on persona
@@ -193,12 +203,16 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         elif "drama" in genre or "debate" in genre: auto_angle = "controversial"
         elif "story" in genre or "vlog" in genre: auto_angle = "storytelling"
 
+        if _state["is_cancelled"]: return
+
         # Phase 1: Strategic extraction
-        ui_logger.log(f"Phase 1/2: Extracting strategic clips (Auto-Angle: {auto_angle}) with {llm_entry['label']}...")
+        ui_logger.log(f"PROGRESS|60|Phase 1/2: Extracting strategic clips (Angle: {auto_angle}, Platform: {target_platform})...")
         standard_result = get_highlights(_state["word_timestamps"], num_clips=5, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=5, angle=auto_angle)
 
+        if _state["is_cancelled"]: return
+
         # Phase 2: Story stitching
-        ui_logger.log("Phase 2/2: Scanning for cross-timestamp story connections...")
+        ui_logger.log("PROGRESS|80|Phase 2/2: Scanning for cross-timestamp story connections...")
         stitch_result = get_stitched_clips(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_stitched=3)
 
         clips = standard_result.get("highlights", []) + stitch_result.get("highlights", [])
@@ -224,21 +238,44 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         _state["clips"] = clips
         cache.save_highlights(url.strip(), _state["clips"])
         cache.save_metadata(url.strip())
-        ui_logger.log(f"Strategy Phase Complete. Identified {len(clips)} potential clips.")
+        ui_logger.log(f"PROGRESS|100|Strategy Phase Complete. Identified {len(clips)} potential clips.")
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        ui_logger.log(f"ERROR: {str(e)}")
+        if not _state.get("is_cancelled"):
+            ui_logger.log(f"ERROR: {str(e)}")
     finally:
         _state["is_strategizing"] = False
+        if _state.get("is_cancelled"):
+            ui_logger.log("PROGRESS|0|Analysis was stopped by the user.")
+            _state["is_cancelled"] = False
 
 @app.post("/api/strategize")
 async def strategize(req: StrategizeRequest, background_tasks: BackgroundTasks):
     if _state["is_strategizing"] or _state["is_rendering"]:
         raise HTTPException(status_code=400, detail="A task is already running.")
-    background_tasks.add_task(_run_strategize, req.url, req.llm_label, req.whisper_label)
+    background_tasks.add_task(_run_strategize, req.url, req.llm_label, req.whisper_label, req.target_platform)
     return {"message": "Strategizing started."}
+
+@app.post("/api/cancel_strategize")
+async def cancel_strategize():
+    if _state["is_strategizing"]:
+        _state["is_cancelled"] = True
+        return {"message": "Cancellation requested."}
+    return {"message": "No task running."}
+
+@app.post("/api/reset")
+async def reset_state():
+    _state["clips"] = []
+    _state["word_timestamps"] = []
+    _state["current_url"] = None
+    _state["persona"] = {}
+    _state["is_strategizing"] = False
+    _state["is_rendering"] = False
+    _state["is_cancelled"] = False
+    ui_logger.clear()
+    return {"message": "State reset."}
 
 @app.get("/api/results")
 async def get_results():

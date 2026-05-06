@@ -5,7 +5,7 @@ import {
   Play, Scissors, Sparkles,
   Activity, Zap, CheckCircle2,
   Clock, TrendingUp, Music, Type, Download,
-  Film, RefreshCw, Eye, EyeOff, ArrowRight, Settings2, Volume2
+  Film, RefreshCw, Eye, EyeOff, ArrowRight, Settings2, Volume2, StopCircle, Trash2, Tag
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -61,6 +61,8 @@ export default function Dashboard() {
   const [activeView, setActiveView] = useState<"workspace" | "gallery">("workspace");
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const [targetPlatform, setTargetPlatform] = useState("TikTok / Shorts (Vertical)");
+  const [progress, setProgress] = useState<{percent: number; message: string} | null>(null);
 
   // Model selectors
   const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3 8B Instruct Q4");
@@ -108,6 +110,26 @@ export default function Dashboard() {
       [clipIdx]: { ...(prev[clipIdx] || DEFAULT_SETTINGS), [key]: value }
     }));
   };
+  const handleCancel = async () => {
+    try {
+      await axios.post(`${API_BASE}/cancel_strategize`);
+      setStatus("idle");
+      setProgress(null);
+      setLogs(prev => [...prev, "❌ Analysis cancelled by user."]);
+    } catch {}
+  };
+
+  const handleReset = async () => {
+    try {
+      await axios.post(`${API_BASE}/reset`);
+      setUrl("");
+      setStatus("idle");
+      setLogs([]);
+      setResults(null);
+      setSelectedClip(null);
+      setProgress(null);
+    } catch {}
+  };
 
   const handleStrategize = async () => {
     if (!url) return;
@@ -116,10 +138,19 @@ export default function Dashboard() {
     setSelectedClip(null);
 
     const ws = new WebSocket(wsUrl());
-    ws.onmessage = (event) => setLogs(prev => [...prev, event.data]);
+    ws.onmessage = (event) => {
+      if (event.data.startsWith("PROGRESS|")) {
+        const parts = event.data.split("|");
+        if (parts.length >= 3) {
+          setProgress({ percent: parseInt(parts[1], 10), message: parts[2] });
+        }
+      } else {
+        setLogs(prev => [...prev, event.data]);
+      }
+    };
 
     try {
-      await axios.post(`${API_BASE}/strategize`, { url, llm_label: llmLabel, whisper_label: whisperLabel });
+      await axios.post(`${API_BASE}/strategize`, { url, llm_label: llmLabel, whisper_label: whisperLabel, target_platform: targetPlatform });
       const poll = setInterval(async () => {
         const res = await axios.get(`${API_BASE}/results`);
         if (res.data.status === "done") {
@@ -139,7 +170,16 @@ export default function Dashboard() {
   const renderClip = async (index: number) => {
     setStatus("rendering");
     const ws = new WebSocket(wsUrl());
-    ws.onmessage = (event) => setLogs(prev => [...prev, event.data]);
+    ws.onmessage = (event) => {
+      if (event.data.startsWith("PROGRESS|")) {
+        const parts = event.data.split("|");
+        if (parts.length >= 3) {
+          setProgress({ percent: parseInt(parts[1], 10), message: parts[2] });
+        }
+      } else {
+        setLogs(prev => [...prev, event.data]);
+      }
+    };
 
     try {
       const settings = getSettings(index);
@@ -224,7 +264,19 @@ export default function Dashboard() {
                   <Film className="absolute left-5 top-4.5 w-6 h-6 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <label className="model-selector-label text-slate-500">Target Platform</label>
+                    <select
+                      value={targetPlatform}
+                      onChange={(e) => setTargetPlatform(e.target.value)}
+                      className="w-full bg-transparent text-slate-700 text-sm font-medium outline-none cursor-pointer"
+                    >
+                      {["TikTok / Shorts (Vertical)", "Instagram Reels", "YouTube Longform (Horizontal)"].map((m: any) => (
+                        <option key={m} value={m} className="bg-white">{m}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <label className="model-selector-label text-slate-500">Main AI Director</label>
                     <select
@@ -251,16 +303,51 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <button
-                  onClick={handleStrategize}
-                  disabled={status !== "idle" || !url}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 disabled:opacity-50 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-md shadow-indigo-600/10 active:scale-[0.98]"
-                >
-                  {status === "strategizing" ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                  {status === "strategizing" ? "Strategizing..." : "Analyze & Strategize"}
-                </button>
+                <div className="flex gap-4">
+                  <button
+                    onClick={handleStrategize}
+                    disabled={status !== "idle" || !url}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 disabled:opacity-50 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-md shadow-indigo-600/10 active:scale-[0.98]"
+                  >
+                    {status === "strategizing" ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                    {status === "strategizing" ? "Strategizing..." : "Analyze & Strategize"}
+                  </button>
+                  {status === "strategizing" && (
+                    <button
+                      onClick={handleCancel}
+                      className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                    >
+                      <StopCircle className="w-5 h-5" />
+                      Stop
+                    </button>
+                  )}
+                  {status === "done" && (
+                    <button
+                      onClick={handleReset}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                      Start Over
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
+
+            {status === "strategizing" && progress && (
+              <div className="bg-white border border-slate-200 rounded-xl p-5 mb-10 shadow-sm">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-bold text-slate-800">{progress.message}</span>
+                  <span className="text-sm font-bold text-indigo-600">{progress.percent}%</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                  <div 
+                    className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
+                    style={{ width: `${progress.percent}%` }} 
+                  />
+                </div>
+              </div>
+            )}
 
             {/* ── Activity Console ───────────────────────────── */}
             {(logs.length > 0 || status !== "idle") && (
@@ -314,15 +401,22 @@ export default function Dashboard() {
                             <Settings2 className="w-5 h-5" />
                           </button>
                         </div>
-                        <div className="absolute top-3 left-3 bg-white/90 backdrop-blur text-[10px] font-bold text-slate-800 px-2 py-1 rounded border border-white/20 uppercase tracking-tighter shadow-sm">
-                          AI Rank: {Math.round(clip.score || 0)}
+                        <div className="absolute top-3 left-3 bg-white/90 backdrop-blur text-[10px] font-bold text-slate-800 px-2 py-1 rounded border border-white/20 uppercase tracking-tighter shadow-sm flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3 text-emerald-500" />
+                          Virality Score: {Math.round(clip.score || 0)}
                         </div>
                       </div>
 
                       <div className="p-4 flex-1 flex flex-col justify-between bg-white">
-                        <p className="text-slate-600 text-xs line-clamp-2 italic mb-4 leading-relaxed">
-                          "{clip.description || "No description generated."}"
+                        <p className="text-slate-600 text-xs line-clamp-2 italic mb-3 leading-relaxed">
+                          "{clip.description || clip.hook_sentence || "No description generated."}"
                         </p>
+                        {clip.virality_reason && (
+                          <div className="mb-4 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-medium px-2 py-1.5 rounded-md flex items-start gap-1.5">
+                            <Tag className="w-3 h-3 mt-0.5 shrink-0" />
+                            <span className="leading-snug">{clip.virality_reason}</span>
+                          </div>
+                        )}
                         
                         <div className="flex items-center gap-2">
                           <button
