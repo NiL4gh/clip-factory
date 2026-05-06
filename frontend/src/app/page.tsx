@@ -23,6 +23,9 @@ function wsUrl(): string {
   return `${proto}://${base.replace(/^https?:\/\//, "")}/api/logs`;
 }
 
+// Ensure API calls bypass the ngrok free-tier warning page
+axios.defaults.headers.common["ngrok-skip-browser-warning"] = "true";
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -160,8 +163,10 @@ export default function Dashboard() {
           ws.close();
         }
       }, 2000);
-    } catch {
-      setLogs(prev => [...prev, "Error starting strategize phase."]);
+    } catch (error: any) {
+      const msg = error.response?.data?.detail || error.message || "Unknown error";
+      console.error(error);
+      setLogs(prev => [...prev, `❌ Error starting strategize phase: ${msg}`]);
       setStatus("error");
       ws.close();
     }
@@ -378,7 +383,7 @@ export default function Dashboard() {
                       Stop
                     </button>
                   )}
-                  {status === "done" && (
+                  {(status === "done" || status === "error") && (
                     <button
                       onClick={handleReset}
                       className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
