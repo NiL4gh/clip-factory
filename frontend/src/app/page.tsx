@@ -183,26 +183,73 @@ export default function Dashboard() {
 
     try {
       const settings = getSettings(index);
-      await axios.post(`${API_BASE}/render`, {
-        url,
-        clip_index: index,
-        ...settings
+      // Convert excluded sentences from our editor state to the format the backend expects
+      const exSentences = (excludedSentences[index] || []).map(s => `[WID:${s.start_idx}-${s.end_idx}] ${s.text}`);
+
+      const res = await axios.post(`${API_BASE}/render`, {
+        clip_id: index,
+        ...settings,
+        excluded_sentences: exSentences
       });
       
+      const taskId = res.data.task_id;
       const poll = setInterval(async () => {
-        const res = await axios.get(`${API_BASE}/render_status?url=${encodeURIComponent(url)}&index=${index}`);
-        if (res.data.status === "done") {
+        const statusRes = await axios.get(`${API_BASE}/render_status?task_id=${taskId}`);
+        if (statusRes.data.status === "done") {
           clearInterval(poll);
           setStatus("done");
+          setProgress(null);
           ws.close();
           fetchGallery();
           setActiveView("gallery");
+        } else if (statusRes.data.status === "error") {
+          clearInterval(poll);
+          setStatus("error");
+          setLogs(prev => [...prev, `❌ Render Error: ${statusRes.data.error}`]);
+          ws.close();
         }
       }, 2000);
     } catch {
       setStatus("error");
       ws.close();
     }
+  };
+
+  /* ── Transcript Editor Logic ──────────────────────── */
+  const [excludedSentences, setExcludedSentences] = useState<Record<number, {text: string, start_idx: number, end_idx: number}[]>>({});
+
+  const getClipSentences = useMemo(() => (clipIdx: number) => {
+    if (!results?.clips?.[clipIdx] || !results?.word_timestamps) return [];
+    const clip = results.clips[clipIdx];
+    const words = results.word_timestamps;
+    
+    // Find words in clip range
+    const clipWords = words.map((w: any, i: number) => ({ ...w, idx: i }))
+      .filter((w: any) => w.start >= clip.start - 0.5 && w.end <= clip.end + 0.5);
+
+    // Group into "sentences" (~12 words each)
+    const sentences = [];
+    for (let i = 0; i < clipWords.length; i += 12) {
+      const chunk = clipWords.slice(i, i + 12);
+      sentences.push({
+        text: chunk.map((w: any) => w.word).join(" "),
+        start_idx: chunk[0].idx,
+        end_idx: chunk[chunk.length - 1].idx
+      });
+    }
+    return sentences;
+  }, [results]);
+
+  const toggleSentence = (clipIdx: number, sentence: any) => {
+    setExcludedSentences(prev => {
+      const current = prev[clipIdx] || [];
+      const exists = current.find(s => s.start_idx === sentence.start_idx);
+      if (exists) {
+        return { ...prev, [clipIdx]: current.filter(s => s.start_idx !== sentence.start_idx) };
+      } else {
+        return { ...prev, [clipIdx]: [...current, sentence] };
+      }
+    });
   };
 
   return (
@@ -462,13 +509,74 @@ export default function Dashboard() {
                                   {["None", "Lofi", "Energy", "Suspense", "Corporate"].map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                               </div>
-                              <div className="flex items-center justify-between px-3 py-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Face Tracking</span>
-                                <label className="setting-toggle">
-                                  <input type="checkbox" checked={getSettings(i).face_center} onChange={(e) => updateSetting(i, "face_center", e.target.checked)} />
-                                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                                </label>
+                              <div className="setting-row !bg-white border border-slate-200">
+                                <span className="setting-label text-[10px] text-slate-500">B-Roll Intensity</span>
+                                <select 
+                                  value={getSettings(i).broll_intensity}
+                                  onChange={(e) => updateSetting(i, "broll_intensity", e.target.value)}
+                                  className="setting-select !bg-slate-50 !text-slate-800 !text-[10px] border border-slate-200"
+                                >
+                                  {["None", "Low", "Medium", "High"].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
                               </div>
+                              
+                              <div className="flex flex-col gap-2 px-1">
+                                <div className="flex items-center justify-between px-3 py-1 bg-white rounded-lg border border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                    <Eye className="w-3 h-3 text-indigo-400" /> Face Tracking
+                                  </span>
+                                  <label className="setting-toggle">
+                                    <input type="checkbox" checked={getSettings(i).face_center} onChange={(e) => updateSetting(i, "face_center", e.target.checked)} />
+                                    <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                                  </label>
+                                </div>
+                                <div className="flex items-center justify-between px-3 py-1 bg-white rounded-lg border border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                    <Sparkles className="w-3 h-3 text-amber-400" /> Magic Hook
+                                  </span>
+                                  <label className="setting-toggle">
+                                    <input type="checkbox" checked={getSettings(i).magic_hook} onChange={(e) => updateSetting(i, "magic_hook", e.target.checked)} />
+                                    <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                                  </label>
+                                </div>
+                                <div className="flex items-center justify-between px-3 py-1 bg-white rounded-lg border border-slate-100">
+                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                    <Zap className="w-3 h-3 text-indigo-400" /> Remove Silences
+                                  </span>
+                                  <label className="setting-toggle">
+                                    <input type="checkbox" checked={getSettings(i).remove_silence} onChange={(e) => updateSetting(i, "remove_silence", e.target.checked)} />
+                                    <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                                  </label>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 pt-4 border-t border-slate-200">
+                                <div className="flex items-center justify-between mb-3">
+                                  <span className="text-[10px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                                    <Type className="w-3 h-3 text-indigo-500" /> Transcript Editor
+                                  </span>
+                                  <span className="text-[8px] text-slate-400 uppercase">Click to cut</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar p-1">
+                                  {getClipSentences(i).map((s: any, si: number) => {
+                                    const isExcluded = (excludedSentences[i] || []).some(ex => ex.start_idx === s.start_idx);
+                                    return (
+                                      <button
+                                        key={si}
+                                        onClick={() => toggleSentence(i, s)}
+                                        className={`text-left text-[10px] px-2 py-1.5 rounded-md border transition-all ${
+                                          isExcluded 
+                                            ? "bg-slate-50 text-slate-300 border-slate-100 line-through opacity-60" 
+                                            : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:shadow-sm"
+                                        }`}
+                                      >
+                                        {s.text}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
                             </div>
                           </div>
                         </div>

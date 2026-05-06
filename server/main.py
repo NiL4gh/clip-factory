@@ -90,6 +90,9 @@ class StrategizeRequest(BaseModel):
     whisper_label: Optional[str] = "Medium (Fast/Accurate)"
     target_platform: Optional[str] = "TikTok / Shorts (Vertical)"
 
+# Render tracking
+_render_status = {} # { task_id: { status: "running"|"done"|"error", filename: str } }
+
 class RenderRequest(BaseModel):
     clip_id: int # index in _state["clips"]
     face_center: bool = True
@@ -288,7 +291,13 @@ async def get_results():
         "word_timestamps": _state["word_timestamps"]
     }
 
-def _run_render(req: RenderRequest):
+@app.get("/api/render_status")
+async def get_render_status(task_id: str):
+    if task_id in _render_status:
+        return _render_status[task_id]
+    return {"status": "not_found"}
+
+def _run_render(req: RenderRequest, task_id: str):
     try:
         _state["is_rendering"] = True
         ui_logger.clear()
@@ -335,8 +344,11 @@ def _run_render(req: RenderRequest):
         import traceback
         traceback.print_exc()
         ui_logger.log(f"ERROR: {str(e)}")
+        _render_status[task_id] = {"status": "error", "error": str(e)}
     finally:
         _state["is_rendering"] = False
+        if _render_status.get(task_id, {}).get("status") != "error":
+            _render_status[task_id]["status"] = "done"
 
 @app.post("/api/render")
 async def render(req: RenderRequest, background_tasks: BackgroundTasks):
@@ -345,8 +357,11 @@ async def render(req: RenderRequest, background_tasks: BackgroundTasks):
     if req.clip_id < 0 or req.clip_id >= len(_state["clips"]):
         raise HTTPException(status_code=404, detail="Clip not found.")
     
-    background_tasks.add_task(_run_render, req)
-    return {"message": "Render started."}
+    task_id = f"render_{req.clip_id}_{int(time.time())}"
+    _render_status[task_id] = {"status": "running"}
+    
+    background_tasks.add_task(_run_render, req, task_id)
+    return {"message": "Render started.", "task_id": task_id}
 
 @app.get("/api/gallery")
 async def get_gallery():
