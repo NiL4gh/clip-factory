@@ -18,5 +18,8 @@ torch>=2.0
 # Media fetching (B-Roll images via DuckDuckGo)
 duckduckgo-search>=5.0
 
+# Face tracking (replaces legacy Haar Cascades)
+mediapipe>=0.10
+
 # LLM — installed separately in setup.sh with CUDA flags
 # llama-cpp-python

@@ -18,23 +18,96 @@ if os.path.exists("/usr/share/fonts/truetype") and not os.path.exists(FONT_PATH)
     except:
         pass
 
-def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
+def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920, segment_end=None):
+    """
+    Calculate 9:16 vertical crop parameters using MediaPipe face detection.
+    
+    Samples multiple frames across the clip segment and averages the detected
+    face center positions for a stable, jitter-free "smooth follow" crop.
+    Falls back to center-crop if no faces are found or MediaPipe is unavailable.
+    
+    Args:
+        video_path: Path to the source video.
+        time_offset: Start time of the segment in seconds.
+        target_w: Output width (default 1080).
+        target_h: Output height (default 1920).
+        segment_end: End time of the segment in seconds (for multi-frame sampling).
+    """
+    DEFAULT_CROP = ("in_w/2-ih*9/32", "0", "ih*9/16", "ih")
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        return "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
+        return DEFAULT_CROP
 
+    # Read a single frame first to get video dimensions
     cap.set(cv2.CAP_PROP_POS_MSEC, time_offset * 1000)
     ret, frame = cap.read()
-    cap.release()
-
     if not ret:
-        return "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
+        cap.release()
+        return DEFAULT_CROP
 
     h, w = frame.shape[:2]
     crop_w = int(h * 9 / 16)
     crop_h = h
 
+    # ── Multi-frame sampling points ──────────────────────────────────────
+    # Sample 5 evenly-spaced frames from start to end of the segment.
+    # This prevents single-frame jitter: if the speaker moves or turns
+    # briefly, the average position still keeps them centered.
+    seg_end = segment_end if segment_end else time_offset + 30.0
+    duration = max(1.0, seg_end - time_offset)
+    num_samples = 5
+    sample_times = [time_offset + (duration * i / (num_samples - 1)) for i in range(num_samples)]
+
+    # ── Try MediaPipe first (professional-grade) ─────────────────────────
     try:
+        import mediapipe as mp
+        mp_face = mp.solutions.face_detection
+        detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+
+        face_centers_x = []
+        for t in sample_times:
+            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
+            ret, sample_frame = cap.read()
+            if not ret:
+                continue
+            rgb = cv2.cvtColor(sample_frame, cv2.COLOR_BGR2RGB)
+            results = detector.process(rgb)
+            if results.detections:
+                # Pick the largest (most confident) detection
+                best = max(results.detections, key=lambda d: d.score[0])
+                bbox = best.location_data.relative_bounding_box
+                # Convert relative bbox to absolute center-x
+                abs_center_x = int((bbox.xmin + bbox.width / 2) * w)
+                face_centers_x.append(abs_center_x)
+
+        detector.close()
+        cap.release()
+
+        if face_centers_x:
+            # Average face center across all sampled frames → smooth follow
+            avg_center_x = int(sum(face_centers_x) / len(face_centers_x))
+            crop_x = max(0, min(w - crop_w, avg_center_x - (crop_w // 2)))
+            ui_logger.log(f"MediaPipe: tracked face across {len(face_centers_x)}/{num_samples} frames → crop_x={crop_x}")
+            return str(int(crop_x)), "0", str(crop_w), str(crop_h)
+
+        # No faces found by MediaPipe — fall through to center crop
+        ui_logger.log("MediaPipe: no faces detected — using center crop.")
+        return DEFAULT_CROP
+
+    except ImportError:
+        ui_logger.log("MediaPipe not installed — falling back to OpenCV Haar Cascade.")
+    except Exception as e:
+        ui_logger.log(f"MediaPipe error ({e}) — falling back to OpenCV Haar Cascade.")
+
+    # ── Fallback: OpenCV Haar Cascade (legacy) ───────────────────────────
+    try:
+        cap.set(cv2.CAP_PROP_POS_MSEC, time_offset * 1000)
+        ret, frame = cap.read()
+        cap.release()
+        if not ret:
+            return DEFAULT_CROP
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
         face_cascade = cv2.CascadeClassifier(cascade_path)
@@ -44,13 +117,13 @@ def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920):
             faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
             fx, fy, fw, fh = faces[0]
             face_center_x = fx + (fw // 2)
-
             crop_x = max(0, min(w - crop_w, face_center_x - (crop_w // 2)))
             return str(int(crop_x)), "0", str(crop_w), str(crop_h)
-    except Exception as e:
+    except Exception:
         pass
 
-    return "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
+    cap.release()
+    return DEFAULT_CROP
 
 
 def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Hormozi", position="Center", **kwargs):
@@ -248,7 +321,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         crop_x, crop_y, crop_w, crop_h = "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
         if face_center:
-            crop_params = _get_crop_params(input_video, seg_st, target_w, target_h)
+            crop_params = _get_crop_params(input_video, seg_st, target_w, target_h, segment_end=seg_et)
             if len(crop_params) == 4:
                 crop_x, crop_y, crop_w, crop_h = crop_params
             else:
