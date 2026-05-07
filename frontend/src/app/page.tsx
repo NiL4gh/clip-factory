@@ -435,8 +435,15 @@ export default function Dashboard() {
                     <h3 className="text-xl font-bold text-slate-800">Clip Strategy Result</h3>
                     <p className="text-slate-500 text-xs">Persona: <span className="text-indigo-600 font-semibold">{results.persona?.type || "General"}</span></p>
                   </div>
-                  <div className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100">
-                    {results.clips?.length || 0} Clips Identified
+                  <div className="flex items-center gap-2">
+                    <div className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100">
+                      {results.clips?.length || 0} Clips Found
+                    </div>
+                    {results.estimated_clips > 0 && (
+                      <div className="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-bold border border-slate-200">
+                        ~{results.estimated_clips} Estimated Potential
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -451,7 +458,7 @@ export default function Dashboard() {
                           <div>
                             <div className="text-white font-bold text-sm mb-1 leading-tight drop-shadow-md">{clip.title || "Untitled Clip"}</div>
                             <div className="text-white/80 text-[10px] uppercase tracking-widest font-bold">
-                              {Math.round(clip.end - clip.start)}s Duration
+                              {Math.round(clip.duration || (parseFloat(clip.end_time || 0) - parseFloat(clip.start_time || 0)))}s Duration
                             </div>
                           </div>
                         </div>
@@ -474,9 +481,14 @@ export default function Dashboard() {
                           "{clip.description || clip.hook_sentence || "No description generated."}"
                         </p>
                         {clip.virality_reason && (
-                          <div className="mb-4 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-medium px-2 py-1.5 rounded-md flex items-start gap-1.5">
+                          <div className="mb-3 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-medium px-2 py-1.5 rounded-md flex items-start gap-1.5">
                             <Tag className="w-3 h-3 mt-0.5 shrink-0" />
                             <span className="leading-snug">{clip.virality_reason}</span>
+                          </div>
+                        )}
+                        {clip.source_topic && (
+                          <div className="mb-3 bg-slate-50 border border-slate-200 text-slate-500 text-[10px] font-medium px-2 py-1 rounded-md truncate">
+                            📌 {clip.source_topic}
                           </div>
                         )}
                         
@@ -532,6 +544,16 @@ export default function Dashboard() {
                                   className="setting-select !bg-slate-50 !text-slate-800 !text-[10px] border border-slate-200"
                                 >
                                   {["None", "Low", "Medium", "High"].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                              </div>
+                              <div className="setting-row !bg-white border border-slate-200">
+                                <span className="setting-label text-[10px] text-slate-500">Caption Position</span>
+                                <select 
+                                  value={getSettings(i).caption_pos}
+                                  onChange={(e) => updateSetting(i, "caption_pos", e.target.value)}
+                                  className="setting-select !bg-slate-50 !text-slate-800 !text-[10px] border border-slate-200"
+                                >
+                                  {["Top", "Center", "Bottom"].map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                               </div>
                               

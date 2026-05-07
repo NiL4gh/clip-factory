@@ -151,7 +151,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  caption_style="Hormozi", caption_pos="Center",
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
-                 all_sentences=None, padding=5.0):
+                 all_sentences=None, padding=3.0):
 
     ui_logger.log("Initializing render pipeline...")
     os.makedirs(output_dir, exist_ok=True)
@@ -358,7 +358,14 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         cmd = ["ffmpeg", "-y", "-ss", str(seg_st), "-to", str(seg_et)]
         cmd.extend(inputs)
-        cmd.extend(["-filter_complex", filter_complex, "-map", f"[{current_v}]", "-map", audio_map, "-c:v", "libx264", "-c:a", "aac", seg_out])
+        cmd.extend([
+            "-filter_complex", filter_complex,
+            "-map", f"[{current_v}]", "-map", audio_map,
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-profile:v", "high", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k",
+            seg_out
+        ])
 
         ui_logger.log(f"Executing FFmpeg for segment {idx+1}...")
         try:

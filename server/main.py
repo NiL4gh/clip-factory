@@ -26,7 +26,7 @@ from shorts_generator.config import (
 )
 from shorts_generator.downloader import download_video
 from shorts_generator.transcriber import transcribe_audio
-from shorts_generator.highlights import get_highlights, get_stitched_clips, detect_video_persona
+from shorts_generator.highlights import get_highlights, get_topic_index, detect_video_persona, estimate_clip_potential
 from shorts_generator.clipper import render_short
 from shorts_generator.enhancer import enhance_clip
 from shorts_generator import cache
@@ -79,6 +79,9 @@ _state = {
     "word_timestamps": [], 
     "current_url": None, 
     "persona": {},
+    "topics": [],
+    "estimated_clips": 0,
+    "video_duration": 0,
     "is_strategizing": False,
     "is_rendering": False,
     "is_cancelled": False
@@ -194,54 +197,60 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, target_platfor
         if _state["is_cancelled"]: return
 
         # Phase 0: Persona Detection (Fast Pass)
-        ui_logger.log(f"PROGRESS|40|Phase 0/2: Analyzing Video Persona with {fast_llm_entry['label']}...")
+        ui_logger.log(f"PROGRESS|40|Phase 0/3: Analyzing Video Persona with {fast_llm_entry['label']}...")
         persona = detect_video_persona(_state["word_timestamps"], llm_path=fast_llm_path, gpu_layers=fast_llm_entry["gpu_layers"])
-        ui_logger.log(f"PROGRESS|50|Detected Genre: {persona.get('genre', 'Unknown')} | Tone: {persona.get('tone', 'Unknown')}")
+        ui_logger.log(f"PROGRESS|45|Detected Genre: {persona.get('genre', 'Unknown')} | Tone: {persona.get('tone', 'Unknown')}")
         _state["persona"] = persona
+
+        # Calculate estimated clip potential
+        estimated = estimate_clip_potential(_state["word_timestamps"])
+        _state["estimated_clips"] = estimated
         
-        # Decide the strategy angle automatically based on persona
-        auto_angle = "standard"
-        genre = persona.get('genre', '').lower()
-        if "education" in genre or "podcast" in genre: auto_angle = "educational"
-        elif "drama" in genre or "debate" in genre: auto_angle = "controversial"
-        elif "story" in genre or "vlog" in genre: auto_angle = "storytelling"
+        # Calculate video duration
+        if _state["word_timestamps"]:
+            wts = _state["word_timestamps"]
+            _state["video_duration"] = wts[-1].get("end", 0) - wts[0].get("start", 0)
+        
+        ui_logger.log(f"PROGRESS|48|Video duration: {_state['video_duration']/60:.0f} min | Estimated clip potential: ~{estimated} clips")
 
         if _state["is_cancelled"]: return
 
-        # Phase 1: Strategic extraction
-        ui_logger.log(f"PROGRESS|60|Phase 1/2: Extracting strategic clips (Angle: {auto_angle}, Platform: {target_platform})...")
-        standard_result = get_highlights(_state["word_timestamps"], num_clips=5, llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_clips=5, angle=auto_angle)
+        # Phase 1: Topic Indexing
+        ui_logger.log(f"PROGRESS|55|Phase 1/3: Mapping video topics...")
+        topics = get_topic_index(_state["word_timestamps"], llm_path=fast_llm_path, gpu_layers=fast_llm_entry["gpu_layers"])
+        _state["topics"] = topics
+        ui_logger.log(f"PROGRESS|65|Found {len(topics)} distinct topics in the video.")
 
         if _state["is_cancelled"]: return
 
-        # Phase 2: Story stitching
-        ui_logger.log("PROGRESS|80|Phase 2/2: Scanning for cross-timestamp story connections...")
-        stitch_result = get_stitched_clips(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"], max_stitched=3)
+        # Phase 2: Per-Topic Clip Extraction
+        ui_logger.log(f"PROGRESS|70|Phase 2/3: Extracting clips per topic with {llm_entry['label']}...")
+        result = get_highlights(
+            _state["word_timestamps"],
+            num_clips=estimated,
+            llm_path=llm_path,
+            gpu_layers=llm_entry["gpu_layers"],
+            max_clips=30,
+            angle="standard",
+            topics=topics,
+        )
 
-        clips = standard_result.get("highlights", []) + stitch_result.get("highlights", [])
+        clips = result.get("highlights", [])
         if not clips:
             raise ValueError("No viral moments found in this video.")
 
         # Process durations and badges
         for i, c in enumerate(clips):
-            segs = c.get("segments", [])
-            dur = 0
-            is_stitched = c.get("is_stitched", False)
-            if segs and len(segs) > 1:
-                is_stitched = True
-                c["is_stitched"] = True
-            if segs:
-                for s in segs: dur += float(s.get("end_time", 0)) - float(s.get("start_time", 0))
-            else:
+            dur = float(c.get("duration", 0))
+            if dur == 0:
                 dur = float(c.get("end_time", 0)) - float(c.get("start_time", 0))
-            
             c["duration"] = dur
-            c["badge"] = "🔗 Stitched" if is_stitched else "🎬 Single"
+            c["badge"] = "🎬 Single"
 
         _state["clips"] = clips
         cache.save_highlights(url.strip(), _state["clips"])
         cache.save_metadata(url.strip())
-        ui_logger.log(f"PROGRESS|100|Strategy Phase Complete. Identified {len(clips)} potential clips.")
+        ui_logger.log(f"PROGRESS|100|Strategy Complete. Found {len(clips)} clips (estimated potential: ~{_state['estimated_clips']}).")
         
     except Exception as e:
         import traceback
@@ -274,6 +283,9 @@ async def reset_state():
     _state["word_timestamps"] = []
     _state["current_url"] = None
     _state["persona"] = {}
+    _state["topics"] = []
+    _state["estimated_clips"] = 0
+    _state["video_duration"] = 0
     _state["is_strategizing"] = False
     _state["is_rendering"] = False
     _state["is_cancelled"] = False
@@ -288,6 +300,9 @@ async def get_results():
         "status": "done",
         "persona": _state["persona"],
         "clips": _state["clips"],
+        "topics": _state["topics"],
+        "estimated_clips": _state["estimated_clips"],
+        "video_duration": _state["video_duration"],
         "word_timestamps": _state["word_timestamps"]
     }
 
