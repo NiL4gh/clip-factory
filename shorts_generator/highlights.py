@@ -82,14 +82,25 @@ def _parse_json_loose(raw: str):
 
 
 def _query_llm(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
-    resp = llm.create_chat_completion(
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user",   "content": prompt},
-        ],
-        temperature=0.25,
-        max_tokens=max_tokens,
-    )
+    try:
+        resp = llm.create_chat_completion(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user",   "content": prompt},
+            ],
+            temperature=0.25,
+            max_tokens=max_tokens,
+        )
+    except Exception as e:
+        ui_logger.log(f"Model error (possibly system role not supported). Retrying with combined user prompt. Details: {e}")
+        resp = llm.create_chat_completion(
+            messages=[
+                {"role": "user", "content": f"{system}\n\n{prompt}"},
+            ],
+            temperature=0.25,
+            max_tokens=max_tokens,
+        )
+
     raw = resp["choices"][0]["message"]["content"].strip()
     parsed = _parse_json_loose(raw)
     if isinstance(parsed, list):
