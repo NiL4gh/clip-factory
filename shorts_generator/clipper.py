@@ -61,8 +61,7 @@ def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920, segm
 
     # ── Try MediaPipe first (professional-grade) ─────────────────────────
     try:
-        import mediapipe as mp
-        mp_face = mp.solutions.face_detection
+        import mediapipe.python.solutions.face_detection as mp_face
         detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.5)
 
         face_centers_x = []
@@ -169,7 +168,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     ]
     
     if kwargs.get("magic_hook_text"):
-        lines.append(f"Style: MagicHook,{font_name},110,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8,6,5,10,10,150,1")
+        lines.append(f"Style: MagicHook,{font_name},110,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8,6,8,10,10,150,1")
 
     lines.extend([
         "",

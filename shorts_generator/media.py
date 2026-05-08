@@ -39,13 +39,18 @@ def get_twemoji(emoji_char, out_path):
     return False
 
 def get_sfx(out_path):
-    url = "https://cdn.pixabay.com/audio/2022/03/15/audio_7718e87d11.mp3"
     try:
         if not os.path.exists(out_path):
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=5) as resp, open(out_path, 'wb') as f:
-                f.write(resp.read())
+            import subprocess
+            # Generate a 0.1s pop sound using ffmpeg
+            cmd = [
+                "ffmpeg", "-y", "-f", "lavfi", 
+                "-i", "sine=frequency=600:duration=0.08", 
+                "-af", "afade=t=out:st=0.04:d=0.04",
+                out_path
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
     except Exception as e:
-        print(f"SFX fetch fail: {e}")
+        print(f"SFX generation fail: {e}")
     return False

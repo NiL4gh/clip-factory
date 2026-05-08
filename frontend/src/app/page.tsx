@@ -50,7 +50,7 @@ const DEFAULT_SETTINGS = {
   magic_hook: true,
   remove_silence: true,
   caption_style: "Hormozi",
-  caption_pos: "Center",
+  caption_pos: "Bottom",
   bg_music_genre: "None",
   broll_intensity: "Medium",
 };
@@ -417,12 +417,14 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2 mb-3 text-slate-400 font-sans uppercase tracking-widest font-bold">
                   <Activity className="w-3 h-3" /> System Logs
                 </div>
-                {logs.map((log, i) => (
+                {logs.map((log, i) => {
+                  if (log.toLowerCase().includes("ffmpeg") || log.toLowerCase().includes("frame=") || log.toLowerCase().includes("bitrate=") || log.toLowerCase().includes("speed=")) return null;
+                  return (
                   <div key={i} className="text-slate-300 mb-1 flex gap-3">
                     <span className="text-slate-500 shrink-0">[{new Date().toLocaleTimeString()}]</span>
                     <span className={log.includes("✅") ? "text-emerald-400" : log.includes("❌") ? "text-rose-400" : ""}>{log}</span>
                   </div>
-                ))}
+                )})}
                 <div ref={logEndRef} />
               </div>
             )}
@@ -447,10 +449,10 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="gallery-grid">
+                <div className="flex flex-col gap-6">
                   {results.clips.map((clip: any, i: number) => (
-                    <div key={i} className="gallery-card group flex flex-col border border-slate-200 bg-white hover:border-indigo-300 transition-all duration-300 shadow-sm hover:shadow-md">
-                      <div className="gallery-preview bg-slate-900 aspect-[9/16] relative overflow-hidden">
+                    <div key={i} className="group flex flex-col sm:flex-row border border-slate-200 bg-white rounded-2xl hover:border-indigo-300 transition-all duration-300 shadow-sm hover:shadow-md overflow-hidden">
+                      <div className="bg-slate-900 w-full sm:w-56 shrink-0 aspect-[9/16] relative overflow-hidden">
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-4">
                           <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white group-hover:scale-110 transition-transform backdrop-blur-sm border border-white/20">
                             <Scissors className="w-6 h-6" />
@@ -511,124 +513,158 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      {/* Expanded Settings */}
-                      {selectedClip === i && (
-                        <div className="p-4 pt-0 border-t border-slate-100 bg-slate-50 animate-fadeIn">
-                          <div className="render-settings border-none p-0 bg-transparent space-y-4">
-                            <div className="render-settings-grid !grid-cols-1">
-                              <div className="setting-row !bg-white border border-slate-200">
-                                <span className="setting-label text-[10px] text-slate-500">Caption Style</span>
-                                <select 
-                                  value={getSettings(i).caption_style}
-                                  onChange={(e) => updateSetting(i, "caption_style", e.target.value)}
-                                  className="setting-select !bg-slate-50 !text-slate-800 !text-[10px] border border-slate-200"
-                                >
-                                  {["Hormozi", "Modern", "Beast", "Bold", "Minimal"].map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                              </div>
-                              <div className="setting-row !bg-white border border-slate-200">
-                                <span className="setting-label text-[10px] text-slate-500">Music</span>
-                                <select 
-                                  value={getSettings(i).bg_music_genre}
-                                  onChange={(e) => updateSetting(i, "bg_music_genre", e.target.value)}
-                                  className="setting-select !bg-slate-50 !text-slate-800 !text-[10px] border border-slate-200"
-                                >
-                                  {["None", "Lofi", "Energy", "Suspense", "Corporate"].map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                              </div>
-                              <div className="setting-row !bg-white border border-slate-200">
-                                <span className="setting-label text-[10px] text-slate-500">B-Roll Intensity</span>
-                                <select 
-                                  value={getSettings(i).broll_intensity}
-                                  onChange={(e) => updateSetting(i, "broll_intensity", e.target.value)}
-                                  className="setting-select !bg-slate-50 !text-slate-800 !text-[10px] border border-slate-200"
-                                >
-                                  {["None", "Low", "Medium", "High"].map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                              </div>
-                              <div className="setting-row !bg-white border border-slate-200">
-                                <span className="setting-label text-[10px] text-slate-500">Caption Position</span>
-                                <select 
-                                  value={getSettings(i).caption_pos}
-                                  onChange={(e) => updateSetting(i, "caption_pos", e.target.value)}
-                                  className="setting-select !bg-slate-50 !text-slate-800 !text-[10px] border border-slate-200"
-                                >
-                                  {["Top", "Center", "Bottom"].map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                              </div>
-                              
-                              <div className="flex flex-col gap-2 px-1">
-                                <div className="flex items-center justify-between px-3 py-1 bg-white rounded-lg border border-slate-100">
-                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                    <Eye className="w-3 h-3 text-indigo-400" /> Face Tracking
-                                  </span>
-                                  <label className="setting-toggle">
-                                    <input type="checkbox" checked={getSettings(i).face_center} onChange={(e) => updateSetting(i, "face_center", e.target.checked)} />
-                                    <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                                  </label>
-                                </div>
-                                <div className="flex items-center justify-between px-3 py-1 bg-white rounded-lg border border-slate-100">
-                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                    <Sparkles className="w-3 h-3 text-amber-400" /> Magic Hook
-                                  </span>
-                                  <label className="setting-toggle">
-                                    <input type="checkbox" checked={getSettings(i).magic_hook} onChange={(e) => updateSetting(i, "magic_hook", e.target.checked)} />
-                                    <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                                  </label>
-                                </div>
-                                <div className="flex items-center justify-between px-3 py-1 bg-white rounded-lg border border-slate-100">
-                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                    <Zap className="w-3 h-3 text-indigo-400" /> Remove Silences
-                                  </span>
-                                  <label className="setting-toggle">
-                                    <input type="checkbox" checked={getSettings(i).remove_silence} onChange={(e) => updateSetting(i, "remove_silence", e.target.checked)} />
-                                    <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                                  </label>
-                                </div>
-                              </div>
-
-                                <div className="mt-4 pt-4 border-t border-slate-200">
-                                  <div className="flex items-center justify-between mb-3">
-                                    <span className="text-[10px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                                      <Type className="w-3 h-3 text-indigo-500" /> Transcript Editor
-                                    </span>
-                                    <div className="flex items-center gap-3">
-                                      <button 
-                                        onClick={() => setExcludedSentences(prev => ({...prev, [i]: []}))} 
-                                        className="text-[9px] text-slate-400 hover:text-indigo-500 font-bold uppercase transition-colors"
-                                      >
-                                        Reset Cuts
-                                      </button>
-                                      <span className="text-[8px] text-slate-400 uppercase">Click to cut</span>
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-wrap gap-2 max-h-[250px] overflow-y-auto custom-scrollbar p-2 bg-slate-50 rounded-lg border border-slate-200">
-                                    {getClipSentences(i).map((s: any, si: number) => {
-                                      const isExcluded = (excludedSentences[i] || []).some(ex => ex.start_idx === s.start_idx);
-                                      return (
-                                        <button
-                                          key={si}
-                                          onClick={() => toggleSentence(i, s)}
-                                          className={`text-left text-xs px-2.5 py-1.5 rounded-md border transition-all ${
-                                            isExcluded 
-                                              ? "bg-rose-50 text-rose-400 border-rose-200 line-through" 
-                                              : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:shadow-sm"
-                                          }`}
-                                        >
-                                          {s.text}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                      {/* Settings are moved to a modal outside */}
                     </div>
                   ))}
                 </div>
+                
+                {/* Settings Modal */}
+                {selectedClip !== null && results.clips[selectedClip] && (
+                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+                      <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                          <Settings2 className="w-5 h-5 text-indigo-500" />
+                          Clip Settings
+                        </h3>
+                        <button onClick={() => setSelectedClip(null)} className="p-2 hover:bg-slate-200 rounded-lg transition-colors">
+                          <StopCircle className="w-5 h-5 text-slate-500" />
+                        </button>
+                      </div>
+                      
+                      <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="setting-row !bg-white border border-slate-200 rounded-xl p-3">
+                            <span className="setting-label text-xs font-bold text-slate-500 mb-1 block">Caption Style</span>
+                            <select 
+                              value={getSettings(selectedClip).caption_style}
+                              onChange={(e) => updateSetting(selectedClip, "caption_style", e.target.value)}
+                              className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2"
+                            >
+                              {["Hormozi", "Modern", "Beast", "Bold", "Minimal"].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          <div className="setting-row !bg-white border border-slate-200 rounded-xl p-3">
+                            <span className="setting-label text-xs font-bold text-slate-500 mb-1 block">Music</span>
+                            <select 
+                              value={getSettings(selectedClip).bg_music_genre}
+                              onChange={(e) => updateSetting(selectedClip, "bg_music_genre", e.target.value)}
+                              className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2"
+                            >
+                              {["None", "Lofi", "Energy", "Suspense", "Corporate"].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          <div className="setting-row !bg-white border border-slate-200 rounded-xl p-3">
+                            <span className="setting-label text-xs font-bold text-slate-500 mb-1 block">B-Roll Intensity</span>
+                            <select 
+                              value={getSettings(selectedClip).broll_intensity}
+                              onChange={(e) => updateSetting(selectedClip, "broll_intensity", e.target.value)}
+                              className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2"
+                            >
+                              {["None", "Low", "Medium", "High"].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          <div className="setting-row !bg-white border border-slate-200 rounded-xl p-3">
+                            <span className="setting-label text-xs font-bold text-slate-500 mb-1 block">Caption Position</span>
+                            <select 
+                              value={getSettings(selectedClip).caption_pos}
+                              onChange={(e) => updateSetting(selectedClip, "caption_pos", e.target.value)}
+                              className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2"
+                            >
+                              {["Top", "Center", "Bottom"].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                            <div>
+                              <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <Eye className="w-4 h-4 text-indigo-500" /> Face Tracking
+                              </span>
+                              <p className="text-[10px] text-slate-500 mt-1">Automatically keeps the speaker in the center of the frame.</p>
+                            </div>
+                            <label className="setting-toggle scale-110">
+                              <input type="checkbox" checked={getSettings(selectedClip).face_center} onChange={(e) => updateSetting(selectedClip, "face_center", e.target.checked)} />
+                              <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                            </label>
+                          </div>
+                          <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                            <div>
+                              <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-amber-500" /> Magic Hook
+                              </span>
+                              <p className="text-[10px] text-slate-500 mt-1">Displays a large hook text at the top for the first 2.5 seconds.</p>
+                            </div>
+                            <label className="setting-toggle scale-110">
+                              <input type="checkbox" checked={getSettings(selectedClip).magic_hook} onChange={(e) => updateSetting(selectedClip, "magic_hook", e.target.checked)} />
+                              <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                            </label>
+                          </div>
+                          <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                            <div>
+                              <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <Zap className="w-4 h-4 text-indigo-500" /> Remove Silences
+                              </span>
+                              <p className="text-[10px] text-slate-500 mt-1">Automatically cuts dead air to keep the pacing fast and engaging.</p>
+                            </div>
+                            <label className="setting-toggle scale-110">
+                              <input type="checkbox" checked={getSettings(selectedClip).remove_silence} onChange={(e) => updateSetting(selectedClip, "remove_silence", e.target.checked)} />
+                              <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-200">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                              <Type className="w-4 h-4 text-indigo-500" /> Transcript Editor
+                            </span>
+                            <div className="flex items-center gap-3">
+                              <button 
+                                onClick={() => setExcludedSentences(prev => ({...prev, [selectedClip]: []}))} 
+                                className="text-[10px] text-slate-400 hover:text-indigo-500 font-bold uppercase transition-colors"
+                              >
+                                Reset Cuts
+                              </button>
+                              <span className="text-[10px] text-slate-400">Click to exclude</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 max-h-[180px] overflow-y-auto custom-scrollbar p-3 bg-slate-50 rounded-xl border border-slate-200 shadow-inner">
+                            {getClipSentences(selectedClip).map((s: any, si: number) => {
+                              const isExcluded = (excludedSentences[selectedClip] || []).some(ex => ex.start_idx === s.start_idx);
+                              return (
+                                <button
+                                  key={si}
+                                  onClick={() => toggleSentence(selectedClip, s)}
+                                  className={`text-left text-sm px-3 py-2 rounded-lg border transition-all ${
+                                    isExcluded 
+                                      ? "bg-rose-50 text-rose-500 border-rose-200 line-through" 
+                                      : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:shadow-sm"
+                                  }`}
+                                >
+                                  {s.text}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="p-4 border-t border-slate-100 bg-white flex gap-3">
+                        <button onClick={() => setSelectedClip(null)} className="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+                          Close
+                        </button>
+                        <button 
+                          onClick={() => { setSelectedClip(null); renderClip(selectedClip); }} 
+                          className="flex-1 py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-md shadow-indigo-600/20"
+                        >
+                          Save & Render
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="h-64 border border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center text-slate-400 bg-white">

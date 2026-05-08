@@ -41,10 +41,11 @@ VIRALITY SIGNALS (ranked by importance):
 QUALITY & NARRATIVE RULES:
 - Every clip MUST start with a hook that grabs attention in the first 3 seconds.
 - Every clip MUST have a clear narrative: Hook (Beginning) -> Context (Middle) -> Payoff (End).
-- Do NOT cut off a speaker mid-sentence or end a clip before the point is resolved.
-- Each clip must be SELF-CONTAINED — a viewer who sees ONLY this clip must understand the full point.
-- Optimal duration: 30-90 seconds total for TikTok/Reels performance.
-- Include a 3-5 second buffer (start slightly earlier, end slightly later).
+- HUMAN EDITOR RULE: You must act like a professional human editor. Start the clip exactly when the speaker introduces the topic, and end the clip ONLY when they have completely finished their point.
+- NEVER cut off a speaker mid-sentence or end a clip before the thought is fully resolved.
+- Include a 3-5 second buffer (start slightly earlier, end slightly later) to ensure no words are clipped.
+- Each clip must be 100% SELF-CONTAINED. A viewer who sees ONLY this clip must understand the full story.
+- Optimal duration: 30-180 seconds total for short-form performance.
 - Do NOT hallucinate or invent content. Only use timestamps that exist in the transcript."""
 
 
@@ -151,8 +152,8 @@ def estimate_clip_potential(word_timestamps: list) -> int:
         return 3
     duration_secs = word_timestamps[-1].get("end", 0) - word_timestamps[0].get("start", 0)
     duration_mins = duration_secs / 60.0
-    # Rule of thumb: ~1 clip per 5-8 minutes of content
-    return max(3, int(duration_mins / 6))
+    # Rule of thumb: ~1 clip per 2 minutes of content
+    return max(5, int(duration_mins / 2))
 
 
 # ── Pass 0: Persona Detection ───────────────────────────────────────────────
@@ -241,7 +242,7 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             "- Each topic must have accurate start_time and end_time from the transcript timestamps\n"
             "- Topics should NOT overlap\n"
             "- Include ALL sections — do not skip any part of the transcript\n"
-            "- A 10-minute section typically has 2-4 topics\n\n"
+            "- A 10-minute section typically has 5-10 topics\n\n"
             f"Transcript:\n{chunk}\n\n"
             f"Respond ONLY with a JSON array:\n{topic_schema}"
         )
@@ -325,7 +326,7 @@ def get_highlights(
 
     if topics and len(topics) > 0:
         # ── Topic-Aware Extraction ──
-        clips_per_topic = max(2, min(4, -(-num_clips // max(1, len(topics)))))
+        clips_per_topic = max(3, min(6, -(-num_clips // max(1, len(topics)))))
         
         for tidx, topic in enumerate(topics):
             ui_logger.log(
