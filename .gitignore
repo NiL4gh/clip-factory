@@ -6,5 +6,3 @@ venv/
 output/
 *.mp4
 .DS_Store
-
-cookies.txt
