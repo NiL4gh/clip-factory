@@ -236,7 +236,12 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, target_platfor
 
         clips = result.get("highlights", [])
         if not clips:
-            raise ValueError("No viral moments found in this video.")
+            ui_logger.log(f"ERROR: No viral moments found in this video.")
+            _state["clips"] = []
+            cache.save_highlights(url.strip(), _state["clips"])
+            cache.save_metadata(url.strip())
+            ui_logger.log(f"PROGRESS|100|Strategy Complete. No clips found.")
+            return
 
         # Process durations and badges
         for i, c in enumerate(clips):
