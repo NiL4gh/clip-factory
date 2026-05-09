@@ -10,7 +10,7 @@ import re
 from .logger import ui_logger
 
 _llm_cache = {}
-CHUNK_CHARS = 25_000  # Larger chunks for better topic context
+CHUNK_CHARS = 12_000  # Conservative size for 8k context models (Llama 3, Gemma 2)
 
 
 # ── Virality Prompting ────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ def _get_llm(llm_path: str, gpu_layers: int = 35):
         _llm_cache[llm_path] = Llama(
             model_path=llm_path,
             n_gpu_layers=gpu_layers,
-            n_ctx=0,
+            n_ctx=8192,  # Explicitly set context window for reliability
             verbose=False,
         )
         ui_logger.log("LLM loaded into memory.")
@@ -368,10 +368,9 @@ def get_highlights(
         clips_per_topic = max(3, min(6, -(-num_clips // max(1, len(topics)))))
         
         for tidx, topic in enumerate(topics):
-            ui_logger.log(
-                f"Extracting clips from topic {tidx + 1}/{len(topics)}: "
-                f"\"{topic['topic']}\" ({topic['start_time']:.0f}s - {topic['end_time']:.0f}s)..."
-            )
+            ui_logger.log(f"Topic {tidx + 1}/{len(topics)}: \"{topic['topic']}\"")
+            topic_text = _get_text_slice(text, topic["start_time"], topic["end_time"])
+            if not topic_text.strip(): continue
             
             # Get the transcript slice for this topic
             topic_text = _get_text_slice(text, topic["start_time"], topic["end_time"])
@@ -436,7 +435,7 @@ def get_highlights(
             dur = et - st
             score = max(0, min(100, int(h.get("score", 50))))
 
-            if dur < 15 or dur > 180:
+            if dur < 10 or dur > 180:  # Loosened minimum duration to 10s
                 continue
 
             # Validate and normalise theme

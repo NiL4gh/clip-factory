@@ -58,6 +58,7 @@ const DEFAULT_SETTINGS = {
 export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle");
+  const APP_VERSION = "v1.2.0-PRO";
   const [logs, setLogs] = useState<string[]>([]);
   const [results, setResults] = useState<any>(null);
   const [selectedClip, setSelectedClip] = useState<number | null>(null);
