@@ -281,7 +281,7 @@ export default function Dashboard() {
     <div className="grid grid-cols-[320px_1fr_300px] h-screen overflow-hidden bg-slate-50 text-slate-900">
       
       {/* ── Left Sidebar ────────────────────────────────── */}
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full relative p-6">
         <div className="flex-shrink-0">
           {/* Logo */}
           <div className="flex items-center gap-3">
@@ -350,11 +350,10 @@ export default function Dashboard() {
         </div>
 
         {/* Console */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-slate-900 relative">
-          <div className="shrink-0 px-4 pt-3 pb-2 bg-slate-900/95 backdrop-blur flex items-center gap-2 text-slate-400 font-sans uppercase tracking-widest font-bold text-[10px] border-b border-slate-800">
+        <div className="absolute bottom-6 left-6 right-6 top-[340px] overflow-y-auto bg-black/50 rounded-md p-2 border border-gray-800 custom-scrollbar">
+          <div className="shrink-0 px-2 pt-1 pb-2 flex items-center gap-2 text-slate-400 font-sans uppercase tracking-widest font-bold text-[10px] border-b border-slate-800 mb-2">
             <Activity className="w-3 h-3" /> System Logs
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto bg-black/50 rounded-md p-2">
             <div className="font-mono text-[10px] leading-relaxed pb-4">
               {logs.length === 0 && <div className="text-slate-600 italic">No activity yet.</div>}
               {logs.map((log, i) => (
@@ -366,7 +365,6 @@ export default function Dashboard() {
               <div ref={logEndRef} />
             </div>
           </div>
-        </div>
       </div>
 
       {/* ── Center Main Area ────────────────────────────────── */}
