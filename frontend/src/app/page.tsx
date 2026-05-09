@@ -276,479 +276,400 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen custom-scrollbar flex flex-col bg-slate-50 text-slate-900">
-      {/* ── Sticky Navbar ────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 py-3 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/10">
-            <Film className="w-5 h-5 text-white" />
+    <div className="grid grid-cols-[320px_1fr_300px] h-screen overflow-hidden bg-slate-50 text-slate-900">
+      
+      {/* ── Left Sidebar ────────────────────────────────── */}
+      <div className="w-full h-full flex flex-col bg-white border-r border-slate-200 shadow-sm z-10">
+        <div className="p-6 border-b border-slate-100 shrink-0 space-y-6">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/10">
+              <Film className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight text-slate-800">
+              ClipFactory<span className="text-indigo-500">.ai</span>
+            </h1>
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-800">
-            ClipFactory<span className="text-indigo-500">.ai</span>
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
-            <button
-              onClick={() => setActiveView("workspace")}
-              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                activeView === "workspace" ? "bg-white text-indigo-600 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Workspace
-            </button>
-            <button
-              onClick={() => setActiveView("gallery")}
-              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                activeView === "gallery" ? "bg-white text-indigo-600 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Gallery
-            </button>
-          </div>
-          <div className={`w-3 h-3 rounded-full ${status === "idle" ? "bg-slate-300" : "bg-green-500 animate-pulse"}`} />
-        </div>
-      </header>
-
-      <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-10">
-        
-        {activeView === "workspace" ? (
-          <div className="animate-fadeIn">
-            {/* ── Project Setup Card ─────────────────────────── */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-8 mb-10 shadow-sm backdrop-blur-sm">
-              <div className="max-w-2xl mx-auto text-center mb-8">
-                <h2 className="text-3xl font-bold mb-3 text-slate-900">Create New Project</h2>
-                <p className="text-slate-500 text-sm">Paste a YouTube URL to let the AI Director strategize your viral shorts.</p>
-              </div>
-
-              <div className="flex flex-col gap-6 max-w-3xl mx-auto">
-                <div className="relative group">
-                  <input
-                    type="text"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="https://youtube.com/watch?v=..."
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 rounded-xl py-4 px-5 pl-14 text-slate-800 placeholder:text-slate-400 transition-all text-lg shadow-inner"
-                  />
-                  <Film className="absolute left-5 top-4.5 w-6 h-6 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label className="model-selector-label text-slate-500">Target Platform</label>
-                    <select
-                      value={targetPlatform}
-                      onChange={(e) => setTargetPlatform(e.target.value)}
-                      className="w-full bg-transparent text-slate-700 text-sm font-medium outline-none cursor-pointer"
-                    >
-                      {["TikTok / Shorts (Vertical)", "Instagram Reels", "YouTube Longform (Horizontal)"].map((m: any) => (
-                        <option key={m} value={m} className="bg-white">{m}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label className="model-selector-label text-slate-500">Main AI Director</label>
-                    <select
-                      value={llmLabel}
-                      onChange={(e) => setLlmLabel(e.target.value)}
-                      className="w-full bg-transparent text-slate-700 text-sm font-medium outline-none cursor-pointer"
-                    >
-                      {catalogData.llm_catalog.map((m: any) => (
-                        <option key={m.label} value={m.label} className="bg-white">{m.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label className="model-selector-label text-slate-500">Transcription Engine</label>
-                    <select
-                      value={whisperLabel}
-                      onChange={(e) => setWhisperLabel(e.target.value)}
-                      className="w-full bg-transparent text-slate-700 text-sm font-medium outline-none cursor-pointer"
-                    >
-                      {catalogData.whisper_catalog.map((m: any) => (
-                        <option key={m.label} value={m.label} className="bg-white">{m.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex gap-4">
-                  <button
-                    onClick={handleStrategize}
-                    disabled={status !== "idle" || !url}
-                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 disabled:opacity-50 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-md shadow-indigo-600/10 active:scale-[0.98]"
-                  >
-                    {status === "strategizing" ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                    {status === "strategizing" ? "Strategizing..." : "Analyze & Strategize"}
-                  </button>
-                  {status === "strategizing" && (
-                    <button
-                      onClick={handleCancel}
-                      className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-                    >
-                      <StopCircle className="w-5 h-5" />
-                      Stop
-                    </button>
-                  )}
-                  {(status === "done" || status === "error") && (
-                    <button
-                      onClick={handleReset}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                      Start Over
-                    </button>
-                  )}
-                </div>
-              </div>
+          
+          {/* URL Input & Generate */}
+          <div className="space-y-4">
+            <div className="relative group">
+              <input
+                type="text"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://youtube.com/watch?v=..."
+                className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 rounded-xl py-3 px-4 pl-10 text-slate-800 placeholder:text-slate-400 transition-all text-sm shadow-inner"
+              />
+              <Film className="absolute left-3 top-3 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
             </div>
 
-            {status === "strategizing" && progress && (
-              <div className="bg-white border border-slate-200 rounded-xl p-5 mb-10 shadow-sm">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-bold text-slate-800">{progress.message}</span>
-                  <span className="text-sm font-bold text-indigo-600">{progress.percent}%</span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                  <div 
-                    className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
-                    style={{ width: `${progress.percent}%` }} 
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* ── Activity Console ───────────────────────────── */}
-            {(logs.length > 0 || status !== "idle") && (
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-10 font-mono text-[11px] leading-relaxed max-h-[160px] overflow-y-auto custom-scrollbar shadow-inner">
-                <div className="flex items-center gap-2 mb-3 text-slate-400 font-sans uppercase tracking-widest font-bold">
-                  <Activity className="w-3 h-3" /> System Logs
-                </div>
-                {logs.map((log, i) => {
-                  if (log.toLowerCase().includes("ffmpeg") || log.toLowerCase().includes("frame=") || log.toLowerCase().includes("bitrate=") || log.toLowerCase().includes("speed=")) return null;
-                  return (
-                  <div key={i} className="text-slate-300 mb-1 flex gap-3">
-                    <span className="text-slate-500 shrink-0">[{new Date().toLocaleTimeString()}]</span>
-                    <span className={log.includes("✅") ? "text-emerald-400" : log.includes("❌") ? "text-rose-400" : ""}>{log}</span>
-                  </div>
-                )})}
-                <div ref={logEndRef} />
-              </div>
-            )}
-
-            {/* ── Results Canvas ─────────────────────────────── */}
-            {results ? (
-              <div className="space-y-8 animate-fadeIn">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-800">Clip Strategy Result</h3>
-                    <p className="text-slate-500 text-xs">Persona: <span className="text-indigo-600 font-semibold">{results.persona?.type || "General"}</span></p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100">
-                      {results.clips?.length || 0} Clips Found
-                    </div>
-                    {results.estimated_clips > 0 && (
-                      <div className="bg-slate-100 text-slate-500 px-3 py-1 rounded-full text-xs font-bold border border-slate-200">
-                        ~{results.estimated_clips} Estimated Potential
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-6">
-                  {results.clips.map((clip: any, i: number) => (
-                    <div key={i} className="group flex flex-col sm:flex-row border border-slate-200 bg-white rounded-2xl hover:border-indigo-300 transition-all duration-300 shadow-sm hover:shadow-md overflow-hidden">
-                      <div className="bg-slate-900 w-full sm:w-56 shrink-0 aspect-[9/16] relative overflow-hidden">
-                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-4">
-                          <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white group-hover:scale-110 transition-transform backdrop-blur-sm border border-white/20">
-                            <Scissors className="w-6 h-6" />
-                          </div>
-                          <div>
-                            <div className="text-white font-bold text-sm mb-1 leading-tight drop-shadow-md">{clip.title || "Untitled Clip"}</div>
-                            <div className="text-white/80 text-[10px] uppercase tracking-widest font-bold flex items-center justify-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {formatTime(clip.duration || (parseFloat(clip.end_time || 0) - parseFloat(clip.start_time || 0)))}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="gallery-play-overlay bg-indigo-900/40 backdrop-blur-[2px]">
-                          <button 
-                            onClick={() => setSelectedClip(i)}
-                            className="bg-white text-indigo-600 w-12 h-12 rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-all active:scale-95"
-                          >
-                            <Settings2 className="w-5 h-5" />
-                          </button>
-                        </div>
-                        <div className="absolute top-3 left-3 bg-white/90 backdrop-blur text-[10px] font-bold text-slate-800 px-2 py-1 rounded border border-white/20 uppercase tracking-tighter shadow-sm flex items-center gap-1">
-                          <TrendingUp className="w-3 h-3 text-emerald-500" />
-                          Virality Score: {Math.round(clip.score || 0)}
-                        </div>
-                      </div>
-
-                      <div className="p-4 flex-1 flex flex-col justify-between bg-white">
-                        <div className="mb-3 space-y-2">
-                          <p className="text-xs text-slate-700 border-l-2 border-indigo-200 pl-2 italic">
-                            <span className="font-bold text-indigo-500 mr-1 not-italic">Hook:</span> 
-                            "{clip.hook_sentence || clip.description}"
-                          </p>
-                          {clip.virality_reason && (
-                            <p className="text-[10px] text-slate-500 font-medium">
-                              <TrendingUp className="w-3 h-3 inline mr-1 text-emerald-500" />
-                              {clip.virality_reason}
-                            </p>
-                          )}
-                        </div>
-                        
-                        {clip.source_topic && (
-                          <div className="mb-3 flex items-center gap-2">
-                            <div className="bg-slate-50 border border-slate-200 text-slate-500 text-[10px] font-medium px-2 py-1 rounded-md">
-                              📌 {clip.source_topic}
-                            </div>
-                            <div className="bg-indigo-50 border border-indigo-100 text-indigo-600 text-[10px] font-bold px-2 py-1 rounded-md">
-                              {clip.theme || "Storytime"}
-                            </div>
-                          </div>
-                        )}
-                        
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setSelectedClip(i)}
-                            className="flex-1 bg-slate-50 hover:bg-slate-100 text-indigo-600 text-[11px] font-bold py-2.5 rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-2"
-                          >
-                            <Settings2 className="w-3.5 h-3.5" />
-                            Settings
-                          </button>
-                          <button
-                            onClick={() => renderClip(i)}
-                            disabled={status === "rendering"}
-                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white text-[11px] font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
-                          >
-                            <Zap className="w-3.5 h-3.5" />
-                            Render
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Settings are moved to a modal outside */}
-                    </div>
-                  ))}
-                </div>
-                
-                {/* Settings Modal */}
-                {selectedClip !== null && results.clips[selectedClip] && (
-                  <div className="fixed inset-0 z-[100] flex justify-end animate-fadeIn">
-                    <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-[2px]" onClick={() => setSelectedClip(null)} />
-                    <div className="bg-white shadow-2xl w-full max-w-[400px] h-full flex flex-col overflow-hidden relative z-10 border-l border-slate-200 animate-slideInRight">
-                      <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                          <Settings2 className="w-5 h-5 text-indigo-500" />
-                          Clip Settings
-                        </h3>
-                        <button onClick={() => setSelectedClip(null)} className="p-2 hover:bg-slate-200 rounded-lg transition-colors">
-                          <StopCircle className="w-5 h-5 text-slate-500" />
-                        </button>
-                      </div>
-                      
-                      <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="setting-row !bg-white border border-slate-200 rounded-xl p-3">
-                            <span className="setting-label text-xs font-bold text-slate-500 mb-1 block">Caption Style</span>
-                            <select 
-                              value={getSettings(selectedClip).caption_style}
-                              onChange={(e) => updateSetting(selectedClip, "caption_style", e.target.value)}
-                              className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2"
-                            >
-                              {["Hormozi", "Modern", "Beast", "Bold", "Minimal"].map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </div>
-                          <div className="setting-row !bg-white border border-slate-200 rounded-xl p-3">
-                            <span className="setting-label text-xs font-bold text-slate-500 mb-1 block">Music</span>
-                            <select 
-                              value={getSettings(selectedClip).bg_music_genre}
-                              onChange={(e) => updateSetting(selectedClip, "bg_music_genre", e.target.value)}
-                              className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2"
-                            >
-                              {["None", "Lofi", "Energy", "Suspense", "Corporate"].map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </div>
-                          <div className="setting-row !bg-white border border-slate-200 rounded-xl p-3">
-                            <span className="setting-label text-xs font-bold text-slate-500 mb-1 block">B-Roll Intensity</span>
-                            <select 
-                              value={getSettings(selectedClip).broll_intensity}
-                              onChange={(e) => updateSetting(selectedClip, "broll_intensity", e.target.value)}
-                              className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2"
-                            >
-                              {["None", "Low", "Medium", "High"].map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </div>
-                          <div className="setting-row !bg-white border border-slate-200 rounded-xl p-3">
-                            <span className="setting-label text-xs font-bold text-slate-500 mb-1 block">Caption Position</span>
-                            <select 
-                              value={getSettings(selectedClip).caption_pos}
-                              onChange={(e) => updateSetting(selectedClip, "caption_pos", e.target.value)}
-                              className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2"
-                            >
-                              {["Top", "Center", "Bottom"].map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                        
-                        <div className="flex flex-col gap-3">
-                          <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                            <div>
-                              <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                <Eye className="w-4 h-4 text-indigo-500" /> Face Tracking
-                              </span>
-                              <p className="text-[10px] text-slate-500 mt-1">Automatically keeps the speaker in the center of the frame.</p>
-                            </div>
-                            <label className="setting-toggle scale-110">
-                              <input type="checkbox" checked={getSettings(selectedClip).face_center} onChange={(e) => updateSetting(selectedClip, "face_center", e.target.checked)} />
-                              <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                            </label>
-                          </div>
-                          <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                            <div>
-                              <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                <Sparkles className="w-4 h-4 text-amber-500" /> Magic Hook
-                              </span>
-                              <p className="text-[10px] text-slate-500 mt-1">Displays a large hook text at the top for the first 2.5 seconds.</p>
-                            </div>
-                            <label className="setting-toggle scale-110">
-                              <input type="checkbox" checked={getSettings(selectedClip).magic_hook} onChange={(e) => updateSetting(selectedClip, "magic_hook", e.target.checked)} />
-                              <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                            </label>
-                          </div>
-                          <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                            <div>
-                              <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                <Zap className="w-4 h-4 text-indigo-500" /> Remove Silences
-                              </span>
-                              <p className="text-[10px] text-slate-500 mt-1">Automatically cuts dead air to keep the pacing fast and engaging.</p>
-                            </div>
-                            <label className="setting-toggle scale-110">
-                              <input type="checkbox" checked={getSettings(selectedClip).remove_silence} onChange={(e) => updateSetting(selectedClip, "remove_silence", e.target.checked)} />
-                              <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="pt-4 border-t border-slate-200">
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                              <Type className="w-4 h-4 text-indigo-500" /> Transcript Editor
-                            </span>
-                            <div className="flex items-center gap-3">
-                              <button 
-                                onClick={() => setExcludedSentences(prev => ({...prev, [selectedClip]: []}))} 
-                                className="text-[10px] text-slate-400 hover:text-indigo-500 font-bold uppercase transition-colors"
-                              >
-                                Reset Cuts
-                              </button>
-                              <span className="text-[10px] text-slate-400">Click to exclude</span>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-2 max-h-[180px] overflow-y-auto custom-scrollbar p-3 bg-slate-50 rounded-xl border border-slate-200 shadow-inner">
-                            {getClipSentences(selectedClip).map((s: any, si: number) => {
-                              const isExcluded = (excludedSentences[selectedClip] || []).some(ex => ex.start_idx === s.start_idx);
-                              return (
-                                <button
-                                  key={si}
-                                  onClick={() => toggleSentence(selectedClip, s)}
-                                  className={`text-left text-sm px-3 py-2 rounded-lg border transition-all ${
-                                    isExcluded 
-                                      ? "bg-rose-50 text-rose-500 border-rose-200 line-through" 
-                                      : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:shadow-sm"
-                                  }`}
-                                >
-                                  {s.text}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-6 border-t border-slate-100 bg-slate-50">
-                        <button 
-                          onClick={() => { setSelectedClip(null); renderClip(selectedClip); }} 
-                          className="w-full py-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2"
-                        >
-                          <Play className="w-5 h-5 fill-white" />
-                          Save & Render Clip
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="h-64 border border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center text-slate-400 bg-white">
-                <Scissors className="w-12 h-12 mb-4 opacity-20" />
-                <p className="font-medium">Ready for a URL. The AI Director is standing by.</p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="animate-fadeIn">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-800">Render Gallery</h2>
-                <p className="text-slate-500 text-sm">Your completed viral shorts, ready for download.</p>
-              </div>
-              <button 
-                onClick={fetchGallery}
-                className="p-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-500 transition-colors shadow-sm"
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Target Platform</label>
+              <select
+                value={targetPlatform}
+                onChange={(e) => setTargetPlatform(e.target.value)}
+                className="w-full bg-transparent text-slate-700 text-xs font-medium outline-none cursor-pointer"
               >
-                <RefreshCw className={`w-5 h-5 ${status === "rendering" ? "animate-spin" : ""}`} />
-              </button>
+                {["TikTok / Shorts (Vertical)", "Instagram Reels", "YouTube Longform (Horizontal)"].map((m: any) => (
+                  <option key={m} value={m} className="bg-white">{m}</option>
+                ))}
+              </select>
             </div>
 
-            <div className="gallery-grid">
-              {gallery.map((video, i) => (
-                <div key={i} className="gallery-card bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
-                  <div className="gallery-preview bg-slate-900 aspect-[9/16] relative">
-                    <video
-                      className="w-full h-full object-cover"
-                      src={video.url}
-                      muted
-                      onMouseOver={e => (e.target as HTMLVideoElement).play()}
-                      onMouseOut={e => (e.target as HTMLVideoElement).pause()}
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 hover:opacity-100 transition-opacity">
-                      <Play className="w-10 h-10 text-white fill-white shadow-xl" />
-                    </div>
-                  </div>
-                  <div className="p-4 bg-white">
-                    <div className="truncate mb-1 text-xs font-bold text-slate-800">{video.filename}</div>
-                    <div className="text-[10px] text-slate-500 mb-4 uppercase tracking-wider">{(video.size_mb).toFixed(1)} MB • {new Date(video.created_at).toLocaleDateString()}</div>
-                    <a 
-                      href={video.url} 
-                      download 
-                      className="w-full bg-slate-50 hover:bg-slate-100 text-indigo-600 text-[11px] font-bold py-2.5 rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download MP4
-                    </a>
-                  </div>
-                </div>
-              ))}
-              {gallery.length === 0 && (
-                <div className="col-span-full py-20 text-center bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm">
-                  <Film className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                  <p className="text-slate-500 font-medium">No rendered clips yet. Start by strategizing a video.</p>
-                </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleStrategize}
+                disabled={status !== "idle" || !url}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 disabled:opacity-50 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all text-sm shadow-md active:scale-[0.98]"
+              >
+                {status === "strategizing" ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {status === "strategizing" ? "Strategizing..." : "Generate"}
+              </button>
+              {status === "strategizing" && (
+                <button
+                  onClick={handleCancel}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-3 px-4 rounded-xl flex items-center justify-center transition-all active:scale-[0.98]"
+                >
+                  <StopCircle className="w-4 h-4" />
+                </button>
               )}
+            </div>
+            {(status === "done" || status === "error") && (
+              <button
+                onClick={handleReset}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-sm active:scale-[0.98]"
+              >
+                <Trash2 className="w-4 h-4" />
+                Start Over
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Console */}
+        <div className="flex-1 overflow-y-auto p-4 bg-slate-900 custom-scrollbar relative">
+          <div className="sticky top-0 bg-slate-900/90 backdrop-blur pb-2 pt-1 flex items-center gap-2 text-slate-400 font-sans uppercase tracking-widest font-bold text-[10px]">
+            <Activity className="w-3 h-3" /> System Logs
+          </div>
+          <div className="font-mono text-[10px] leading-relaxed mt-2 pb-4">
+            {logs.length === 0 && <div className="text-slate-600 italic">No activity yet.</div>}
+            {logs.map((log, i) => {
+              if (log.toLowerCase().includes("ffmpeg") || log.toLowerCase().includes("frame=") || log.toLowerCase().includes("bitrate=") || log.toLowerCase().includes("speed=")) return null;
+              return (
+              <div key={i} className="text-slate-300 mb-1 flex gap-2">
+                <span className="text-slate-500 shrink-0">[{new Date().toLocaleTimeString()}]</span>
+                <span className={log.includes("✅") ? "text-emerald-400" : log.includes("❌") ? "text-rose-400" : ""}>{log}</span>
+              </div>
+            )})}
+            <div ref={logEndRef} />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Center Main Area ────────────────────────────────── */}
+      <div className="flex-1 h-full overflow-y-auto p-8 relative custom-scrollbar">
+        {status === "strategizing" && progress && (
+          <div className="bg-white border border-slate-200 rounded-xl p-5 mb-8 shadow-sm">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-bold text-slate-800">{progress.message}</span>
+              <span className="text-sm font-bold text-indigo-600">{progress.percent}%</span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+              <div 
+                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
+                style={{ width: `${progress.percent}%` }} 
+              />
             </div>
           </div>
         )}
-      </main>
 
-      <footer className="py-6 border-t border-slate-200 text-center bg-white">
-        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">
-          Powered by ClipFactory v4.1 — SaaS Stability Engine
-        </p>
-      </footer>
+        {/* AI Setup (if not generated yet) */}
+        {!results && (
+          <div className="flex gap-4 mb-8">
+            <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <label className="text-[11px] uppercase font-bold text-slate-500 block mb-1">Main AI Director</label>
+              <select
+                value={llmLabel}
+                onChange={(e) => setLlmLabel(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-100 rounded-lg p-2 text-slate-700 text-sm font-medium outline-none cursor-pointer"
+              >
+                {catalogData.llm_catalog.map((m: any) => (
+                  <option key={m.label} value={m.label}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <label className="text-[11px] uppercase font-bold text-slate-500 block mb-1">Transcription Engine</label>
+              <select
+                value={whisperLabel}
+                onChange={(e) => setWhisperLabel(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-100 rounded-lg p-2 text-slate-700 text-sm font-medium outline-none cursor-pointer"
+              >
+                {catalogData.whisper_catalog.map((m: any) => (
+                  <option key={m.label} value={m.label}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Workspace / Extracted Clips */}
+        {results ? (
+          <div className="mb-12 animate-fadeIn">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Clip Strategy Result</h3>
+                <p className="text-slate-500 text-xs">Persona: <span className="text-indigo-600 font-semibold">{results.persona?.type || "General"}</span></p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100">
+                  {results.clips?.length || 0} Clips Found
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {results.clips.map((clip: any, i: number) => (
+                <div key={i} onClick={() => setSelectedClip(i)} className={`cursor-pointer group flex flex-col border transition-all duration-300 shadow-sm overflow-hidden rounded-2xl ${selectedClip === i ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/30' : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md'}`}>
+                  <div className="flex h-40">
+                    <div className="bg-slate-900 w-28 shrink-0 relative overflow-hidden flex flex-col items-center justify-center text-center p-2">
+                      <div className="text-white font-bold text-[10px] mb-1 leading-tight drop-shadow-md line-clamp-3">{clip.title || "Untitled Clip"}</div>
+                      <div className="text-white/80 text-[9px] uppercase tracking-widest font-bold flex items-center justify-center gap-1 mt-2">
+                        <Clock className="w-3 h-3" />
+                        {formatTime(clip.duration || (parseFloat(clip.end_time || 0) - parseFloat(clip.start_time || 0)))}
+                      </div>
+                      <div className="absolute top-2 left-2 bg-white/90 backdrop-blur text-[9px] font-bold text-slate-800 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
+                        <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> {Math.round(clip.score || 0)}
+                      </div>
+                    </div>
+
+                    <div className="p-4 flex-1 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <p className="text-[11px] text-slate-700 border-l-2 border-indigo-200 pl-2 italic line-clamp-3">
+                          <span className="font-bold text-indigo-500 mr-1 not-italic">Hook:</span> 
+                          "{clip.hook_sentence || clip.description}"
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 mt-3">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); renderClip(i); }}
+                          disabled={status === "rendering"}
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white text-[10px] font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                        >
+                          <Zap className="w-3 h-3" />
+                          Render
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="h-40 border border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center text-slate-400 bg-white mb-12">
+            <Scissors className="w-10 h-10 mb-3 opacity-20" />
+            <p className="font-medium text-sm">Ready for a URL. The AI Director is standing by.</p>
+          </div>
+        )}
+
+        {/* Gallery Section */}
+        <div className="animate-fadeIn">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">Render Gallery</h2>
+            </div>
+            <button 
+              onClick={fetchGallery}
+              className="p-1.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-500 transition-colors shadow-sm"
+            >
+              <RefreshCw className={`w-4 h-4 ${status === "rendering" ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {gallery.map((video, i) => (
+              <div key={i} className="bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-xl">
+                <div className="bg-slate-900 aspect-[9/16] relative group">
+                  <video
+                    className="w-full h-full object-cover"
+                    src={video.url}
+                    muted
+                    onMouseOver={e => (e.target as HTMLVideoElement).play()}
+                    onMouseOut={e => (e.target as HTMLVideoElement).pause()}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Play className="w-8 h-8 text-white fill-white shadow-xl" />
+                  </div>
+                </div>
+                <div className="p-3 bg-white">
+                  <div className="truncate mb-1 text-[10px] font-bold text-slate-800">{video.filename}</div>
+                  <div className="text-[9px] text-slate-500 mb-3 uppercase tracking-wider">{(video.size_mb).toFixed(1)} MB</div>
+                  <a 
+                    href={video.url} 
+                    download 
+                    className="w-full bg-slate-50 hover:bg-slate-100 text-indigo-600 text-[10px] font-bold py-2 rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download
+                  </a>
+                </div>
+              </div>
+            ))}
+            {gallery.length === 0 && (
+              <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm">
+                <Film className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-500 font-medium text-sm">No rendered clips yet.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Right Sidebar ────────────────────────────────── */}
+      <div className="w-[300px] h-full overflow-y-auto bg-white border-l border-slate-200 z-10 custom-scrollbar shadow-sm">
+        <div className="p-5 border-b border-slate-100 bg-slate-50 sticky top-0 z-20">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+            <Settings2 className="w-5 h-5 text-indigo-500" />
+            Advanced Settings
+          </h3>
+        </div>
+        
+        {selectedClip !== null && results?.clips[selectedClip] ? (
+          <div className="p-5 space-y-6 animate-fadeIn">
+            <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mb-2">
+              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block mb-1">Editing Clip</span>
+              <p className="text-xs font-bold text-indigo-900 line-clamp-1">{results.clips[selectedClip].title || "Selected Clip"}</p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Caption Style</span>
+                <select 
+                  value={getSettings(selectedClip).caption_style}
+                  onChange={(e) => updateSetting(selectedClip, "caption_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["Hormozi", "Modern", "Beast", "Bold", "Minimal"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Music</span>
+                <select 
+                  value={getSettings(selectedClip).bg_music_genre}
+                  onChange={(e) => updateSetting(selectedClip, "bg_music_genre", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["None", "Lofi", "Energy", "Suspense", "Corporate"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">B-Roll Intensity</span>
+                <select 
+                  value={getSettings(selectedClip).broll_intensity}
+                  onChange={(e) => updateSetting(selectedClip, "broll_intensity", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["None", "Low", "Medium", "High"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Caption Position</span>
+                <select 
+                  value={getSettings(selectedClip).caption_pos}
+                  onChange={(e) => updateSetting(selectedClip, "caption_pos", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["Top", "Center", "Bottom"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5 text-indigo-500" /> Face Tracking
+                  </span>
+                </div>
+                <label className="setting-toggle">
+                  <input type="checkbox" checked={getSettings(selectedClip).face_center} onChange={(e) => updateSetting(selectedClip, "face_center", e.target.checked)} />
+                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                </label>
+              </div>
+              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Magic Hook
+                  </span>
+                </div>
+                <label className="setting-toggle">
+                  <input type="checkbox" checked={getSettings(selectedClip).magic_hook} onChange={(e) => updateSetting(selectedClip, "magic_hook", e.target.checked)} />
+                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                </label>
+              </div>
+              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Silences
+                  </span>
+                </div>
+                <label className="setting-toggle">
+                  <input type="checkbox" checked={getSettings(selectedClip).remove_silence} onChange={(e) => updateSetting(selectedClip, "remove_silence", e.target.checked)} />
+                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                </label>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-200">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Type className="w-3.5 h-3.5 text-indigo-500" /> Transcript Cuts
+                </span>
+                <button 
+                  onClick={() => setExcludedSentences(prev => ({...prev, [selectedClip]: []}))} 
+                  className="text-[9px] text-indigo-500 hover:text-indigo-600 font-bold uppercase transition-colors"
+                >
+                  Reset
+                </button>
+              </div>
+              <div className="flex flex-col gap-1.5 max-h-[250px] overflow-y-auto custom-scrollbar p-2 bg-slate-50 rounded-xl border border-slate-200 shadow-inner">
+                {getClipSentences(selectedClip).map((s: any, si: number) => {
+                  const isExcluded = (excludedSentences[selectedClip] || []).some(ex => ex.start_idx === s.start_idx);
+                  return (
+                    <button
+                      key={si}
+                      onClick={() => toggleSentence(selectedClip, s)}
+                      className={`text-left text-xs px-3 py-2 rounded-lg border transition-all ${
+                        isExcluded 
+                          ? "bg-rose-50 text-rose-500 border-rose-200 line-through opacity-75" 
+                          : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:shadow-sm"
+                      }`}
+                    >
+                      {s.text}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button 
+              onClick={() => renderClip(selectedClip)} 
+              className="w-full mt-4 py-3.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 active:scale-[0.98]"
+            >
+              <Zap className="w-4 h-4 fill-white" />
+              Render This Clip
+            </button>
+          </div>
+        ) : (
+          <div className="p-8 text-center text-slate-400 mt-10">
+            <Settings2 className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            <p className="text-xs font-medium">Select a clip from the workspace to edit its settings.</p>
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

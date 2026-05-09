@@ -5,11 +5,11 @@ import shutil
 import cv2
 import urllib.request
 
+from shorts_generator.config import FONT_PATH
 from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
 from .logger import ui_logger
 
 # Ensure we have our premium font
-FONT_PATH = "/usr/share/fonts/truetype/Montserrat-Black.ttf"
 if os.path.exists("/usr/share/fonts/truetype") and not os.path.exists(FONT_PATH):
     try:
         urllib.request.urlretrieve("https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Black.ttf", FONT_PATH)
@@ -34,10 +34,24 @@ def _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, temp_o
     except:
         detector = None
 
+    ret, first_frame = cap.read()
+    if not ret:
+        cap.release()
+        if detector: detector.close()
+        return temp_out
+        
+    h, w = first_frame.shape[:2]
+    crop_w = int(h * 9 / 16)
+    crop_h = h
+    if is_peak:
+        crop_w = int(crop_w / 1.2)
+        crop_h = int(crop_h / 1.2)
+
     cmd = [
         "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", f"{target_w}x{target_h}", "-pix_fmt", "bgr24",
+        "-s", f"{crop_w}x{crop_h}", "-pix_fmt", "bgr24",
         "-r", str(fps), "-i", "-", 
+        "-vf", f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2",
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "17", "-pix_fmt", "yuv420p",
         temp_out
     ]
@@ -49,16 +63,17 @@ def _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, temp_o
     frame_count = 0
     target_x = -1
     
-    for _ in range(frames_to_process):
-        ret, frame = cap.read()
-        if not ret: break
+    frame = first_frame
+    for i in range(frames_to_process):
+        if i > 0:
+            ret, frame = cap.read()
+            if not ret: break
         
+        # Recalculate original crop dimensions based on current frame in case of vfr
         h, w = frame.shape[:2]
         crop_w = int(h * 9 / 16)
         crop_h = h
-        
         if is_peak:
-            # Zoom in by 1.2x
             crop_w = int(crop_w / 1.2)
             crop_h = int(crop_h / 1.2)
         
@@ -88,11 +103,9 @@ def _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, temp_o
         crop_y = (h - crop_h) // 2 if is_peak else 0
         
         cropped = frame[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
-        # Lanczos provides much better upscale sharpness than FFmpeg default
-        resized = cv2.resize(cropped, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
         
         try:
-            proc.stdin.write(resized.tobytes())
+            proc.stdin.write(cropped.tobytes())
         except:
             break
             
@@ -379,14 +392,34 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         seg_words = [w for w in block_words if w["start"] >= seg_st - 0.2 and w["end"] <= seg_et + 0.2]
         if add_subs and seg_words:
-            ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
             mh_text = clip_data.get("hook_sentence") if (magic_hook and idx == 0) else None
-            _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st,
-                          theme=theme, style_mode=caption_style, position=caption_pos, magic_hook_text=mh_text)
-            safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
-            next_v = f"v{input_idx}_ass"
-            filter_complex += f"[{current_v}]ass='{safe_ass}'[{next_v}];"
-            current_v = next_v
+            safe_font = FONT_PATH.replace("\\", "/").replace(":", "\\:")
+            
+            y_pos = "(h-text_h)/2"
+            if caption_pos == "Top": y_pos = "250"
+            elif caption_pos == "Bottom": y_pos = "h-text_h-250"
+
+            if mh_text:
+                safe_hook = mh_text.upper().replace("'", "\u2019").replace(":", "\\:")
+                next_v = f"v{input_idx}_hook"
+                hook_y = "(h-text_h)/2-300" if caption_pos == "Center" else "150"
+                filter_complex += f"[{current_v}]drawtext=fontfile='{safe_font}':text='{safe_hook}':fontsize=110:fontcolor=white:borderw=6:bordercolor=black:shadowcolor=black@0.5:shadowx=4:shadowy=4:x=(w-text_w)/2:y={hook_y}:enable='between(t,0,2.5)'[{next_v}];"
+                current_v = next_v
+                input_idx += 1
+
+            for i_w, w in enumerate(seg_words):
+                w_st = max(0, w["start"] - seg_st)
+                w_et = max(0, w["end"] - seg_st)
+                if w_et <= w_st: continue
+                
+                txt = w["word"].strip().upper() if caption_style == "Hormozi" else w["word"].strip()
+                safe_txt = txt.replace("'", "\u2019").replace(":", "\\:")
+                if not safe_txt: continue
+                
+                next_v = f"v{input_idx}_w{i_w}"
+                filter_complex += f"[{current_v}]drawtext=fontfile='{safe_font}':text='{safe_txt}':fontsize=72:fontcolor=white:borderw=3:bordercolor=black:shadowcolor=black@0.5:shadowx=2:shadowy=2:x=(w-text_w)/2:y={y_pos}:enable='between(t,{w_st},{w_et})'[{next_v}];"
+                current_v = next_v
+                input_idx += 1
 
         filter_complex = filter_complex.rstrip(';')
 

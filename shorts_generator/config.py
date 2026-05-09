@@ -57,6 +57,9 @@ if not os.path.exists(COOKIE_PATH):
 
 
 
+# ── Font Configuration ───────────────────────────────────────────
+FONT_PATH = "/usr/share/fonts/truetype/Montserrat-Black.ttf"
+
 # ── Local LLM catalog ────────────────────────────────────────────
 LLM_CATALOG = [
     {"label": "🦙 LLaMA 3 8B Instruct Q4",
