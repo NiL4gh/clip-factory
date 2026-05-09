@@ -142,6 +142,27 @@ export default function Dashboard() {
     } catch {}
   };
 
+  // Blocklist regex — reject raw backend noise from the log console
+  const LOG_BLOCKLIST = /DEBUG|ffmpeg|whisper|model_load|frame=|bitrate=|speed=|Lsize=|muxing overhead|Stream #|libx26|matroska|ggml|llama_|llm_load|VRAM|size=\s*\d|cublas|metal|cuda|opengl|vulkan/i;
+
+  const handleWsMessage = (event: MessageEvent) => {
+    try {
+      const entry = JSON.parse(event.data);
+      if (entry.type === "progress") {
+        setProgress({ percent: entry.percent || 0, message: entry.message || "" });
+      } else if (entry.type === "status") {
+        if (!LOG_BLOCKLIST.test(entry.message)) {
+          setLogs(prev => [...prev, entry.message]);
+        }
+      }
+    } catch {
+      // Legacy fallback — plain string, still filter
+      if (!LOG_BLOCKLIST.test(event.data)) {
+        setLogs(prev => [...prev, event.data]);
+      }
+    }
+  };
+
   const handleStrategize = async () => {
     if (!url) return;
     setStatus("strategizing");
@@ -149,16 +170,7 @@ export default function Dashboard() {
     setSelectedClip(null);
 
     const ws = new WebSocket(wsUrl());
-    ws.onmessage = (event) => {
-      if (event.data.startsWith("PROGRESS|")) {
-        const parts = event.data.split("|");
-        if (parts.length >= 3) {
-          setProgress({ percent: parseInt(parts[1], 10), message: parts[2] });
-        }
-      } else {
-        setLogs(prev => [...prev, event.data]);
-      }
-    };
+    ws.onmessage = handleWsMessage;
 
     try {
       await axios.post(`${API_BASE}/strategize`, { url, llm_label: llmLabel, whisper_label: whisperLabel, target_platform: targetPlatform });
@@ -183,20 +195,10 @@ export default function Dashboard() {
   const renderClip = async (index: number) => {
     setStatus("rendering");
     const ws = new WebSocket(wsUrl());
-    ws.onmessage = (event) => {
-      if (event.data.startsWith("PROGRESS|")) {
-        const parts = event.data.split("|");
-        if (parts.length >= 3) {
-          setProgress({ percent: parseInt(parts[1], 10), message: parts[2] });
-        }
-      } else {
-        setLogs(prev => [...prev, event.data]);
-      }
-    };
+    ws.onmessage = handleWsMessage;
 
     try {
       const settings = getSettings(index);
-      // Convert excluded sentences from our editor state to the format the backend expects
       const exSentences = (excludedSentences[index] || []).map(s => `[WID:${s.start_idx}-${s.end_idx}] ${s.text}`);
 
       const res = await axios.post(`${API_BASE}/render`, {
@@ -348,21 +350,21 @@ export default function Dashboard() {
         </div>
 
         {/* Console */}
-        <div className="flex-1 overflow-y-auto p-4 bg-slate-900 custom-scrollbar relative">
-          <div className="sticky top-0 bg-slate-900/90 backdrop-blur pb-2 pt-1 flex items-center gap-2 text-slate-400 font-sans uppercase tracking-widest font-bold text-[10px]">
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-900 relative">
+          <div className="shrink-0 px-4 pt-3 pb-2 bg-slate-900/95 backdrop-blur flex items-center gap-2 text-slate-400 font-sans uppercase tracking-widest font-bold text-[10px] border-b border-slate-800">
             <Activity className="w-3 h-3" /> System Logs
           </div>
-          <div className="font-mono text-[10px] leading-relaxed mt-2 pb-4">
-            {logs.length === 0 && <div className="text-slate-600 italic">No activity yet.</div>}
-            {logs.map((log, i) => {
-              if (log.toLowerCase().includes("ffmpeg") || log.toLowerCase().includes("frame=") || log.toLowerCase().includes("bitrate=") || log.toLowerCase().includes("speed=")) return null;
-              return (
-              <div key={i} className="text-slate-300 mb-1 flex gap-2">
-                <span className="text-slate-500 shrink-0">[{new Date().toLocaleTimeString()}]</span>
-                <span className={log.includes("✅") ? "text-emerald-400" : log.includes("❌") ? "text-rose-400" : ""}>{log}</span>
-              </div>
-            )})}
-            <div ref={logEndRef} />
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            <div className="font-mono text-[10px] leading-relaxed pb-4">
+              {logs.length === 0 && <div className="text-slate-600 italic">No activity yet.</div>}
+              {logs.map((log, i) => (
+                <div key={i} className="text-slate-300 mb-1.5 flex gap-2">
+                  <span className="text-slate-500 shrink-0 select-none">{String(i + 1).padStart(2, '0')}</span>
+                  <span className={log.includes("✅") || log.includes("Complete") ? "text-emerald-400" : log.includes("❌") || log.includes("ERROR") ? "text-rose-400" : log.includes("Phase") ? "text-indigo-400" : ""}>{log}</span>
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
           </div>
         </div>
       </div>

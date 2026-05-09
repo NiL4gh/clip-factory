@@ -4,6 +4,7 @@ import uuid
 import shutil
 import cv2
 import urllib.request
+import re as _re
 
 from shorts_generator.config import FONT_PATH
 from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
@@ -17,6 +18,93 @@ if os.path.exists("/usr/share/fonts/truetype") and not os.path.exists(FONT_PATH)
         ui_logger.log("Premium font (Montserrat-Black) installed.")
     except:
         pass
+
+
+# ── Silence Detection & Removal ──────────────────────────────────────────────
+
+def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -30, min_silence_dur: float = 0.5) -> str:
+    """
+    Run FFmpeg silencedetect on a rendered segment, then re-cut to remove
+    silent gaps, creating fast-paced jump-cut style delivery.
+    Returns the path to the processed file (output_path or input_path if no silence found).
+    """
+    # Step 1: Detect silence intervals
+    detect_cmd = [
+        "ffmpeg", "-i", input_path,
+        "-af", f"silencedetect=noise={noise_db}dB:d={min_silence_dur}",
+        "-f", "null", "-"
+    ]
+    try:
+        result = subprocess.run(detect_cmd, capture_output=True, text=True)
+        stderr = result.stderr
+    except Exception:
+        return input_path
+
+    # Step 2: Parse silence intervals from stderr
+    silence_starts = []
+    silence_ends = []
+    for line in stderr.split("\n"):
+        m_start = _re.search(r"silence_start:\s*([\d.]+)", line)
+        m_end = _re.search(r"silence_end:\s*([\d.]+)", line)
+        if m_start:
+            silence_starts.append(float(m_start.group(1)))
+        if m_end:
+            silence_ends.append(float(m_end.group(1)))
+
+    # Pair up silence intervals
+    silence_intervals = list(zip(silence_starts, silence_ends[:len(silence_starts)]))
+    
+    # Only process if meaningful silence found (>= 0.5s gaps)
+    meaningful = [(s, e) for s, e in silence_intervals if e - s >= min_silence_dur]
+    if not meaningful:
+        return input_path
+
+    ui_logger.log(f"  Removing {len(meaningful)} silent gaps ({sum(e-s for s,e in meaningful):.1f}s total dead air)...")
+
+    # Step 3: Build non-silent segments
+    # Get video duration
+    probe_cmd = ["ffmpeg", "-i", input_path, "-f", "null", "-"]
+    try:
+        probe_res = subprocess.run(probe_cmd, capture_output=True, text=True)
+        dur_match = _re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", probe_res.stderr)
+        if dur_match:
+            total_dur = int(dur_match.group(1)) * 3600 + int(dur_match.group(2)) * 60 + float(dur_match.group(3))
+        else:
+            total_dur = 999
+    except Exception:
+        total_dur = 999
+
+    # Build list of non-silent time ranges
+    non_silent = []
+    cursor = 0.0
+    for s_start, s_end in sorted(meaningful):
+        if s_start > cursor + 0.1:
+            non_silent.append((cursor, s_start))
+        cursor = s_end
+    if cursor < total_dur - 0.1:
+        non_silent.append((cursor, total_dur))
+
+    if not non_silent or len(non_silent) < 1:
+        return input_path
+
+    # Step 4: Use FFmpeg select filter to keep only non-silent parts
+    select_parts = "+".join(
+        f"between(t\\,{s:.3f}\\,{e:.3f})" for s, e in non_silent
+    )
+    
+    trim_cmd = [
+        "ffmpeg", "-y", "-i", input_path,
+        "-vf", f"select='{select_parts}',setpts=N/FRAME_RATE/TB",
+        "-af", f"aselect='{select_parts}',asetpts=N/SR/TB",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "17",
+        "-c:a", "aac", "-b:a", "192k",
+        output_path
+    ]
+    try:
+        subprocess.run(trim_cmd, check=True, capture_output=True, text=True)
+        return output_path
+    except subprocess.CalledProcessError:
+        return input_path
 
 def _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, temp_out, is_peak=False):
     """
@@ -232,14 +320,12 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
     target_w, target_h = 1080, 1920
 
-    # ── Stitched multi-segment clips (Q&A / Setup-Payoff) ────────────────────
-    # If clip_data has a 'segments' array (from get_stitched_clips), render each
-    # segment independently and concatenate — overrides start/end override logic.
-    is_stitched = bool(clip_data.get("is_stitched") and clip_data.get("segments"))
-    if is_stitched:
-        raw_segments = clip_data["segments"]
-        ui_logger.log(f"Stitched clip: rendering {len(raw_segments)} segments across different timestamps...")
-        # For stitched clips, collect all words across all segments for subtitles/broll
+    # ── Build segments from clip_data ────────────────────────────────────────
+    # New schema: all clips have a "segments" array. Legacy clips fall back to start_time/end_time.
+    raw_segments = clip_data.get("segments", [])
+    if raw_segments and len(raw_segments) > 0:
+        # Multi-segment clip (from Opus-style LLM output)
+        ui_logger.log(f"Multi-segment clip: rendering {len(raw_segments)} segments...")
         block_words = []
         for seg in raw_segments:
             seg_st = float(seg["start_time"])
@@ -248,7 +334,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         segments = [{"start_time": float(s["start_time"]), "end_time": float(s["end_time"])}
                     for s in raw_segments]
     else:
-        # ── Standard single-range clip ────────────────────────────────────────
+        # ── Legacy single-range clip ──────────────────────────────────────────
         base_st = float(override_start) if override_start is not None else float(clip_data.get("start_time", 0))
         base_et = float(override_end) if override_end is not None else float(clip_data.get("end_time", 0))
 
@@ -257,9 +343,6 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         base_et = base_et + padding
 
         # ── Word-ID based exclusions (precise word-level cuts) ────────────
-        # Sentence labels have format: "[WID:45-52] [12.3s] sentence text..."
-        # We parse the WID range to get exact global word indices to exclude.
-        import re as _re
         excluded_word_indices = set()
         if excluded_sentences:
             for ex_str in excluded_sentences:
@@ -326,7 +409,11 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             audio_source = "1:a"
             
             # Subtle unsharp mask to recover detail without artificial grain
-            filter_complex = "[0:v]unsharp=3:3:0.5[base];"
+            # Apply zoompan for Magic Hook on first segment
+            if magic_hook and idx == 0:
+                filter_complex = "[0:v]unsharp=3:3:0.5,zoompan=z='if(lte(in_time\,2.5)\,min(zoom+0.0015\,1.3)\,1)':d=1:s=1080x1920:fps=30[base];"
+            else:
+                filter_complex = "[0:v]unsharp=3:3:0.5[base];"
         else:
             inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
             audio_source = "0:a"
@@ -338,6 +425,10 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                 base_crop = f"crop=ih*9/16/1.2:ih/1.2:in_w/2-ih*9/32:0,scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.5"
             else:
                 base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.5"
+            
+            # Apply zoompan for Magic Hook on first segment (non-face-tracking path)
+            if magic_hook and idx == 0:
+                base_crop += f",zoompan=z='if(lte(in_time\\,2.5)\\,min(zoom+0.0015\\,1.3)\\,1)':d=1:s={target_w}x{target_h}:fps=30"
                 
             filter_complex = f"[0:v]{base_crop}[base];"
 
@@ -400,10 +491,20 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             elif caption_pos == "Bottom": y_pos = "h-text_h-250"
 
             if mh_text:
-                safe_hook = mh_text.upper().replace("'", "\u2019").replace(":", "\\:")
+                safe_hook = mh_text.upper().replace("'", "\u2019").replace(":", "\\:").replace("\\", "/")
                 next_v = f"v{input_idx}_hook"
-                hook_y = "(h-text_h)/2-300" if caption_pos == "Center" else "150"
-                filter_complex += f"[{current_v}]drawtext=fontfile='{safe_font}':text='{safe_hook}':fontsize=110:fontcolor=white:borderw=6:bordercolor=black:shadowcolor=black@0.5:shadowx=4:shadowy=4:x=(w-text_w)/2:y={hook_y}:enable='between(t,0,2.5)'[{next_v}];"
+                # Yellow background box with black Montserrat text, bottom-third position
+                hook_y = "h*0.70"
+                filter_complex += (
+                    f"[{current_v}]drawtext=fontfile='{safe_font}'"
+                    f":text='{safe_hook}'"
+                    f":fontsize=80"
+                    f":fontcolor=black"
+                    f":box=1:boxcolor=yellow@0.88:boxborderw=20"
+                    f":x=(w-text_w)/2:y={hook_y}"
+                    f":enable='between(t,0,2.5)'"
+                    f"[{next_v}];"
+                )
                 current_v = next_v
                 input_idx += 1
 
@@ -461,8 +562,13 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
-            ui_logger.log(f"FFmpeg error: {e.stderr}")
+            ui_logger.log(f"FFmpeg error: {e.stderr[-500:] if e.stderr else 'unknown'}")
             raise
+
+        # ── Post-render silence removal pass ──
+        if remove_silence:
+            desilenced = os.path.join(work_dir, f"desil_{out_id}_{idx}.mp4")
+            seg_out = _remove_silence_ffmpeg(seg_out, desilenced)
         rendered_segs.append(seg_out)
 
     if not rendered_segs:

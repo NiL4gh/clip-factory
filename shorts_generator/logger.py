@@ -1,35 +1,51 @@
-import queue
 import datetime
+import json
+import re
+
 
 class UIStreamLogger:
+    """
+    Structured logger that emits clean JSON entries for the frontend WebSocket.
+    Each log is stored as a dict: {"type": "status"|"progress", "message": "...", ...}
+    The WebSocket reads only NEW entries since the last read via get_new_entries().
+    """
+
     def __init__(self):
-        self.q = queue.Queue()
-        self.full_log = ""
+        self._entries = []
+        self._last_read_idx = 0
 
-    def log(self, message):
+    def log(self, message: str):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        formatted = f"[{timestamp}] {message}"
-        print(formatted)
-        self.q.put(formatted)
-        self.full_log += formatted + "\n"
+        m = re.match(r'^PROGRESS\|(\d+)\|(.+)$', message)
+        if m:
+            entry = {
+                "type": "progress",
+                "percent": int(m.group(1)),
+                "message": m.group(2).strip(),
+                "ts": timestamp,
+            }
+        else:
+            entry = {
+                "type": "status",
+                "message": message.strip(),
+                "ts": timestamp,
+            }
+        self._entries.append(entry)
+        print(f"[{timestamp}] {message}")
 
-    def get_new_logs(self):
-        new_lines = []
-        while not self.q.empty():
-            new_lines.append(self.q.get())
-        if new_lines:
-            return "\n".join(new_lines)
-        return None
+    def get_new_entries(self) -> list:
+        if self._last_read_idx >= len(self._entries):
+            return []
+        new = self._entries[self._last_read_idx:]
+        self._last_read_idx = len(self._entries)
+        return new
 
-    def get_full_log(self):
-        return self.full_log
+    def get_full_log(self) -> str:
+        return "\n".join(e["message"] for e in self._entries)
 
     def clear(self):
-        self.full_log = ""
-        while not self.q.empty():
-            try:
-                self.q.get_nowait()
-            except queue.Empty:
-                break
+        self._entries.clear()
+        self._last_read_idx = 0
+
 
 ui_logger = UIStreamLogger()
