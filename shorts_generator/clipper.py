@@ -398,42 +398,16 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         is_peak = (seg_st <= float(clip_data.get("peak_moment", 0)) <= seg_et)
 
         # ── Setup Video/Audio Inputs ──
-        if face_center:
-            ui_logger.log(f"Running OpenCV dynamic smooth tracking for segment...")
-            dynamic_temp = os.path.join(work_dir, f"dyn_{out_id}_{idx}.mp4")
-            _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, dynamic_temp, is_peak)
-            
-            inputs = ["-i", dynamic_temp]
-            # Map audio from original video explicitly constrained to the clip duration to avoid infinite encoding
-            inputs.extend(["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video])
-            audio_source = "1:a"
-            
-            # Subtle unsharp mask to recover detail without artificial grain
-            # Apply zoompan for Magic Hook on first segment
-            if magic_hook and idx == 0:
-                filter_complex = "[0:v]unsharp=3:3:0.5,zoompan=z='if(lte(in_time\,2.5)\,min(zoom+0.0015\,1.3)\,1)':d=1:s=1080x1920:fps=30[base];"
-            else:
-                filter_complex = "[0:v]unsharp=3:3:0.5[base];"
-        else:
-            inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
-            audio_source = "0:a"
-            
-            crop_w, crop_h = "ih*9/16", "ih"
-            crop_x, crop_y = "in_w/2-ih*9/32", "0"
-            
-            if is_peak:
-                base_crop = f"crop=ih*9/16/1.2:ih/1.2:in_w/2-ih*9/32:0,scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.5"
-            else:
-                base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.5"
-            
-            # Apply zoompan for Magic Hook on first segment (non-face-tracking path)
-            if magic_hook and idx == 0:
-                base_crop += f",zoompan=z='if(lte(in_time\\,2.5)\\,min(zoom+0.0015\\,1.3)\\,1)':d=1:s={target_w}x{target_h}:fps=30"
-                
-            filter_complex = f"[0:v]{base_crop}[base];"
+        inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
+        audio_source = "0:a"
+        
+        # Bulletproof 9:16 Center Crop
+        base_crop = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"
+        
+        filter_complex = f"[0:v]{base_crop},unsharp=3:3:0.5[base];"
 
         current_v = "base"
-        input_idx = 2 if face_center else 1
+        input_idx = 1
         sfx_delays = []
         for i_b, b in enumerate(broll_kws):
             if isinstance(b, str):
@@ -493,14 +467,13 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             if mh_text:
                 safe_hook = mh_text.upper().replace("'", "\u2019").replace(":", "\\:").replace("\\", "/")
                 next_v = f"v{input_idx}_hook"
-                # Yellow background box with black Montserrat text, bottom-third position
-                hook_y = "h*0.70"
+                hook_y = "h*0.15"
                 filter_complex += (
                     f"[{current_v}]drawtext=fontfile='{safe_font}'"
                     f":text='{safe_hook}'"
                     f":fontsize=80"
-                    f":fontcolor=black"
-                    f":box=1:boxcolor=yellow@0.88:boxborderw=20"
+                    f":fontcolor=0xFFFF00"
+                    f":borderw=5:bordercolor=black"
                     f":x=(w-text_w)/2:y={hook_y}"
                     f":enable='between(t,0,2.5)'"
                     f"[{next_v}];"
@@ -508,21 +481,48 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                 current_v = next_v
                 input_idx += 1
 
-            for i_w, w in enumerate(seg_words):
-                w_st = max(0, w["start"] - seg_st)
-                w_et = max(0, w["end"] - seg_st)
-                if w_et <= w_st: continue
+            phrase_chunks = []
+            curr_chunk = []
+            for w in seg_words:
+                if len(curr_chunk) >= 5:
+                    phrase_chunks.append(curr_chunk)
+                    curr_chunk = []
+                curr_chunk.append(w)
+            if curr_chunk:
+                phrase_chunks.append(curr_chunk)
+
+            caption_y = "h-line_h-80"
+            for p_idx, chunk in enumerate(phrase_chunks):
+                if not chunk: continue
+                chunk_st = max(0, chunk[0]["start"] - seg_st)
+                chunk_et = max(0, chunk[-1]["end"] - seg_st)
+                if chunk_et <= chunk_st: continue
+
+                phrase_words = [w["word"].strip().upper() if caption_style == "Hormozi" else w["word"].strip() for w in chunk]
+                full_phrase = " ".join(phrase_words).replace("'", "\u2019").replace(":", "\\:")
                 
-                txt = w["word"].strip().upper() if caption_style == "Hormozi" else w["word"].strip()
-                safe_txt = txt.replace("'", "\u2019").replace(":", "\\:")
-                if not safe_txt: continue
-                
-                next_v = f"v{input_idx}_w{i_w}"
-                filter_complex += f"[{current_v}]drawtext=fontfile='{safe_font}':text='{safe_txt}':fontsize=72:fontcolor=white:borderw=3:bordercolor=black:shadowcolor=black@0.5:shadowx=2:shadowy=2:x=(w-text_w)/2:y={y_pos}:enable='between(t,{w_st},{w_et})'[{next_v}];"
+                next_v = f"v{input_idx}_p{p_idx}"
+                filter_complex += f"[{current_v}]drawtext=fontfile='{safe_font}':text='{full_phrase}':fontsize=72:fontcolor=white:borderw=5:bordercolor=black:x=(w-text_w)/2:y={caption_y}:enable='between(t,{chunk_st},{chunk_et})'[{next_v}];"
                 current_v = next_v
                 input_idx += 1
 
-        filter_complex = filter_complex.rstrip(';')
+                for w_idx, w in enumerate(chunk):
+                    w_st = max(0, w["start"] - seg_st)
+                    w_et = max(0, w["end"] - seg_st)
+                    if w_et <= w_st: continue
+                    target_word = phrase_words[w_idx].replace("'", "\u2019").replace(":", "\\:")
+                    if not target_word: continue
+
+                    spaced_phrase = " ".join([word if i == w_idx else " "*len(word) for i, word in enumerate(phrase_words)]).replace("'", "\u2019").replace(":", "\\:")
+
+                    next_v = f"v{input_idx}_w{w_idx}"
+                    filter_complex += f"[{current_v}]drawtext=fontfile='{safe_font}':text='{spaced_phrase}':fontsize=72:fontcolor=0xFFFF00:borderw=5:bordercolor=black:x=(w-text_w)/2:y={caption_y}:enable='between(t,{w_st},{w_et})'[{next_v}];"
+                    current_v = next_v
+                    input_idx += 1
+
+        filter_complex += f";[{current_v}]setpts=PTS-STARTPTS[v_out]"
+        current_v = "v_out"
+        filter_complex = filter_complex.replace(";;", ";").rstrip(';')
 
         audio_filter = ""
         if sfx_delays:
@@ -533,11 +533,12 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                 delay_ms = max(0, int(delay_sec * 1000))
                 audio_filter += f"[{sfx_idx}:a]adelay={delay_ms}|{delay_ms},volume=0.6[sfx_{i}];"
                 amix_inputs += f"[sfx_{i}]"
-            audio_filter += f"{amix_inputs}amix=inputs={len(sfx_delays)+1}:duration=first[a_out]"
+            audio_filter += f"{amix_inputs}amix=inputs={len(sfx_delays)+1}:duration=first,asetpts=PTS-STARTPTS[a_out]"
             audio_map = "[a_out]"
             filter_complex += f";{audio_filter}"
         else:
-            audio_map = audio_source
+            filter_complex += f";[{audio_source}]asetpts=PTS-STARTPTS[a_out]"
+            audio_map = "[a_out]"
 
         seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
 
@@ -558,11 +559,24 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             seg_out
         ])
 
-        ui_logger.log(f"Executing FFmpeg for segment {idx+1}...")
+        ui_logger.log(f"PROGRESS|0|Rendering segment {idx+1}...")
         try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True)
+            import re as _re_ffmpeg
+            total_time_secs = seg_et - seg_st
+            for line in proc.stderr:
+                m = _re_ffmpeg.search(r'time=(\d+):(\d+):(\d+\.\d+)', line)
+                if m and total_time_secs > 0:
+                    h, m_m, s = float(m.group(1)), float(m.group(2)), float(m.group(3))
+                    cur_secs = h*3600 + m_m*60 + s
+                    pct = min(99, int((cur_secs / total_time_secs) * 100))
+                    ui_logger.log(f"PROGRESS|{pct}|Rendering {pct}%...")
+            proc.wait()
+            if proc.returncode != 0:
+                raise subprocess.CalledProcessError(proc.returncode, cmd, stderr="FFmpeg failed")
+            ui_logger.log(f"PROGRESS|100|Rendering 100%...")
         except subprocess.CalledProcessError as e:
-            ui_logger.log(f"FFmpeg error: {e.stderr[-500:] if e.stderr else 'unknown'}")
+            ui_logger.log(f"FFmpeg error: {e.stderr[-500:] if hasattr(e, 'stderr') and e.stderr else 'unknown'}")
             raise
 
         # ── Post-render silence removal pass ──

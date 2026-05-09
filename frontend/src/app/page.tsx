@@ -371,7 +371,7 @@ export default function Dashboard() {
 
       {/* ── Center Main Area ────────────────────────────────── */}
       <div className="flex-1 h-full overflow-y-auto p-8 relative custom-scrollbar">
-        {status === "strategizing" && progress && (
+        {(status === "strategizing" || status === "rendering") && progress && (
           <div className="bg-white border border-slate-200 rounded-xl p-5 mb-8 shadow-sm">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-bold text-slate-800">{progress.message}</span>

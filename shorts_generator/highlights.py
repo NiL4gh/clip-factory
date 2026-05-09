@@ -223,6 +223,15 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
     if current_segment:
         segments.append(current_segment)
         
+    if not segments and raw_words and ideal_transcript:
+        # Fallback: finding the first word of the ideal_transcript in the raw words
+        first_word = normalize_word(ideal_transcript.split()[0]) if ideal_transcript.split() else ""
+        for i, w in enumerate(raw_words):
+            if normalize_word(w["word"]) == first_word:
+                st = w["start"]
+                et = min(st + 45.0, raw_words[-1]["end"])
+                return [{"start_time": st, "end_time": et}]
+        
     return segments
 
 
@@ -299,7 +308,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
                 clip["end_time"] = segments[-1]["end_time"]
 
         # Final duration check
-        if total_dur < 20 or total_dur > 120:
+        if total_dur < 15 or total_dur > 120:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
             continue
 
@@ -513,13 +522,13 @@ def get_highlights(
         clips_per_chunk = max(5, min(8, -(-max_clips // max(1, len(chunks)))))
 
         for idx, chunk in enumerate(chunks):
-            ui_logger.log(f"Analyzing chunk {idx + 1}/{len(chunks)} — targeting {clips_per_chunk} clips...")
+            ui_logger.log(f"Analyzing chunk {idx + 1}/{len(chunks)} — targeting exactly 8 clips...")
             prompt = (
                 f"{virality_prompt}\n\n"
-                f"Extract at least {clips_per_chunk} of the most viral moments from this transcript.\n"
+                f"You MUST output exactly 8 clips for this chunk. Do not leave any out.\n"
                 f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
                 f"Transcript:\n{chunk}\n\n"
-                f"Respond ONLY with a JSON array of {clips_per_chunk} clips:\n{schema}"
+                f"Respond ONLY with a JSON array of exactly 8 clips:\n{schema}"
             )
             try:
                 results = _query_llm(llm, system, prompt)
