@@ -186,8 +186,12 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, target_platfor
                 download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
             except RuntimeError as e:
                 error_msg = "YouTube blocked the download (Bot detection). Please ensure a valid 'cookies.txt' is uploaded to your Google Drive root."
-                await manager.broadcast({"type": "error", "message": error_msg})
-                await manager.broadcast({"type": "status", "message": "Failed."})
+                ui_logger._entries.append({
+                    "type": "error",
+                    "message": error_msg,
+                    "ts": _dt.datetime.now().strftime("%H:%M:%S")
+                })
+                ui_logger.log("PROGRESS|0|Failed.")
                 return  # Stop execution cleanly, don't crash the websocket
 
             if _state["is_cancelled"]: return
