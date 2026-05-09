@@ -150,6 +150,8 @@ export default function Dashboard() {
       const entry = JSON.parse(event.data);
       if (entry.type === "progress") {
         setProgress({ percent: entry.percent || 0, message: entry.message || "" });
+      } else if (entry.type === "error") {
+        setLogs(prev => [...prev, `❌ ERROR: ${entry.message}`]);
       } else if (entry.type === "status") {
         if (!LOG_BLOCKLIST.test(entry.message)) {
           setLogs(prev => [...prev, entry.message]);
@@ -350,16 +352,16 @@ export default function Dashboard() {
         </div>
 
         {/* Console */}
-        <div className="absolute bottom-6 left-6 right-6 top-[340px] overflow-y-auto bg-black/50 rounded-md p-2 border border-gray-800 custom-scrollbar">
+        <div className="absolute bottom-6 left-6 right-6 top-[340px] overflow-y-auto bg-black rounded-md p-2 border border-gray-800 custom-scrollbar">
           <div className="shrink-0 px-2 pt-1 pb-2 flex items-center gap-2 text-slate-400 font-sans uppercase tracking-widest font-bold text-[10px] border-b border-slate-800 mb-2">
             <Activity className="w-3 h-3" /> System Logs
           </div>
-            <div className="font-mono text-[10px] leading-relaxed pb-4">
-              {logs.length === 0 && <div className="text-slate-600 italic">No activity yet.</div>}
+            <div className="text-white font-mono text-xs leading-relaxed pb-4">
+              {logs.length === 0 && <div className="text-slate-500 italic">No activity yet.</div>}
               {logs.map((log, i) => (
-                <div key={i} className="text-slate-300 mb-1.5 flex gap-2">
+                <div key={i} className="mb-1.5 flex gap-2">
                   <span className="text-slate-500 shrink-0 select-none">{String(i + 1).padStart(2, '0')}</span>
-                  <span className={log.includes("✅") || log.includes("Complete") ? "text-emerald-400" : log.includes("❌") || log.includes("ERROR") ? "text-rose-400" : log.includes("Phase") ? "text-indigo-400" : ""}>{log}</span>
+                  <span className={log.includes("✅") || log.includes("Complete") ? "text-emerald-400" : log.includes("❌") || log.includes("ERROR") ? "text-red-400" : log.includes("Phase") ? "text-indigo-400" : ""}>{log}</span>
                 </div>
               ))}
               <div ref={logEndRef} />

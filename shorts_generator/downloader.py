@@ -21,6 +21,8 @@ def download_video(url, work_dir, cookie_path=None):
         url
     ]
 
+    if cookie_path and os.path.exists(cookie_path):
+        cmd.extend(['--cookies', cookie_path])
 
     ui_logger.log("yt-dlp: Fetching remote components and downloading...")
     try:

@@ -182,7 +182,14 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, target_platfor
 
         if not os.path.exists(source_mp4) or cache.load_transcript(url.strip()) is None:
             ui_logger.log("PROGRESS|15|Downloading video...")
-            download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
+            try:
+                download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
+            except RuntimeError as e:
+                error_msg = "YouTube blocked the download (Bot detection). Please ensure a valid 'cookies.txt' is uploaded to your Google Drive root."
+                await manager.broadcast({"type": "error", "message": error_msg})
+                await manager.broadcast({"type": "status", "message": "Failed."})
+                return  # Stop execution cleanly, don't crash the websocket
+
             if _state["is_cancelled"]: return
             ui_logger.log("PROGRESS|25|Transcribing audio (this may take a few minutes)...")
             full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
