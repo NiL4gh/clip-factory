@@ -120,7 +120,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     p = palettes.get(theme, palettes["Storytime"])
 
     if style_mode == "Hormozi":
-        font_name = "Montserrat Black"
+        font_name = "Arial Black"
         outline = 6; shadow = 4; bold = 1; font_size = 90
     elif style_mode == "Ali Abdaal":
         font_name = "Georgia"
@@ -132,7 +132,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         font_name = "Arial"
         outline = 1; shadow = 0; bold = 0; font_size = 75
     else: 
-        font_name = "Arial"
+        font_name = "Arial Black"
         outline = 4; shadow = 2; bold = 1; font_size = 80
 
     align_map = {"Top": 8, "Center": 5, "Bottom": 2}
@@ -308,12 +308,12 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, dynamic_temp, is_peak)
             
             inputs = ["-i", dynamic_temp]
-            # Since dynamic temp has NO audio, map audio from original video
-            inputs.extend(["-ss", str(seg_st), "-i", input_video])
+            # Map audio from original video explicitly constrained to the clip duration to avoid infinite encoding
+            inputs.extend(["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video])
             audio_source = "1:a"
             
-            # Apply subtle unsharp mask to recover any detail lost in upscaling
-            filter_complex = "[0:v]unsharp=3:3:1.0[base];"
+            # Subtle unsharp mask to recover detail without artificial grain
+            filter_complex = "[0:v]unsharp=3:3:0.5[base];"
         else:
             inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
             audio_source = "0:a"
@@ -322,9 +322,9 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             crop_x, crop_y = "in_w/2-ih*9/32", "0"
             
             if is_peak:
-                base_crop = f"crop=ih*9/16/1.2:ih/1.2:in_w/2-ih*9/32:0,scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:1.0"
+                base_crop = f"crop=ih*9/16/1.2:ih/1.2:in_w/2-ih*9/32:0,scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.5"
             else:
-                base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:1.0"
+                base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.5"
                 
             filter_complex = f"[0:v]{base_crop}[base];"
 
@@ -413,13 +413,14 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             
         cmd.extend(inputs)
         
-        # High quality encoding parameters
+        # High quality encoding parameters, enforcing a hard end to prevent infinitely hanging processes
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", f"[{current_v}]", "-map", audio_map,
-            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "14",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
             "-c:a", "aac", "-b:a", "192k",
+            "-shortest",  # Ensure encoding stops exactly when the video stream ends
             seg_out
         ])
 

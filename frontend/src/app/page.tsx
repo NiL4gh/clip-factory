@@ -42,6 +42,13 @@ interface WordTimestamp {
   end: number;
 }
 
+function formatTime(seconds: number): string {
+  if (isNaN(seconds) || seconds < 0) return "00:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main Dashboard                                                     */
 /* ------------------------------------------------------------------ */
@@ -58,7 +65,7 @@ const DEFAULT_SETTINGS = {
 export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle");
-  const APP_VERSION = "v1.2.0-PRO";
+  const APP_VERSION = "v1.3.0-PRO";
   const [logs, setLogs] = useState<string[]>([]);
   const [results, setResults] = useState<any>(null);
   const [selectedClip, setSelectedClip] = useState<number | null>(null);
@@ -460,8 +467,9 @@ export default function Dashboard() {
                           </div>
                           <div>
                             <div className="text-white font-bold text-sm mb-1 leading-tight drop-shadow-md">{clip.title || "Untitled Clip"}</div>
-                            <div className="text-white/80 text-[10px] uppercase tracking-widest font-bold">
-                              {Math.round(clip.duration || (parseFloat(clip.end_time || 0) - parseFloat(clip.start_time || 0)))}s Duration
+                            <div className="text-white/80 text-[10px] uppercase tracking-widest font-bold flex items-center justify-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {formatTime(clip.duration || (parseFloat(clip.end_time || 0) - parseFloat(clip.start_time || 0)))}
                             </div>
                           </div>
                         </div>
@@ -480,18 +488,27 @@ export default function Dashboard() {
                       </div>
 
                       <div className="p-4 flex-1 flex flex-col justify-between bg-white">
-                        <p className="text-slate-600 text-xs line-clamp-2 italic mb-3 leading-relaxed">
-                          "{clip.description || clip.hook_sentence || "No description generated."}"
-                        </p>
-                        {clip.virality_reason && (
-                          <div className="mb-3 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-medium px-2 py-1.5 rounded-md flex items-start gap-1.5">
-                            <Tag className="w-3 h-3 mt-0.5 shrink-0" />
-                            <span className="leading-snug">{clip.virality_reason}</span>
-                          </div>
-                        )}
+                        <div className="mb-3 space-y-2">
+                          <p className="text-xs text-slate-700 border-l-2 border-indigo-200 pl-2 italic">
+                            <span className="font-bold text-indigo-500 mr-1 not-italic">Hook:</span> 
+                            "{clip.hook_sentence || clip.description}"
+                          </p>
+                          {clip.virality_reason && (
+                            <p className="text-[10px] text-slate-500 font-medium">
+                              <TrendingUp className="w-3 h-3 inline mr-1 text-emerald-500" />
+                              {clip.virality_reason}
+                            </p>
+                          )}
+                        </div>
+                        
                         {clip.source_topic && (
-                          <div className="mb-3 bg-slate-50 border border-slate-200 text-slate-500 text-[10px] font-medium px-2 py-1 rounded-md truncate">
-                            📌 {clip.source_topic}
+                          <div className="mb-3 flex items-center gap-2">
+                            <div className="bg-slate-50 border border-slate-200 text-slate-500 text-[10px] font-medium px-2 py-1 rounded-md">
+                              📌 {clip.source_topic}
+                            </div>
+                            <div className="bg-indigo-50 border border-indigo-100 text-indigo-600 text-[10px] font-bold px-2 py-1 rounded-md">
+                              {clip.theme || "Storytime"}
+                            </div>
                           </div>
                         )}
                         
@@ -521,8 +538,9 @@ export default function Dashboard() {
                 
                 {/* Settings Modal */}
                 {selectedClip !== null && results.clips[selectedClip] && (
-                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+                  <div className="fixed inset-0 z-[100] flex justify-end animate-fadeIn">
+                    <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-[2px]" onClick={() => setSelectedClip(null)} />
+                    <div className="bg-white shadow-2xl w-full max-w-[400px] h-full flex flex-col overflow-hidden relative z-10 border-l border-slate-200 animate-slideInRight">
                       <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                         <h3 className="font-bold text-slate-800 flex items-center gap-2">
                           <Settings2 className="w-5 h-5 text-indigo-500" />
@@ -651,16 +669,13 @@ export default function Dashboard() {
                           </div>
                         </div>
                       </div>
-                      
-                      <div className="p-4 border-t border-slate-100 bg-white flex gap-3">
-                        <button onClick={() => setSelectedClip(null)} className="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
-                          Close
-                        </button>
+                      <div className="p-6 border-t border-slate-100 bg-slate-50">
                         <button 
                           onClick={() => { setSelectedClip(null); renderClip(selectedClip); }} 
-                          className="flex-1 py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-md shadow-indigo-600/20"
+                          className="w-full py-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2"
                         >
-                          Save & Render
+                          <Play className="w-5 h-5 fill-white" />
+                          Save & Render Clip
                         </button>
                       </div>
                     </div>
