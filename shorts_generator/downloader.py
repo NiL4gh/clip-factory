@@ -29,8 +29,25 @@ def download_video(url, work_dir, cookie_path=None):
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        ui_logger.log(f"yt-dlp failed: {e.stderr}")
-        raise RuntimeError(f"yt-dlp failed: {e.stderr}")
+        if cookie_path and os.path.exists(cookie_path) and "--cookies" in cmd:
+            ui_logger.log("yt-dlp failed with cookies (likely n-challenge). Retrying with mobile clients fallback...")
+            cmd_fallback = [
+                "yt-dlp",
+                "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best",
+                "-o", f"{work_dir}/source.%(ext)s",
+                "--merge-output-format", "mp4",
+                "--impersonate", "chrome",
+                "--extractor-args", "youtube:player_client=ios,android;player_skip=webpage,configs",
+                url
+            ]
+            try:
+                subprocess.run(cmd_fallback, check=True, capture_output=True, text=True)
+            except subprocess.CalledProcessError as e2:
+                ui_logger.log(f"yt-dlp fallback failed: {e2.stderr}")
+                raise RuntimeError(f"yt-dlp failed: {e2.stderr}")
+        else:
+            ui_logger.log(f"yt-dlp failed: {e.stderr}")
+            raise RuntimeError(f"yt-dlp failed: {e.stderr}")
 
     # Fast remux fallback — no re-encoding
     if not os.path.exists(output_mp4):
