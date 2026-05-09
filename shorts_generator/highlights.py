@@ -143,6 +143,44 @@ def _get_text_slice(full_text: str, start_time: float, end_time: float) -> str:
                 result.append(line)
     return "\n".join(result) if result else full_text[:CHUNK_CHARS]
 
+def _match_quote(quote: str, raw_words: list, target_time: float, is_start: bool) -> float:
+    """Finds the precise timestamp by fuzzily matching a quote in the transcript."""
+    if not quote or not raw_words:
+        return target_time
+    
+    quote_tokens = [re.sub(r'[^a-z0-9]', '', w.lower()) for w in quote.split()]
+    quote_tokens = [w for w in quote_tokens if w]
+    if not quote_tokens:
+        return target_time
+        
+    best_match_time = target_time
+    best_score = -1
+    
+    # Search within a +/- 60 second window of the LLM's guessed target_time
+    for i, w in enumerate(raw_words):
+        if abs(w["start"] - target_time) > 60:
+            continue
+            
+        match_count = 0
+        for j, q_tok in enumerate(quote_tokens):
+            if i + j < len(raw_words):
+                w_tok = re.sub(r'[^a-z0-9]', '', raw_words[i+j]["word"].lower())
+                if w_tok == q_tok:
+                    match_count += 1
+                elif len(w_tok) > 3 and len(q_tok) > 3 and (w_tok in q_tok or q_tok in w_tok):
+                    match_count += 0.5
+        
+        score = match_count / len(quote_tokens)
+        if score > best_score and score >= 0.4:  # At least 40% match
+            best_score = score
+            if is_start:
+                best_match_time = raw_words[i]["start"]
+            else:
+                end_idx = min(len(raw_words)-1, i + len(quote_tokens) - 1)
+                best_match_time = raw_words[end_idx]["end"]
+                
+    return best_match_time
+
 
 # ── Estimated Clip Density ───────────────────────────────────────────────────
 
@@ -307,11 +345,12 @@ def get_highlights(
         f"{lang_hint} Output ONLY raw JSON arrays. No prose, no markdown, no explanation whatsoever."
     )
 
-    # Simplified, flat schema — no segments array to confuse the LLM
     schema = (
         '[\n'
         '  {\n'
         '    "title": "Punchy curiosity-driving title (max 10 words)",\n'
+        '    "start_quote": "Exact first 5 to 8 words of the clip",\n'
+        '    "end_quote": "Exact last 5 to 8 words of the clip",\n'
         '    "start_time": 12.5,\n'
         '    "end_time": 75.0,\n'
         '    "score": 92,\n'
@@ -384,8 +423,16 @@ def get_highlights(
     valid = []
     for h in all_highlights:
         try:
-            st = float(h.get("start_time", 0))
-            et = float(h.get("end_time", 0))
+            raw_st = float(h.get("start_time", 0))
+            raw_et = float(h.get("end_time", 0))
+            
+            # Snap timestamps precisely using quotes if raw_words are available
+            if raw_words:
+                st = _match_quote(h.get("start_quote", ""), raw_words, raw_st, is_start=True)
+                et = _match_quote(h.get("end_quote", ""), raw_words, raw_et, is_start=False)
+            else:
+                st, et = raw_st, raw_et
+                
             dur = et - st
             score = max(0, min(100, int(h.get("score", 50))))
 
@@ -397,6 +444,8 @@ def get_highlights(
             if theme not in ["Motivation", "Educational", "Comedy", "Suspense", "Storytime"]:
                 theme = "Storytime"
 
+            h["start_time"] = st
+            h["end_time"] = et
             h["duration"] = dur
             h["score"] = score
             h["theme"] = theme

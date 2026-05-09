@@ -18,111 +18,94 @@ if os.path.exists("/usr/share/fonts/truetype") and not os.path.exists(FONT_PATH)
     except:
         pass
 
-def _get_crop_params(video_path, time_offset, target_w=1080, target_h=1920, segment_end=None):
+def _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, temp_out, is_peak=False):
     """
-    Calculate 9:16 vertical crop parameters using MediaPipe face detection.
-    
-    Samples multiple frames across the clip segment and averages the detected
-    face center positions for a stable, jitter-free "smooth follow" crop.
-    Falls back to center-crop if no faces are found or MediaPipe is unavailable.
-    
-    Args:
-        video_path: Path to the source video.
-        time_offset: Start time of the segment in seconds.
-        target_w: Output width (default 1080).
-        target_h: Output height (default 1920).
-        segment_end: End time of the segment in seconds (for multi-frame sampling).
+    Reads the video using OpenCV, runs dynamic MediaPipe face tracking with smoothing,
+    and pipes high-quality Lanczos-scaled frames to an FFmpeg rawvideo encoder.
+    Returns the path to a video file containing the perfectly tracked visual track (no audio).
     """
-    DEFAULT_CROP = ("in_w/2-ih*9/32", "0", "ih*9/16", "ih")
-
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        return DEFAULT_CROP
-
-    # Read a single frame first to get video dimensions
-    cap.set(cv2.CAP_PROP_POS_MSEC, time_offset * 1000)
-    ret, frame = cap.read()
-    if not ret:
-        cap.release()
-        return DEFAULT_CROP
-
-    h, w = frame.shape[:2]
-    crop_w = int(h * 9 / 16)
-    crop_h = h
-
-    # ── Multi-frame sampling points ──────────────────────────────────────
-    # Sample 5 evenly-spaced frames from start to end of the segment.
-    # This prevents single-frame jitter: if the speaker moves or turns
-    # briefly, the average position still keeps them centered.
-    seg_end = segment_end if segment_end else time_offset + 30.0
-    duration = max(1.0, seg_end - time_offset)
-    num_samples = 5
-    sample_times = [time_offset + (duration * i / (num_samples - 1)) for i in range(num_samples)]
-
-    # ── Try MediaPipe first (professional-grade) ─────────────────────────
+    cap = cv2.VideoCapture(input_video)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    cap.set(cv2.CAP_PROP_POS_MSEC, max(0, seg_st * 1000))
+    
     try:
         import mediapipe.python.solutions.face_detection as mp_face
-        detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+        detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.4)
+    except:
+        detector = None
 
-        face_centers_x = []
-        for t in sample_times:
-            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
-            ret, sample_frame = cap.read()
-            if not ret:
-                continue
-            rgb = cv2.cvtColor(sample_frame, cv2.COLOR_BGR2RGB)
-            results = detector.process(rgb)
-            if results.detections:
-                # Pick the largest (most confident) detection
-                best = max(results.detections, key=lambda d: d.score[0])
-                bbox = best.location_data.relative_bounding_box
-                # Convert relative bbox to absolute center-x
-                abs_center_x = int((bbox.xmin + bbox.width / 2) * w)
-                face_centers_x.append(abs_center_x)
-
-        detector.close()
-        cap.release()
-
-        if face_centers_x:
-            # Average face center across all sampled frames → smooth follow
-            avg_center_x = int(sum(face_centers_x) / len(face_centers_x))
-            crop_x = max(0, min(w - crop_w, avg_center_x - (crop_w // 2)))
-            ui_logger.log(f"MediaPipe: tracked face across {len(face_centers_x)}/{num_samples} frames → crop_x={crop_x}")
-            return str(int(crop_x)), "0", str(crop_w), str(crop_h)
-
-        # No faces found by MediaPipe — fall through to center crop
-        ui_logger.log("MediaPipe: no faces detected — using center crop.")
-        return DEFAULT_CROP
-
-    except ImportError:
-        ui_logger.log("MediaPipe not installed — falling back to OpenCV Haar Cascade.")
-    except Exception as e:
-        ui_logger.log(f"MediaPipe error ({e}) — falling back to OpenCV Haar Cascade.")
-
-    # ── Fallback: OpenCV Haar Cascade (legacy) ───────────────────────────
-    try:
-        cap.set(cv2.CAP_PROP_POS_MSEC, time_offset * 1000)
+    cmd = [
+        "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
+        "-s", f"{target_w}x{target_h}", "-pix_fmt", "bgr24",
+        "-r", str(fps), "-i", "-", 
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "17", "-pix_fmt", "yuv420p",
+        temp_out
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    
+    smooth_x = None
+    frames_to_process = int((seg_et - seg_st) * fps) + 5
+    
+    frame_count = 0
+    target_x = -1
+    
+    for _ in range(frames_to_process):
         ret, frame = cap.read()
-        cap.release()
-        if not ret:
-            return DEFAULT_CROP
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
-        face_cascade = cv2.CascadeClassifier(cascade_path)
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
-
-        if len(faces) > 0:
-            faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
-            fx, fy, fw, fh = faces[0]
-            face_center_x = fx + (fw // 2)
-            crop_x = max(0, min(w - crop_w, face_center_x - (crop_w // 2)))
-            return str(int(crop_x)), "0", str(crop_w), str(crop_h)
-    except Exception:
+        if not ret: break
+        
+        h, w = frame.shape[:2]
+        crop_w = int(h * 9 / 16)
+        crop_h = h
+        
+        if is_peak:
+            # Zoom in by 1.2x
+            crop_w = int(crop_w / 1.2)
+            crop_h = int(crop_h / 1.2)
+        
+        if target_x == -1:
+            target_x = w // 2 - crop_w // 2
+            
+        # Run detection every 3 frames to save CPU
+        if detector and frame_count % 3 == 0:
+            # Resize for speed
+            small = cv2.resize(frame, (w//2, h//2))
+            rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
+            res = detector.process(rgb)
+            if res.detections:
+                best = max(res.detections, key=lambda d: d.score[0])
+                bbox = best.location_data.relative_bounding_box
+                cx = int((bbox.xmin + bbox.width / 2) * w)
+                target_x = max(0, min(w - crop_w, cx - (crop_w // 2)))
+                
+        if smooth_x is None:
+            smooth_x = target_x
+        else:
+            # Exponential smoothing for buttery panning
+            smooth_x = smooth_x * 0.90 + target_x * 0.10
+            
+        crop_x = int(smooth_x)
+        # Center Y for peak zoom
+        crop_y = (h - crop_h) // 2 if is_peak else 0
+        
+        cropped = frame[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
+        # Lanczos provides much better upscale sharpness than FFmpeg default
+        resized = cv2.resize(cropped, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+        
+        try:
+            proc.stdin.write(resized.tobytes())
+        except:
+            break
+            
+        frame_count += 1
+        
+    try:
+        proc.stdin.close()
+        proc.wait()
+    except:
         pass
-
     cap.release()
-    return DEFAULT_CROP
+    if detector: detector.close()
+    return temp_out
 
 
 def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Hormozi", position="Center", **kwargs):
@@ -318,41 +301,35 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         is_peak = (seg_st <= float(clip_data.get("peak_moment", 0)) <= seg_et)
 
-        crop_x, crop_y, crop_w, crop_h = "in_w/2-ih*9/32", "0", "ih*9/16", "ih"
+        # ── Setup Video/Audio Inputs ──
         if face_center:
-            crop_params = _get_crop_params(input_video, seg_st, target_w, target_h, segment_end=seg_et)
-            if len(crop_params) == 4:
-                crop_x, crop_y, crop_w, crop_h = crop_params
-            else:
-                crop_x, crop_y = crop_params
+            ui_logger.log(f"Running OpenCV dynamic smooth tracking for segment...")
+            dynamic_temp = os.path.join(work_dir, f"dyn_{out_id}_{idx}.mp4")
+            _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, dynamic_temp, is_peak)
+            
+            inputs = ["-i", dynamic_temp]
+            # Since dynamic temp has NO audio, map audio from original video
+            inputs.extend(["-ss", str(seg_st), "-i", input_video])
+            audio_source = "1:a"
+            
+            # Apply subtle unsharp mask to recover any detail lost in upscaling
+            filter_complex = "[0:v]unsharp=3:3:1.0[base];"
         else:
+            inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
+            audio_source = "0:a"
+            
+            crop_w, crop_h = "ih*9/16", "ih"
             crop_x, crop_y = "in_w/2-ih*9/32", "0"
-
-        if is_peak and face_center:
-            try:
-                z_f = 1.2
-                cw = int(float(crop_w) / z_f) if crop_w.isdigit() else "ih*9/16/1.2"
-                ch = int(float(crop_h) / z_f) if crop_h.isdigit() else "ih/1.2"
+            
+            if is_peak:
+                base_crop = f"crop=ih*9/16/1.2:ih/1.2:in_w/2-ih*9/32:0,scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:1.0"
+            else:
+                base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:1.0"
                 
-                if crop_x.isdigit() and crop_w.isdigit():
-                    cx = int(float(crop_x) + (float(crop_w) - float(cw))/2)
-                else:
-                    cx = crop_x
-                    
-                cy = "0"
-                base_crop = f"crop={cw}:{ch}:{cx}:{cy},scale={target_w}:{target_h}"
-            except:
-                base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}"
-        else:
-            base_crop = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={target_w}:{target_h}"
+            filter_complex = f"[0:v]{base_crop}[base];"
 
-        seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
-
-        inputs = ["-i", input_video]
-        filter_complex = f"[0:v]{base_crop}[base];"
         current_v = "base"
-
-        input_idx = 1
+        input_idx = 2 if face_center else 1
         sfx_delays = []
         for i_b, b in enumerate(broll_kws):
             if isinstance(b, str):
@@ -415,7 +392,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         audio_filter = ""
         if sfx_delays:
-            audio_filter = "[0:a]volume=1.0[a_base];"
+            audio_filter = f"[{audio_source}]volume=1.0[a_base];"
             amix_inputs = "[a_base]"
             for i, delay_sec in enumerate(sfx_delays):
                 sfx_idx = input_idx + i
@@ -426,15 +403,22 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             audio_map = "[a_out]"
             filter_complex += f";{audio_filter}"
         else:
-            audio_map = "0:a"
+            audio_map = audio_source
 
-        cmd = ["ffmpeg", "-y", "-ss", str(seg_st), "-to", str(seg_et)]
+        seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
+
+        cmd = ["ffmpeg", "-y"]
+        if not face_center:
+            cmd.extend(["-ss", str(seg_st), "-to", str(seg_et)])
+            
         cmd.extend(inputs)
+        
+        # High quality encoding parameters
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", f"[{current_v}]", "-map", audio_map,
-            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-            "-profile:v", "high", "-pix_fmt", "yuv420p",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+            "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
             "-c:a", "aac", "-b:a", "192k",
             seg_out
         ])
