@@ -13,7 +13,7 @@ def download_video(url, work_dir, cookie_path=None):
 
     cmd = [
         'yt-dlp',
-        '-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best',
+        '-f', 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
         '--merge-output-format', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path) if cookie_path else '',
