@@ -282,12 +282,16 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         chunk_et = max(0, chunk[-1]['end'] - time_offset)
         if chunk_et <= chunk_st: continue
 
-        for w in chunk:
+        for i, w in enumerate(chunk):
             w_st = max(0, w["start"] - time_offset)
             w_et = max(0, w["end"] - time_offset)
             if w_et <= w_st: continue
 
-            styled = ""
+            fade_in = 150 if i == 0 else 0
+            fade_out = 150 if i == len(chunk) - 1 else 0
+            fade_tag = f"{{\\fad({fade_in},{fade_out})}}"
+
+            styled = fade_tag
             for x in chunk:
                 txt = x['word'].strip()
                 if style_mode == "Hormozi": txt = txt.upper()
@@ -460,10 +464,6 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             mh_text = clip_data.get("hook_sentence") if (magic_hook and idx == 0) else None
             safe_font = FONT_PATH.replace("\\", "/").replace(":", "\\:")
             
-            y_pos = "(h-text_h)/2"
-            if caption_pos == "Top": y_pos = "250"
-            elif caption_pos == "Bottom": y_pos = "h-text_h-250"
-
             if mh_text:
                 safe_hook = mh_text.upper().replace("'", "\u2019").replace(":", "\\:").replace("\\", "/")
                 next_v = f"v{input_idx}_hook"
@@ -473,7 +473,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     f":text='{safe_hook}'"
                     f":fontsize=80"
                     f":fontcolor=0xFFFF00"
-                    f":borderw=5:bordercolor=black"
+                    f":box=1:boxcolor=black@0.8:boxborderw=20:borderw=0"
                     f":x=(w-text_w)/2:y={hook_y}"
                     f":enable='between(t,0,2.5)'"
                     f"[{next_v}];"
@@ -481,44 +481,19 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                 current_v = next_v
                 input_idx += 1
 
-            phrase_chunks = []
-            curr_chunk = []
-            for w in seg_words:
-                if len(curr_chunk) >= 5:
-                    phrase_chunks.append(curr_chunk)
-                    curr_chunk = []
-                curr_chunk.append(w)
-            if curr_chunk:
-                phrase_chunks.append(curr_chunk)
-
-            caption_y = "h-line_h-80"
-            for p_idx, chunk in enumerate(phrase_chunks):
-                if not chunk: continue
-                chunk_st = max(0, chunk[0]["start"] - seg_st)
-                chunk_et = max(0, chunk[-1]["end"] - seg_st)
-                if chunk_et <= chunk_st: continue
-
-                phrase_words = [w["word"].strip().upper() if caption_style == "Hormozi" else w["word"].strip() for w in chunk]
-                full_phrase = " ".join(phrase_words).replace("'", "\u2019").replace(":", "\\:")
-                
-                next_v = f"v{input_idx}_p{p_idx}"
-                filter_complex += f"[{current_v}]drawtext=fontfile='{safe_font}':text='{full_phrase}':fontsize=72:fontcolor=white:borderw=5:bordercolor=black:x=(w-text_w)/2:y={caption_y}:enable='between(t,{chunk_st},{chunk_et})'[{next_v}];"
-                current_v = next_v
-                input_idx += 1
-
-                for w_idx, w in enumerate(chunk):
-                    w_st = max(0, w["start"] - seg_st)
-                    w_et = max(0, w["end"] - seg_st)
-                    if w_et <= w_st: continue
-                    target_word = phrase_words[w_idx].replace("'", "\u2019").replace(":", "\\:")
-                    if not target_word: continue
-
-                    spaced_phrase = " ".join([word if i == w_idx else " "*len(word) for i, word in enumerate(phrase_words)]).replace("'", "\u2019").replace(":", "\\:")
-
-                    next_v = f"v{input_idx}_w{w_idx}"
-                    filter_complex += f"[{current_v}]drawtext=fontfile='{safe_font}':text='{spaced_phrase}':fontsize=72:fontcolor=0xFFFF00:borderw=5:bordercolor=black:x=(w-text_w)/2:y={caption_y}:enable='between(t,{w_st},{w_et})'[{next_v}];"
-                    current_v = next_v
-                    input_idx += 1
+            ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
+            _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st, theme=theme, style_mode=caption_style, position=caption_pos)
+            safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
+            next_v = f"v{input_idx}_ass"
+            filter_complex += f"[{current_v}]ass='{safe_ass}'[{next_v}];"
+            current_v = next_v
+            input_idx += 1
+            
+        if idx > 0:
+            next_v = f"v{input_idx}_flash"
+            filter_complex += f"[{current_v}]drawbox=w=iw:h=ih:color=white:t=fill:enable='between(t,0,0.06)'[{next_v}];"
+            current_v = next_v
+            input_idx += 1
 
         filter_complex += f";[{current_v}]setpts=PTS-STARTPTS[v_out]"
         current_v = "v_out"

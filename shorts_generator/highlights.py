@@ -14,11 +14,10 @@ CHUNK_CHARS = 12_000  # Conservative size for 8k context models (Llama 3, Gemma 
 
 
 # ── Opus-Style Viral Director Prompt ─────────────────────────────────────────
-_VIRALITY_BASE = """You are an elite viral content director for a paid AI clipping platform competing with Opus.pro and CapCut.
-Your ONLY job is to extract the exact text of viral moments. Do NOT guess timestamps. Do NOT calculate durations. Just output the perfect spoken text for a 30-60 second short.
+_VIRALITY_BASE = """You are an exhaustive video editor. Your goal is to find EVERY single distinct thought, story, or high-value moment in this transcript that could stand alone as a Short. Do not force content. If a section is boring, skip it. If a section has 5 good moments, extract all 5. A 2-hour podcast typically yields 15-30 natural clips. Leave no good content behind.
 
 TOTAL VIDEO DURATION: {video_duration_str}
-TARGET CLIP DENSITY: Extract roughly 1 high-quality clip per 5-8 minutes of video. If the content is exceptionally engaging, you may extract more.
+CRITICAL: Do not force quotas. Just extract the natural clips.
 
 ═══════════════════════════════════════════════════════
 VIRALITY SIGNALS (ranked by importance):
@@ -503,10 +502,10 @@ def get_highlights(
                 f"{virality_prompt}\n\n"
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                f"Extract {clips_per_topic} to {clips_per_topic+2} of the most viral moments from THIS section.\n"
+                f"Extract ALL of the most viral, natural moments from THIS section.\n"
                 f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
                 f"Transcript:\n{topic_text}\n\n"
-                f"Respond ONLY with a JSON array of {clips_per_topic} clips:\n{schema}"
+                f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
             try:
                 results = _query_llm(llm, system, prompt)
@@ -522,13 +521,13 @@ def get_highlights(
         clips_per_chunk = max(5, min(8, -(-max_clips // max(1, len(chunks)))))
 
         for idx, chunk in enumerate(chunks):
-            ui_logger.log(f"Analyzing chunk {idx + 1}/{len(chunks)} — targeting exactly 8 clips...")
+            ui_logger.log(f"Analyzing chunk {idx + 1}/{len(chunks)} — exhaustive extraction...")
             prompt = (
                 f"{virality_prompt}\n\n"
-                f"You MUST output exactly 8 clips for this chunk. Do not leave any out.\n"
+                f"You MUST output all natural clips for this chunk. Do not force content.\n"
                 f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
                 f"Transcript:\n{chunk}\n\n"
-                f"Respond ONLY with a JSON array of exactly 8 clips:\n{schema}"
+                f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
             try:
                 results = _query_llm(llm, system, prompt)
