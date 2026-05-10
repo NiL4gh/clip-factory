@@ -182,6 +182,16 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, target_platfor
 
         if not os.path.exists(source_mp4) or cache.load_transcript(url.strip()) is None:
             ui_logger.log("PROGRESS|15|Downloading video...")
+            ui_logger.log(f"Looking for cookies at: {COOKIE_PATH}, Exists: {os.path.exists(COOKIE_PATH)}")
+            if not os.path.exists(COOKIE_PATH):
+                ui_logger._entries.append({
+                    "type": "error",
+                    "message": "Cookies file not found. Please upload cookies.txt to your workspace.",
+                    "ts": _dt.datetime.now().strftime("%H:%M:%S")
+                })
+                ui_logger.log("PROGRESS|0|Failed.")
+                return
+
             try:
                 download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
             except RuntimeError as e:
