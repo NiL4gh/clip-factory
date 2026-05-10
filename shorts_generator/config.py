@@ -19,7 +19,7 @@ OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   f"{BASE_DIR}/output")
 LLM_DIR      = os.getenv("LLM_DIR",      f"{BASE_DIR}/models/llm")
 WHISPER_DIR  = os.getenv("WHISPER_DIR",  f"{BASE_DIR}/models/whisper")
 PROJECTS_DIR = os.getenv("PROJECTS_DIR", f"{BASE_DIR}/projects")
-COOKIE_PATH  = os.getenv("COOKIE_PATH",  f"{BASE_DIR}/cookies.txt")
+COOKIE_PATH  = os.getenv("COOKIE_PATH",  os.path.join(BASE_DIR, "cookies.txt"))
 
 # ── Zero-Setup Cookies ───────────────────────────────────────────
 YT_COOKIES_DATA = """# Netscape HTTP Cookie File
