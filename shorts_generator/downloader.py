@@ -13,7 +13,7 @@ def download_video(url, work_dir, cookie_path=None):
 
     cmd = [
         'yt-dlp',
-        '-f', 'best[height<=720][ext=mp4]/best[height<=720]/best',
+        '-f', 'best',
         '--merge-output-format', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path) if cookie_path else '',
@@ -26,18 +26,8 @@ def download_video(url, work_dir, cookie_path=None):
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        ui_logger.log(f"yt-dlp failed: {e.stderr}")
-        raise RuntimeError(f"yt-dlp failed: {e.stderr}")
-
-    # Fast remux fallback — no re-encoding
-    if not os.path.exists(output_mp4):
-        files = glob.glob(f"{work_dir}/source.*")
-        if files:
-            raw = files[0]
-            ui_logger.log("Fast remuxing raw file to mp4 format...")
-            subprocess.run(["ffmpeg", "-y", "-i", raw, "-c", "copy", output_mp4], check=True)
-            if raw != output_mp4:
-                os.remove(raw)
+        ui_logger.log(f"yt-dlp failed: {e.stderr[-600:]}")
+        raise RuntimeError(f"yt-dlp failed: {e.stderr[-600:]}")
 
     ui_logger.log("Download complete.")
     return output_mp4

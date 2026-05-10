@@ -33,6 +33,16 @@ class UIStreamLogger:
         self._entries.append(entry)
         print(f"[{timestamp}] {message}")
 
+    def error(self, message: str):
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        entry = {
+            "type": "error",
+            "message": message.strip(),
+            "ts": timestamp,
+        }
+        self._entries.append(entry)
+        print(f"[{timestamp}] ERROR: {message}")
+
     def get_new_entries(self) -> list:
         if self._last_read_idx >= len(self._entries):
             return []
