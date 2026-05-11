@@ -520,24 +520,49 @@ def get_highlights(
             except Exception as e:
                 ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed — {e}")
     else:
-        # ── Fallback: Chunk-Based Extraction ──
-        chunks = [text[i:i + CHUNK_CHARS] for i in range(0, max(len(text), 1), CHUNK_CHARS)]
-        clips_per_chunk = max(5, min(8, -(-max_clips // max(1, len(chunks)))))
+        # ── Fallback: Run topic indexing first, then extract per-topic ──
+        ui_logger.log("No topics provided — running automatic topic indexing (Pass 1)...")
+        auto_topics = get_topic_index(transcript_data, llm_path, gpu_layers, language)
 
-        for idx, chunk in enumerate(chunks):
-            ui_logger.log(f"Analyzing chunk {idx + 1}/{len(chunks)} — exhaustive extraction...")
+        if auto_topics:
+            clips_per_topic = max(2, min(4, -(-num_clips // max(1, len(auto_topics)))))
+            for tidx, topic in enumerate(auto_topics):
+                ui_logger.log(f"Topic {tidx + 1}/{len(auto_topics)}: \"{topic['topic']}\"")
+                topic_text = _get_text_slice(text, topic["start_time"], topic["end_time"])
+                if not topic_text.strip():
+                    continue
+
+                prompt = (
+                    f"{virality_prompt}\n\n"
+                    f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
+                    f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
+                    f"Extract ALL of the most viral, natural moments from THIS section.\n"
+                    f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
+                    f"Transcript:\n{topic_text}\n\n"
+                    f"Respond ONLY with a JSON array of clips:\n{schema}"
+                )
+                try:
+                    results = _query_llm(llm, system, prompt)
+                    for clip in results:
+                        clip["source_topic"] = topic["topic"]
+                        clip["source_topic_idx"] = tidx
+                    all_highlights.extend(results)
+                except Exception as e:
+                    ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed — {e}")
+        else:
+            ui_logger.log("WARNING: Topic indexing returned no topics. Extracting from full transcript as last resort.")
             prompt = (
                 f"{virality_prompt}\n\n"
-                f"You MUST output all natural clips for this chunk. Do not force content.\n"
+                f"Extract ALL natural viral clips from this transcript.\n"
                 f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
-                f"Transcript:\n{chunk}\n\n"
+                f"Transcript:\n{text[:CHUNK_CHARS]}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
             try:
                 results = _query_llm(llm, system, prompt)
                 all_highlights.extend(results)
             except Exception as e:
-                ui_logger.log(f"Warning: chunk {idx + 1} failed — {e}")
+                ui_logger.log(f"Warning: Full transcript extraction failed — {e}")
 
     ui_logger.log(f"LLM extracted {len(all_highlights)} raw candidates. Validating and scoring...")
 

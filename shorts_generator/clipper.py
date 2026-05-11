@@ -315,6 +315,21 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     ui_logger.log("Initializing render pipeline...")
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(work_dir, exist_ok=True)
+
+    # ── Guarantee Montserrat-Bold font exists on Colab ──
+    global FONT_PATH
+    _font_url = "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf"
+    _colab_font = "/content/work/Montserrat-Bold.ttf"
+    if not os.path.exists(FONT_PATH):
+        os.makedirs(os.path.dirname(_colab_font), exist_ok=True)
+        try:
+            urllib.request.urlretrieve(_font_url, _colab_font)
+            FONT_PATH = _colab_font
+            ui_logger.log(f"Downloaded Montserrat-Bold to {_colab_font}")
+        except Exception as _fe:
+            ui_logger.log(f"Font download failed ({_fe}), using system fallback.")
+    if os.path.exists(_colab_font):
+        FONT_PATH = _colab_font
     out_id = uuid.uuid4().hex[:8]
     import datetime
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -535,7 +550,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", f"[{current_v}]", "-map", audio_map,
-            "-c:v", "libx264", "-preset", "slow", "-crf", "14",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
             "-c:a", "aac", "-b:a", "192k",
             "-shortest",  # Ensure encoding stops exactly when the video stream ends
