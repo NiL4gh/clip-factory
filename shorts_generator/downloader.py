@@ -26,8 +26,12 @@ def download_video(url, work_dir, cookie_path=None):
     ]
 
     ui_logger.log(f"Downloading with web client + Deno n-challenge solver (cookies: {cookie_path})...")
+    # Get current environment and ensure Deno is in the PATH for this specific subprocess
+    env = os.environ.copy()
+    env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
+    
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
     except subprocess.CalledProcessError as e:
         ui_logger.log(f"yt-dlp failed: {e.stderr[-600:]}")
         raise RuntimeError(f"yt-dlp failed: {e.stderr[-600:]}")
