@@ -15,9 +15,11 @@ Clip Factory is a production-grade, self-hosted SaaS platform designed to automa
 | 📝 **Transcript Editor** | Interactive word-processor UI — click to strike-through/cut any sentence from the final render. |
 | 🎞️ **Netflix-style Gallery** | Dedicated library view for all rendered clips with hover-to-play video previews and downloads. |
 | 🎨 **Production Brand Kits** | Automated styling modeled after *Hormozi*, *Ali Abdaal*, and *MrBeast* (Montserrat Black typography). |
-| ✂️ **AI Stitched Stories** | Cross-timestamp narrative stitching — the AI can merge separate moments into one cohesive story. |
-| 🎯 **Auto Face Framing** | OpenCV-based framing dynamically centers the 9:16 crop on the active speaker. |
+| ✂️ **AI Natural Arcs** | The AI Director now extracts long, continuous narrative stories. Multi-segment stitching is only used if the speaker goes off-topic. |
+| 🎯 **Dynamic Face Framing** | MediaPipe-based framing with smooth FFmpeg interpolation keeps the speaker perfectly centered in the 9:16 frame. |
+| 🎵 **LLM AI Music Search** | The AI Director searches YouTube for the perfect BGM based on your video's vibe (LoFi, Phonk, Suspense). |
 | 🖼️ **Dynamic B-Roll** | Visual keyword extraction → DDG fetch → Ken Burns animated overlays. |
+| 📺 **1080p High Quality** | Enforced 1080p pipeline ensures your Shorts and TikToks meet premium platform standards. |
 | 💾 **Drive Persistence** | Full project caching (transcripts, strategies, renders) via Google Drive. |
 
 ---
@@ -45,6 +47,7 @@ frontend/
 shorts_generator/
   highlights.py                 ← Llama 3 Strategic extraction & persona detection
   clipper.py                    ← FFmpeg engine (Crop, Captions, B-Roll, SFX)
+  music_fetcher.py              ← LLM-driven BGM search & download (yt-dlp)
   transcriber.py                ← faster-whisper transcription engine
   config.py                     ← Global paths and model catalogs
 ```

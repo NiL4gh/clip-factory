@@ -106,135 +106,134 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
     except subprocess.CalledProcessError:
         return input_path
 
-def _render_dynamic_crop(input_video, seg_st, seg_et, target_w, target_h, temp_out, is_peak=False):
+def _generate_dynamic_crop(source_video, seg_st, seg_et):
     """
-    Reads the video using OpenCV, runs dynamic MediaPipe face tracking with smoothing,
-    and pipes high-quality Lanczos-scaled frames to an FFmpeg rawvideo encoder.
-    Returns the path to a video file containing the perfectly tracked visual track (no audio).
+    Samples the video every 2 seconds using MediaPipe face detection,
+    records face center X/Y at each sample point, then generates an FFmpeg
+    crop filter expression with linear interpolation between keypoints.
+
+    Returns an FFmpeg crop expression string like:
+      crop=CW:CH:X_EXPR:Y_EXPR
+
+    where X_EXPR smoothly interpolates between detected face positions.
+    If no face is found in any sample, returns a Ken Burns fallback
+    (5% rightward drift over the segment duration).
     """
-    cap = cv2.VideoCapture(input_video)
+    cap = cv2.VideoCapture(source_video)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    cap.set(cv2.CAP_PROP_POS_MSEC, max(0, seg_st * 1000))
-    
+    ret, probe_frame = cap.read()
+    if not ret:
+        cap.release()
+        return None  # Caller will use static crop fallback
+
+    src_h, src_w = probe_frame.shape[:2]
+    # 9:16 crop dimensions from source height
+    crop_w = int(src_h * 9 / 16)
+    crop_h = src_h
+
+    # Clamp crop_w to source width
+    if crop_w > src_w:
+        crop_w = src_w
+
+    # ── Phase 1: Sample faces every 2 seconds using MediaPipe ──
+    detector = None
     try:
         import mediapipe.python.solutions.face_detection as mp_face
         detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.4)
-    except:
-        detector = None
+    except Exception:
+        pass
 
-    ret, first_frame = cap.read()
-    if not ret:
-        cap.release()
-        if detector: detector.close()
-        return temp_out
-        
-    h, w = first_frame.shape[:2]
-    crop_w = int(h * 9 / 16)
-    crop_h = h
-    if is_peak:
-        crop_w = int(crop_w / 1.2)
-        crop_h = int(crop_h / 1.2)
+    duration = seg_et - seg_st
+    sample_interval = 2.0
+    keypoints = []  # list of (relative_time, crop_x)
 
-    cmd = [
-        "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", f"{crop_w}x{crop_h}", "-pix_fmt", "bgr24",
-        "-r", str(fps), "-i", "-", 
-        "-vf", f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "17", "-pix_fmt", "yuv420p",
-        temp_out
-    ]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    
-    smooth_x = None
-    frames_to_process = int((seg_et - seg_st) * fps) + 5
-    
-    frame_count = 0
-    target_x = -1
-    
-    frame = first_frame
-    for i in range(frames_to_process):
-        if i > 0:
+    if detector:
+        t = 0.0
+        while t <= duration:
+            abs_t = seg_st + t
+            cap.set(cv2.CAP_PROP_POS_MSEC, abs_t * 1000)
             ret, frame = cap.read()
-            if not ret: break
-        
-        # Recalculate original crop dimensions based on current frame in case of vfr
-        h, w = frame.shape[:2]
-        crop_w = int(h * 9 / 16)
-        crop_h = h
-        if is_peak:
-            crop_w = int(crop_w / 1.2)
-            crop_h = int(crop_h / 1.2)
-        
-        if target_x == -1:
-            target_x = w // 2 - crop_w // 2
-            
-        # Run detection every 3 frames to save CPU
-        if detector and frame_count % 3 == 0:
+            if not ret:
+                break
+
+            h, w = frame.shape[:2]
             # Resize for speed
-            small = cv2.resize(frame, (w//2, h//2))
+            small = cv2.resize(frame, (w // 2, h // 2))
             rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
             res = detector.process(rgb)
+
             if res.detections:
                 best = max(res.detections, key=lambda d: d.score[0])
                 bbox = best.location_data.relative_bounding_box
-                cx = int((bbox.xmin + bbox.width / 2) * w)
-                target_x = max(0, min(w - crop_w, cx - (crop_w // 2)))
-                
-        if smooth_x is None:
-            smooth_x = target_x
-        else:
-            # Exponential smoothing for buttery panning
-            smooth_x = smooth_x * 0.90 + target_x * 0.10
-            
-        crop_x = int(smooth_x)
-        # Center Y for peak zoom
-        crop_y = (h - crop_h) // 2 if is_peak else 0
-        
-        cropped = frame[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
-        
-        try:
-            proc.stdin.write(cropped.tobytes())
-        except:
-            break
-            
-        frame_count += 1
-        
-    try:
-        proc.stdin.close()
-        proc.wait()
-    except:
-        pass
+                face_cx = int((bbox.xmin + bbox.width / 2) * w)
+                # Convert face center to crop X (top-left of crop window)
+                cx = max(0, min(w - crop_w, face_cx - crop_w // 2))
+                keypoints.append((t, cx))
+
+            t += sample_interval
+
+        detector.close()
+
     cap.release()
-    if detector: detector.close()
-    return temp_out
+
+    # ── Phase 2: Build FFmpeg crop expression ──
+    center_x = max(0, (src_w - crop_w) // 2)
+
+    if not keypoints:
+        # Ken Burns fallback: slow 5% rightward drift, never static
+        ui_logger.log("  No face detected — applying subtle Ken Burns pan.")
+        max_drift = int(src_w * 0.05)
+        start_x = max(0, center_x - max_drift // 2)
+        end_x = min(src_w - crop_w, start_x + max_drift)
+        if duration > 0:
+            x_expr = f"{start_x}+({end_x}-{start_x})*t/{duration:.2f}"
+        else:
+            x_expr = str(center_x)
+        return f"crop={crop_w}:{crop_h}:{x_expr}:0"
+
+    # Sort keypoints by time
+    keypoints.sort(key=lambda k: k[0])
+
+    # If only one keypoint, hold that position
+    if len(keypoints) == 1:
+        x_expr = str(keypoints[0][1])
+        return f"crop={crop_w}:{crop_h}:{x_expr}:0"
+
+    # Build piecewise linear interpolation using nested if(between(...))
+    # Each segment: if between(t, t0, t1) then lerp(x0, x1, (t-t0)/(t1-t0))
+    parts = []
+    for i in range(len(keypoints) - 1):
+        t0, x0 = keypoints[i]
+        t1, x1 = keypoints[i + 1]
+        dt = t1 - t0
+        if dt <= 0:
+            continue
+        # Linear interpolation: x0 + (x1 - x0) * (t - t0) / dt
+        lerp_expr = f"{x0}+({x1}-{x0})*(t-{t0:.2f})/{dt:.2f}"
+        parts.append(f"between(t\\,{t0:.2f}\\,{t1:.2f})*({lerp_expr})")
+
+    # Before first keypoint: hold first position
+    first_t, first_x = keypoints[0]
+    parts.insert(0, f"lt(t\\,{first_t:.2f})*{first_x}")
+
+    # After last keypoint: hold last position
+    last_t, last_x = keypoints[-1]
+    parts.append(f"gte(t\\,{last_t:.2f})*{last_x}")
+
+    x_expr = "+".join(parts)
+
+    ui_logger.log(f"  Dynamic face tracking: {len(keypoints)} keypoints across {duration:.1f}s")
+    return f"crop={crop_w}:{crop_h}:{x_expr}:0"
 
 
 def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Hormozi", position="Center", **kwargs):
-    palettes = {
-        "Motivation": {"main": "&H00FFFFFF", "high": "&H0000FFFF"}, 
-        "Educational": {"main": "&H00FFFFFF", "high": "&H00FFC000"}, 
-        "Comedy": {"main": "&H00FFFFFF", "high": "&H00FF00FF"}, 
-        "Suspense": {"main": "&H00FFFFFF", "high": "&H000000FF"}, 
-        "Storytime": {"main": "&H00FFFFFF", "high": "&H0000A5FF"}  
-    }
-
-    p = palettes.get(theme, palettes["Storytime"])
-
-    if style_mode == "Hormozi":
-        font_name = "Arial Black"
-        outline = 6; shadow = 4; bold = 1; font_size = 90
-    elif style_mode == "Ali Abdaal":
-        font_name = "Georgia"
-        outline = 2; shadow = 1; bold = 0; font_size = 70
-    elif style_mode == "MrBeast":
-        font_name = "Impact"
-        outline = 8; shadow = 5; bold = 1; font_size = 100
-    elif style_mode == "Minimalist":
-        font_name = "Arial"
-        outline = 1; shadow = 0; bold = 0; font_size = 75
-    else: 
-        font_name = "Arial Black"
-        outline = 4; shadow = 2; bold = 1; font_size = 80
+    # Hardcoded CapCut Style
+    font_name = FONT_PATH.replace("\\", "/").replace(":", "\\:") if FONT_PATH else "Montserrat-Bold"
+    font_size = 55
+    p = {"main": "&H00FFFFFF", "high": "&H0000FFFF"} # Yellow highlight
+    bold = 1
+    outline = 3
+    shadow = 0
 
     align_map = {"Top": 8, "Center": 5, "Bottom": 2}
     align = align_map.get(position, 5)
@@ -294,7 +293,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             styled = fade_tag
             for x in chunk:
                 txt = x['word'].strip()
-                if style_mode == "Hormozi": txt = txt.upper()
+                txt = txt.upper()
                 if x == w:
                     styled += f"{{\\rHighlight}}{txt}{{\\rMain}} "
                 else:
@@ -405,8 +404,17 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
         audio_source = "0:a"
         
-        # Bulletproof 9:16 Center Crop
-        base_crop = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"
+        # ── Dynamic Face-Tracking Crop (MediaPipe interpolation) ──
+        if face_center:
+            dynamic_crop = _generate_dynamic_crop(input_video, seg_st, seg_et)
+            if dynamic_crop:
+                # Dynamic crop produces native-res crop, then scale to 1080x1920
+                base_crop = f"{dynamic_crop},scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1"
+            else:
+                base_crop = f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1"
+        else:
+            # Static center crop fallback
+            base_crop = f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1"
         
         filter_complex = f"[0:v]{base_crop},unsharp=3:3:0.5[base];"
 
@@ -491,7 +499,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             
         if idx > 0:
             next_v = f"v{input_idx}_flash"
-            filter_complex += f"[{current_v}]drawbox=w=iw:h=ih:color=white:t=fill:enable='between(t,0,0.06)'[{next_v}];"
+            filter_complex += f"[{current_v}]drawbox=w=iw:h=ih:color=white:t=fill:enable='between(t,0,0.10)'[{next_v}];"
             current_v = next_v
             input_idx += 1
 
@@ -578,6 +586,34 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         except subprocess.CalledProcessError as e:
             ui_logger.log(f"FFmpeg concat error: {e.stderr}")
             raise
+
+    # ── LLM-Driven BGM Mixing (music_query from highlights) ──
+    music_query = clip_data.get("music_query", "")
+    if music_query:
+        try:
+            from shorts_generator.music_fetcher import fetch_music
+            bgm_path = os.path.join(work_dir, f"bgm_{out_id}.mp3")
+            bgm_path = fetch_music(music_query, bgm_path)
+            if bgm_path and os.path.exists(bgm_path):
+                ui_logger.log(f"Mixing LLM-selected BGM (query: '{music_query}')...")
+                bgm_output = final_output.replace(".mp4", "_bgm.mp4")
+                bgm_cmd = [
+                    "ffmpeg", "-y",
+                    "-i", final_output,
+                    "-stream_loop", "-1",
+                    "-i", bgm_path,
+                    "-filter_complex",
+                    "[0:a]volume=0.5[speech];[1:a]volume=0.1[bgm];[speech][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]",
+                    "-map", "0:v", "-map", "[a]",
+                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                    "-shortest",
+                    bgm_output
+                ]
+                subprocess.run(bgm_cmd, check=True, capture_output=True, text=True)
+                shutil.move(bgm_output, final_output)
+                ui_logger.log("BGM mixed successfully.")
+        except Exception as bgm_err:
+            ui_logger.log(f"LLM BGM mixing failed ({bgm_err}) — clip saved without AI music.")
 
     ui_logger.log(f"Render complete: {os.path.basename(final_output)}")
     return final_output

@@ -15,7 +15,7 @@ def download_video(url, work_dir, cookie_path=None):
     # --remote-components ejs:github is MANDATORY: solves YouTube's n-challenge via Deno
     cmd = [
         'yt-dlp',
-        '-f', 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+        '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
         '--merge-output-format', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path),

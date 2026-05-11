@@ -41,6 +41,9 @@ CRITICAL EXTRACTION RULES:
 
 - Every clip MUST start with a hook that grabs attention in the first 3 seconds.
 - Every clip MUST have a clear narrative arc: Hook (Beginning) -> Context/Value (Middle) -> Payoff/Conclusion (End).
+- Extract the longest possible natural narrative arc. A clip MUST be a single, continuous, unbroken story or argument.
+- Only extract multi-segment clips if the speaker pauses for more than 3 seconds or goes completely off-topic in the middle of a great point. Do NOT stitch unrelated thoughts together just to make the video longer.
+- A 60-second continuous thought is infinitely better than a 60-second stitched Frankenstein clip.
 - Do NOT include timestamps or segment numbers. Only the literal spoken words.
 - The clip MUST end on a COMPLETED SENTENCE. Never cut off mid-thought.
 - Each clip must be 100% SELF-CONTAINED. A viewer who sees ONLY this clip must understand the full story.
@@ -479,7 +482,8 @@ def get_highlights(
         '    "title": "Catchy TikTok-style title (max 10 words)",\n'
         '    "virality_score": 85,\n'
         '    "ideal_transcript": "The exact word-for-word transcript of the perfect 40-60 second clip. Include the hook at the beginning and the natural conclusion at the end. Do not include timestamps, just the raw spoken words.",\n'
-        '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime"\n'
+        '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
+        '    "music_query": "A 3-4 word search term for no-copyright background music that fits the vibe (e.g., upbeat phonk, calm lofi, dark suspense)"\n'
         '  }\n'
         ']'
     )
@@ -571,6 +575,7 @@ def get_highlights(
                 "hook_text": hook_sentence,
                 "virality_reason": h.get("virality_reason", ""),
                 "theme": theme,
+                "music_query": h.get("music_query", ""),
                 "source_topic": h.get("source_topic", "General"),
             })
         except Exception:

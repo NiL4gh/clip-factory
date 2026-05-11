@@ -56,7 +56,6 @@ const DEFAULT_SETTINGS = {
   face_center: true,
   magic_hook: true,
   remove_silence: true,
-  caption_style: "Hormozi",
   caption_pos: "Bottom",
   bg_music_genre: "None",
   broll_intensity: "Medium",
@@ -72,8 +71,7 @@ export default function Dashboard() {
   const [activeView, setActiveView] = useState<"workspace" | "gallery">("workspace");
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
-  const [targetPlatform, setTargetPlatform] = useState("TikTok / Shorts (Vertical)");
-  const [progress, setProgress] = useState<{percent: number; message: string} | null>(null);
+    const [progress, setProgress] = useState<{percent: number; message: string} | null>(null);
 
   // Model selectors
   const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3 8B Instruct Q4");
@@ -98,7 +96,6 @@ export default function Dashboard() {
     if (results?.clips?.length && results?.persona) {
       const base = {
         ...DEFAULT_SETTINGS,
-        caption_style: results.persona.suggested_brand_kit || "Hormozi",
         bg_music_genre: results.persona.suggested_bgm || "None",
       };
       const init: Record<number, typeof DEFAULT_SETTINGS> = {};
@@ -175,7 +172,7 @@ export default function Dashboard() {
     ws.onmessage = handleWsMessage;
 
     try {
-      await axios.post(`${API_BASE}/strategize`, { url, llm_label: llmLabel, whisper_label: whisperLabel, target_platform: targetPlatform });
+      await axios.post(`${API_BASE}/strategize`, { url, llm_label: llmLabel, whisper_label: whisperLabel });
       const poll = setInterval(async () => {
         const res = await axios.get(`${API_BASE}/results`);
         if (res.data.status === "done") {
@@ -310,15 +307,9 @@ export default function Dashboard() {
 
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
               <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Target Platform</label>
-              <select
-                value={targetPlatform}
-                onChange={(e) => setTargetPlatform(e.target.value)}
-                className="w-full bg-transparent text-slate-700 text-xs font-medium outline-none cursor-pointer"
-              >
-                {["TikTok / Shorts (Vertical)", "Instagram Reels", "YouTube Longform (Horizontal)"].map((m: any) => (
-                  <option key={m} value={m} className="bg-white">{m}</option>
-                ))}
-              </select>
+              <div className="w-full bg-slate-100 text-slate-500 text-xs font-medium p-2 rounded border border-slate-200 cursor-not-allowed">
+                Target: 9:16 Mobile Short-Form
+              </div>
             </div>
 
             <div className="flex gap-2">
@@ -546,16 +537,6 @@ export default function Dashboard() {
             </div>
 
             <div className="flex-shrink-0 space-y-4">
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Caption Style</span>
-                <select 
-                  value={getSettings(selectedClip).caption_style}
-                  onChange={(e) => updateSetting(selectedClip, "caption_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  {["Hormozi", "Modern", "Beast", "Bold", "Minimal"].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
               <div className="space-y-1">
                 <span className="text-xs font-bold text-slate-500">Music</span>
                 <select 
