@@ -64,9 +64,10 @@ const DEFAULT_SETTINGS = {
 export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle");
-  const APP_VERSION = "v1.3.0-PRO";
+  const APP_VERSION = "v2.0.0-PRO-STRATEGY";
   const [logs, setLogs] = useState<string[]>([]);
   const [results, setResults] = useState<any>(null);
+  const [backendVersion, setBackendVersion] = useState<string | null>(null);
   const [selectedClip, setSelectedClip] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<"workspace" | "gallery">("workspace");
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
@@ -88,7 +89,12 @@ export default function Dashboard() {
   }, [activeView]);
 
   useEffect(() => {
-    axios.get(`${API_BASE}/config`).then(res => setCatalogData(res.data)).catch(() => {});
+    axios.get(`${API_BASE}/heartbeat`)
+      .then(res => setBackendVersion(res.data.version))
+      .catch(() => setBackendVersion("Offline"));
+    axios.get(`${API_BASE}/config`)
+      .then(res => setCatalogData(res.data))
+      .catch(() => {});
   }, []);
 
   // Auto-populate render settings from persona

@@ -35,6 +35,9 @@ from huggingface_hub import hf_hub_download
 
 app = FastAPI(title="ClipFactory AI Director API")
 
+VERSION = "2.0.0-PRO-STRATEGY"
+print(f"🚀 ClipFactory AI Director Backend {VERSION} starting...")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Adjust for production
@@ -113,6 +116,14 @@ async def get_config():
         "llm_catalog": [{"label": e["label"]} for e in LLM_CATALOG],
         "whisper_catalog": [{"label": e["label"]} for e in WHISPER_CATALOG],
         "bgm_genres": list(BGM_CATALOG.keys()),
+    }
+
+@app.get("/api/heartbeat")
+async def heartbeat():
+    return {
+        "status": "online",
+        "version": VERSION,
+        "ts": time.time()
     }
 
 @app.get("/api/status")
