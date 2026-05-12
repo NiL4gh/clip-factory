@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS = {
   face_center: true,
   magic_hook: true,
   remove_silence: true,
+  caption_style: "Classic",
   caption_pos: "Bottom",
   bg_music_genre: "None",
   broll_intensity: "Medium",
@@ -543,6 +544,16 @@ export default function Dashboard() {
             </div>
 
             <div className="flex-shrink-0 space-y-4">
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Caption Style</span>
+                <select
+                  value={getSettings(selectedClip).caption_style}
+                  onChange={(e) => updateSetting(selectedClip, "caption_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
               <div className="space-y-1">
                 <span className="text-xs font-bold text-slate-500">Music</span>
                 <select 

@@ -10,12 +10,15 @@ from shorts_generator.config import FONT_PATH
 from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
 from .logger import ui_logger
 
-# Ensure we have our premium font
-if os.path.exists("/usr/share/fonts/truetype") and not os.path.exists(FONT_PATH):
+# Ensure we have our premium font (Montserrat-Bold) available on Colab
+_FONT_DIR  = "/content/work"
+_FONT_FILE = "Montserrat-Bold.ttf"
+_FONT_URL  = "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf"
+os.makedirs(_FONT_DIR, exist_ok=True)
+if not os.path.exists(os.path.join(_FONT_DIR, _FONT_FILE)):
     try:
-        urllib.request.urlretrieve("https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Black.ttf", FONT_PATH)
+        urllib.request.urlretrieve(_FONT_URL, os.path.join(_FONT_DIR, _FONT_FILE))
         subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        ui_logger.log("Premium font (Montserrat-Black) installed.")
     except:
         pass
 
@@ -226,17 +229,26 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
     return f"crop={crop_w}:{crop_h}:{x_expr}:0"
 
 
-def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Hormozi", position="Center", **kwargs):
-    # Hardcoded CapCut Style
-    font_name = FONT_PATH.replace("\\", "/").replace(":", "\\:") if FONT_PATH else "Montserrat-Bold"
-    font_size = 55
-    p = {"main": "&H00FFFFFF", "high": "&H0000FFFF"} # Yellow highlight
-    bold = 1
-    outline = 3
-    shadow = 0
+# ── CapCut-Style Presets ─────────────────────────────────────────────────────
+_CAPTION_STYLES = {
+    # name        : (font_size, main_color,    highlight_color, outline, shadow, bold)
+    "Classic"     : (55,        "&H00FFFFFF",   "&H0000FFFF",    3,       0,      1),  # White + Yellow
+    "Pop"         : (62,        "&H00FFFFFF",   "&H00FF00FF",    4,       2,      1),  # White + Cyan, thick
+    "Glow"        : (55,        "&H00FFFFFF",   "&H00FF00FF",    2,       8,      1),  # White + Magenta, glow
+    "Outline"     : (60,        "&H00FFFFFF",   "&H0000FF00",    5,       0,      1),  # White + Lime, heavy border
+    "Minimal"     : (46,        "&H00FFFFFF",   "&H00FFFFFF",    1,       0,      0),  # White only, no bold
+    "Fire"        : (58,        "&H0000FFFF",   "&H000080FF",    4,       2,      1),  # Yellow + Orange
+}
+
+def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Classic", position="Center", **kwargs):
+    # Resolve style preset — fall back to Classic if unknown
+    preset = _CAPTION_STYLES.get(style_mode, _CAPTION_STYLES["Classic"])
+    font_size, main_color, high_color, outline, shadow, bold = preset
+    font_name = "Montserrat"
+    p = {"main": main_color, "high": high_color}
 
     align_map = {"Top": 8, "Center": 5, "Bottom": 2}
-    align = align_map.get(position, 5)
+    align = align_map.get(position, 2)  # Default Bottom — CapCut style
 
     lines = [
         "[Script Info]",
@@ -246,12 +258,12 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,0,0,1,{outline},{shadow},{align},10,10,250,1",
-        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,0,0,1,{outline},{shadow},{align},10,10,250,1"
+        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,120,1",
+        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,120,1"
     ]
     
     if kwargs.get("magic_hook_text"):
-        lines.append(f"Style: MagicHook,{font_name},110,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8,6,8,10,10,150,1")
+        lines.append(f"Style: MagicHook,{font_name},72,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,6,4,5,40,40,80,1")
 
     lines.extend([
         "",
@@ -307,7 +319,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
 
 def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  face_center=True, add_subs=True, theme="Storytime", 
-                 caption_style="Hormozi", caption_pos="Center",
+                 caption_style="Classic", caption_pos="Bottom",
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
                  all_sentences=None, padding=3.0):
@@ -316,20 +328,17 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(work_dir, exist_ok=True)
 
-    # ── Guarantee Montserrat-Bold font exists on Colab ──
-    global FONT_PATH
-    _font_url = "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf"
-    _colab_font = "/content/work/Montserrat-Bold.ttf"
-    if not os.path.exists(FONT_PATH):
-        os.makedirs(os.path.dirname(_colab_font), exist_ok=True)
+    # ── Guarantee Montserrat-Bold font exists in /content/work ──
+    _colab_font = os.path.join(_FONT_DIR, _FONT_FILE)
+    if not os.path.exists(_colab_font):
         try:
-            urllib.request.urlretrieve(_font_url, _colab_font)
-            FONT_PATH = _colab_font
+            urllib.request.urlretrieve(_FONT_URL, _colab_font)
+            subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             ui_logger.log(f"Downloaded Montserrat-Bold to {_colab_font}")
         except Exception as _fe:
-            ui_logger.log(f"Font download failed ({_fe}), using system fallback.")
+            ui_logger.log(f"Font download failed: {_fe}")
     if os.path.exists(_colab_font):
-        FONT_PATH = _colab_font
+        ui_logger.log(f"Montserrat-Bold font ready at {_colab_font}")
     out_id = uuid.uuid4().hex[:8]
     import datetime
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -431,7 +440,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             # Static center crop fallback
             base_crop = f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1"
         
-        filter_complex = f"[0:v]{base_crop},unsharp=3:3:0.5[base];"
+        filter_complex = f"[0:v]{base_crop},unsharp=3:3:0.3[base];"
 
         current_v = "base"
         input_idx = 1
@@ -485,19 +494,21 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         seg_words = [w for w in block_words if w["start"] >= seg_st - 0.2 and w["end"] <= seg_et + 0.2]
         if add_subs and seg_words:
             mh_text = clip_data.get("hook_sentence") if (magic_hook and idx == 0) else None
-            safe_font = FONT_PATH.replace("\\", "/").replace(":", "\\:")
-            
+            safe_font = os.path.join(_FONT_DIR, _FONT_FILE).replace("\\", "/").replace(":", "\\:")
+
             if mh_text:
-                safe_hook = mh_text.upper().replace("'", "\u2019").replace(":", "\\:").replace("\\", "/")
+                # Truncate hook to max 55 chars to prevent overflow at fontsize 56
+                hook_raw = mh_text.upper()[:55].strip()
+                safe_hook = hook_raw.replace("'", "\u2019").replace(":", "\\:").replace("\\", "/")
                 next_v = f"v{input_idx}_hook"
-                hook_y = "h*0.15"
+                # Place hook vertically centered, horizontally centered, with text wrapping
                 filter_complex += (
                     f"[{current_v}]drawtext=fontfile='{safe_font}'"
                     f":text='{safe_hook}'"
-                    f":fontsize=80"
+                    f":fontsize=56"
                     f":fontcolor=0xFFFF00"
-                    f":box=1:boxcolor=black@0.8:boxborderw=20:borderw=0"
-                    f":x=(w-text_w)/2:y={hook_y}"
+                    f":box=1:boxcolor=0x000000@0.75:boxborderw=14"
+                    f":x=(w-text_w)/2:y=(h-text_h)/2"
                     f":enable='between(t,0,2.5)'"
                     f"[{next_v}];"
                 )
@@ -508,7 +519,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st, theme=theme, style_mode=caption_style, position=caption_pos)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
-            filter_complex += f"[{current_v}]ass='{safe_ass}'[{next_v}];"
+            safe_fonts_dir = _FONT_DIR.replace("\\", "/").replace(":", "\\:")
+            filter_complex += f"[{current_v}]ass='{safe_ass}':fontsdir='{safe_fonts_dir}'[{next_v}];"
             current_v = next_v
             input_idx += 1
             

@@ -94,7 +94,6 @@ class StrategizeRequest(BaseModel):
     url: str
     llm_label: Optional[str] = "🦙 LLaMA 3 8B Instruct Q4"
     whisper_label: Optional[str] = "Medium (Fast/Accurate)"
-    target_platform: Optional[str] = "TikTok / Shorts (Vertical)"
 
 # Render tracking
 _render_status = {} # { task_id: { status: "running"|"done"|"error", filename: str } }
@@ -104,8 +103,8 @@ class RenderRequest(BaseModel):
     face_center: bool = True
     magic_hook: bool = True
     remove_silence: bool = True
-    caption_style: str = "Hormozi"
-    caption_pos: str = "Center"
+    caption_style: str = "Classic"
+    caption_pos: str = "Bottom"
     bg_music_genre: str = "None"
     broll_intensity: str = "Medium"
     excluded_sentences: List[str] = []
@@ -146,7 +145,7 @@ async def websocket_logs(websocket: WebSocket):
     except Exception:
         pass
 
-def _run_strategize(url: str, llm_label: str, whisper_label: str, target_platform: str = "TikTok / Shorts (Vertical)"):
+def _run_strategize(url: str, llm_label: str, whisper_label: str):
     try:
         _state["is_strategizing"] = True
         _state["is_cancelled"] = False
@@ -298,7 +297,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, target_platfor
 async def strategize(req: StrategizeRequest, background_tasks: BackgroundTasks):
     if _state["is_strategizing"] or _state["is_rendering"]:
         raise HTTPException(status_code=400, detail="A task is already running.")
-    background_tasks.add_task(_run_strategize, req.url, req.llm_label, req.whisper_label, req.target_platform)
+    background_tasks.add_task(_run_strategize, req.url, req.llm_label, req.whisper_label)
     return {"message": "Strategizing started."}
 
 @app.post("/api/cancel_strategize")
