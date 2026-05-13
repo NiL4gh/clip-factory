@@ -369,9 +369,8 @@ def _run_render(req: RenderRequest, task_id: str):
             all_sentences=all_sentences
         )
         
-        # ── BGM mixing via enhance_clip (CC0 fallback, skipped if LLM music was applied) ──
-        has_llm_music = bool(clip.get("music_query", ""))
-        if req.bg_music_genre and req.bg_music_genre != "None" and not has_llm_music:
+        # ── BGM mixing via enhance_clip ──
+        if req.bg_music_genre and req.bg_music_genre != "None":
             music_path = _get_bgm(req.bg_music_genre)
             if music_path:
                 ui_logger.log(f"Mixing BGM ({req.bg_music_genre}) with dynamic peak swell...")
@@ -385,6 +384,8 @@ def _run_render(req: RenderRequest, task_id: str):
         dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
         if out != dst: shutil.copy2(out, dst)
         ui_logger.log(f"Rendered successfully: {os.path.basename(out)}")
+        _render_status[task_id]["filename"] = os.path.basename(dst)
+        _render_status[task_id]["status"] = "done"
         
     except Exception as e:
         import traceback

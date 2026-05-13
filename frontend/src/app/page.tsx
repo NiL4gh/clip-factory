@@ -78,7 +78,7 @@ export default function Dashboard() {
   // Model selectors
   const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3 8B Instruct Q4");
   const [whisperLabel, setWhisperLabel] = useState("⭐ medium");
-  const [catalogData, setCatalogData] = useState<{llm_catalog:{label:string}[], whisper_catalog:{label:string}[]}>({llm_catalog:[], whisper_catalog:[]});
+  const [catalogData, setCatalogData] = useState<{llm_catalog:{label:string}[], whisper_catalog:{label:string}[], bgm_genres:string[]}>({llm_catalog:[], whisper_catalog:[], bgm_genres:[]});
   const [renderSettings, setRenderSettings] = useState<Record<number, typeof DEFAULT_SETTINGS>>({});
 
   useEffect(() => {
@@ -493,13 +493,18 @@ export default function Dashboard() {
               <div key={i} className="bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-xl">
                 <div className="bg-slate-900 aspect-[9/16] relative group">
                   <video
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover cursor-pointer"
                     src={video.url}
                     muted
-                    onMouseOver={e => (e.target as HTMLVideoElement).play()}
-                    onMouseOut={e => (e.target as HTMLVideoElement).pause()}
+                    playsInline
+                    onMouseOver={e => (e.currentTarget as HTMLVideoElement).play()}
+                    onMouseOut={e => (e.currentTarget as HTMLVideoElement).pause()}
+                    onClick={e => {
+                      const v = e.currentTarget as HTMLVideoElement;
+                      v.paused ? v.play() : v.pause();
+                    }}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                     <Play className="w-8 h-8 text-white fill-white shadow-xl" />
                   </div>
                 </div>
@@ -561,7 +566,8 @@ export default function Dashboard() {
                   onChange={(e) => updateSetting(selectedClip, "bg_music_genre", e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
-                  {["None", "Lofi", "Energy", "Suspense", "Corporate"].map(s => <option key={s} value={s}>{s}</option>)}
+                  <option value="None">None</option>
+                  {(catalogData.bgm_genres || []).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="space-y-1">

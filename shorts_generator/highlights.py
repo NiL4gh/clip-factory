@@ -90,7 +90,7 @@ def _query_llm(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
                 {"role": "system", "content": system},
                 {"role": "user",   "content": prompt},
             ],
-            temperature=0.25,
+            temperature=0.40,
             max_tokens=max_tokens,
         )
     except Exception as e:
@@ -99,7 +99,7 @@ def _query_llm(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
             messages=[
                 {"role": "user", "content": f"{system}\n\n{prompt}"},
             ],
-            temperature=0.25,
+            temperature=0.40,
             max_tokens=max_tokens,
         )
 
@@ -483,7 +483,9 @@ def get_highlights(
         '    "virality_score": 85,\n'
         '    "ideal_transcript": "The exact word-for-word transcript of the perfect 40-60 second clip. Include the hook at the beginning and the natural conclusion at the end. Do not include timestamps, just the raw spoken words.",\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
-        '    "music_query": "A 3-4 word search term for no-copyright background music that fits the vibe (e.g., upbeat phonk, calm lofi, dark suspense)"\n'
+        '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
+        '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
+        '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"]\n'
         '  }\n'
         ']'
     )
@@ -506,7 +508,7 @@ def get_highlights(
                 f"{virality_prompt}\n\n"
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                f"Extract ALL of the most viral, natural moments from THIS section.\n"
+                f"Extract ALL viral moments from this section. Target {clips_per_topic} to {clips_per_topic * 2} clips — more is fine if content supports it.\n"
                 f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
                 f"Transcript:\n{topic_text}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -536,7 +538,7 @@ def get_highlights(
                     f"{virality_prompt}\n\n"
                     f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                     f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                    f"Extract ALL of the most viral, natural moments from THIS section.\n"
+                    f"Extract ALL viral moments from this section. Target {clips_per_topic} to {clips_per_topic * 2} clips — more is fine if content supports it.\n"
                     f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
                     f"Transcript:\n{topic_text}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -601,6 +603,8 @@ def get_highlights(
                 "virality_reason": h.get("virality_reason", ""),
                 "theme": theme,
                 "music_query": h.get("music_query", ""),
+                "broll_keywords": h.get("broll_keywords", []),
+                "emoji_moments": h.get("emoji_moments", []),
                 "source_topic": h.get("source_topic", "General"),
             })
         except Exception:
@@ -616,7 +620,7 @@ def get_highlights(
     # Dedup: 15-second window based on first segment start
     seen, deduped = set(), []
     for h in validated:
-        key = int(h["start_time"] // 15)
+        key = int(h["start_time"] // 45)
         if key not in seen:
             seen.add(key)
             deduped.append(h)

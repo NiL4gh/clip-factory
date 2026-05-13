@@ -211,15 +211,15 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
         dt = t1 - t0
         if dt <= 0:
             continue
-        # Linear interpolation: x0 + (x1 - x0) * (t - t0) / dt
+        # Half-open interval [t0, t1) — exactly one segment active at any t
         lerp_expr = f"{x0}+({x1}-{x0})*(t-{t0:.2f})/{dt:.2f}"
-        parts.append(f"between(t\\,{t0:.2f}\\,{t1:.2f})*({lerp_expr})")
+        parts.append(f"gte(t\\,{t0:.2f})*lt(t\\,{t1:.2f})*({lerp_expr})")
 
-    # Before first keypoint: hold first position
+    # Before first keypoint: hold first detected position
     first_t, first_x = keypoints[0]
     parts.insert(0, f"lt(t\\,{first_t:.2f})*{first_x}")
 
-    # After last keypoint: hold last position
+    # At and after last keypoint: hold last detected position (half-open end)
     last_t, last_x = keypoints[-1]
     parts.append(f"gte(t\\,{last_t:.2f})*{last_x}")
 
@@ -263,7 +263,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     ]
     
     if kwargs.get("magic_hook_text"):
-        lines.append(f"Style: MagicHook,{font_name},72,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,6,4,5,40,40,80,1")
+        lines.append(f"Style: MagicHook,{font_name},52,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,3,8,40,40,120,1")
 
     lines.extend([
         "",
@@ -339,6 +339,9 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             ui_logger.log(f"Font download failed: {_fe}")
     if os.path.exists(_colab_font):
         ui_logger.log(f"Montserrat-Bold font ready at {_colab_font}")
+        # Refresh fontconfig cache so libass finds the font at render time
+        subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=10)
     out_id = uuid.uuid4().hex[:8]
     import datetime
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -496,27 +499,10 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             mh_text = clip_data.get("hook_sentence") if (magic_hook and idx == 0) else None
             safe_font = os.path.join(_FONT_DIR, _FONT_FILE).replace("\\", "/").replace(":", "\\:")
 
-            if mh_text:
-                # Truncate hook to max 55 chars to prevent overflow at fontsize 56
-                hook_raw = mh_text.upper()[:55].strip()
-                safe_hook = hook_raw.replace("'", "\u2019").replace(":", "\\:").replace("\\", "/")
-                next_v = f"v{input_idx}_hook"
-                # Place hook vertically centered, horizontally centered, with text wrapping
-                filter_complex += (
-                    f"[{current_v}]drawtext=fontfile='{safe_font}'"
-                    f":text='{safe_hook}'"
-                    f":fontsize=56"
-                    f":fontcolor=0xFFFF00"
-                    f":box=1:boxcolor=0x000000@0.75:boxborderw=14"
-                    f":x=(w-text_w)/2:y=(h-text_h)/2"
-                    f":enable='between(t,0,2.5)'"
-                    f"[{next_v}];"
-                )
-                current_v = next_v
-                input_idx += 1
-
             ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
-            _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st, theme=theme, style_mode=caption_style, position=caption_pos)
+            _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st,
+                          theme=theme, style_mode=caption_style, position=caption_pos,
+                          magic_hook_text=mh_text)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
             safe_fonts_dir = _FONT_DIR.replace("\\", "/").replace(":", "\\:")
