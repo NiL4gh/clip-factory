@@ -99,7 +99,8 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
         "ffmpeg", "-y", "-i", input_path,
         "-vf", f"select='{select_parts}',setpts=N/FRAME_RATE/TB",
         "-af", f"aselect='{select_parts}',asetpts=N/SR/TB",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "17",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "17",
+        "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
         "-c:a", "aac", "-b:a", "192k",
         output_path
     ]
@@ -551,7 +552,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
             "-c:a", "aac", "-b:a", "192k",
-            "-shortest",  # Ensure encoding stops exactly when the video stream ends
+            "-t", str(round(seg_et - seg_st, 3)),  # Explicit duration — prevents looped B-roll inputs from truncating segment
             seg_out
         ])
 
@@ -588,16 +589,26 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     if len(rendered_segs) == 1:
         shutil.copy2(rendered_segs[0], final_output)
     else:
-        concat_txt = os.path.join(work_dir, f"concat_{out_id}.txt")
-        with open(concat_txt, "w", encoding="utf-8") as f:
-            for s in rendered_segs:
-                p = s.replace("\\", "/")
-                f.write(f"file '{p}'\n")
-        concat_cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt, "-c", "copy", final_output]
+        n_segs = len(rendered_segs)
+        fc_inputs = []
+        for s in rendered_segs:
+            fc_inputs.extend(["-i", s])
+        fc_str = (
+            "".join(f"[{i}:v][{i}:a]" for i in range(n_segs))
+            + f"concat=n={n_segs}:v=1:a=1[v_concat][a_concat]"
+        )
+        concat_cmd = ["ffmpeg", "-y"] + fc_inputs + [
+            "-filter_complex", fc_str,
+            "-map", "[v_concat]", "-map", "[a_concat]",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
+            "-c:a", "aac", "-b:a", "192k",
+            final_output
+        ]
         try:
             subprocess.run(concat_cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
-            ui_logger.log(f"FFmpeg concat error: {e.stderr}")
+            ui_logger.log(f"FFmpeg concat error: {e.stderr[-500:]}")
             raise
 
     # ── LLM-Driven BGM Mixing (music_query from highlights) ──

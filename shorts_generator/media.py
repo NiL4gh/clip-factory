@@ -10,22 +10,45 @@ def get_broll_image(keyword, out_path):
     if not DDGS:
         return False
     try:
-        results = DDGS().images(keyword, max_results=1)
-        if results:
-            url = results[0]["image"]
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=5) as resp, open(out_path, 'wb') as f:
-                f.write(resp.read())
-            return True
+        results = DDGS().images(keyword, max_results=3)
     except Exception as e:
-        print(f"B-Roll fetch fail for '{keyword}': {e}")
+        print(f"B-roll search fail for '{keyword}': {e}")
+        return False
+    for result in results:
+        try:
+            url = result.get("image", "")
+            if not url:
+                continue
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            tmp_path = out_path + ".raw"
+            with urllib.request.urlopen(req, timeout=8) as resp, open(tmp_path, "wb") as f:
+                f.write(resp.read())
+            # Transcode to JPEG via FFmpeg — normalizes PNG/WebP/GIF to a format
+            # FFmpeg can reliably use as a looped image input
+            import subprocess
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", tmp_path, "-vframes", "1", "-q:v", "2", out_path],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            os.remove(tmp_path)
+            return True
+        except Exception:
+            if os.path.exists(out_path + ".raw"):
+                os.remove(out_path + ".raw")
+            continue
+    print(f"B-roll fetch failed for '{keyword}' after 3 attempts")
     return False
 
 def get_twemoji(emoji_char, out_path):
     if not emoji_char: return False
     
     try:
-        codepoint = "-".join([hex(ord(c))[2:] for c in emoji_char if ord(c) > 127])
+        _VARIATION_SELECTORS = {0xFE0E, 0xFE0F}
+        codepoint = "-".join([
+            hex(ord(c))[2:]
+            for c in emoji_char
+            if ord(c) > 127 and ord(c) not in _VARIATION_SELECTORS
+        ])
         if not codepoint:
             return False
             
