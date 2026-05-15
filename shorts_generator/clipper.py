@@ -301,14 +301,14 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
 
             fade_in = 150 if i == 0 else 0
             fade_out = 150 if i == len(chunk) - 1 else 0
-            fade_tag = f"{{\\fad({fade_in},{fade_out})}}"
+            fade_tag = f"{{\fad({fade_in},{fade_out})}}"
 
             styled = fade_tag
             for x in chunk:
                 txt = x['word'].strip()
                 txt = txt.upper()
                 if x == w:
-                    styled += f"{{\\rHighlight}}{txt}{{\\rMain}} "
+                    styled += f"{{\rHighlight}}{txt}{{\rMain}} "
                 else:
                     styled += f"{txt} "
 
@@ -483,7 +483,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     rel_st = e_st - seg_st
                     rel_et = rel_st + 1.5
                     next_v = f"v{input_idx}"
-                    filter_complex += f"[{current_v}][emoji{input_idx}]overlay=x='W-w-50':y='H-h-300 + 100*max(0, 0.2-(t-{rel_st}))/0.2':enable='between(t,{rel_st},{rel_et})'[{next_v}];"
+                    # FIX: tightened y expression — no spaces, added parens for correct precedence
+                    filter_complex += f"[{current_v}][emoji{input_idx}]overlay=x='W-w-50':y='H-h-300+100*max(0,(0.2-(t-{rel_st}))/0.2)':enable='between(t,{rel_st},{rel_et})'[{next_v}];"
                     current_v = next_v
                     input_idx += 1
 
@@ -494,6 +495,12 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             sfx_delays = []  # clear so audio filter is skipped safely
         for delay in sfx_delays:
             inputs.extend(["-i", sfx_path])
+
+        # FIX: snapshot the SFX starting index NOW, before ASS subtitles and
+        # flash drawbox increment input_idx for non-input filter operations.
+        # Previously sfx_idx = input_idx + i pointed to a ghost index because
+        # ASS and flash each did input_idx += 1 without adding a real -i input.
+        sfx_start_idx = input_idx
 
         seg_words = [w for w in block_words if w["start"] >= seg_st - 0.2 and w["end"] <= seg_et + 0.2]
         if add_subs and seg_words:
@@ -526,7 +533,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             audio_filter = f"[{audio_source}]volume=1.0[a_base];"
             amix_inputs = "[a_base]"
             for i, delay_sec in enumerate(sfx_delays):
-                sfx_idx = input_idx + i
+                # FIX: use sfx_start_idx (captured before ASS/flash bumped input_idx)
+                sfx_idx = sfx_start_idx + i
                 delay_ms = max(0, int(delay_sec * 1000))
                 audio_filter += f"[{sfx_idx}:a]adelay={delay_ms}|{delay_ms},volume=0.6[sfx_{i}];"
                 amix_inputs += f"[sfx_{i}]"
