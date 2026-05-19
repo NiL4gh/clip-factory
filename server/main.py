@@ -31,6 +31,7 @@ from shorts_generator.clipper import render_short
 from shorts_generator.enhancer import enhance_clip
 from shorts_generator import cache
 from shorts_generator.logger import ui_logger
+from shorts_generator.audio_analyzer import analyze_audio_energy
 from huggingface_hub import hf_hub_download
 
 app = FastAPI(title="ClipFactory AI Director API")
@@ -49,6 +50,10 @@ app.add_middleware(
 # Serve rendered clips as static media
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 app.mount("/media", StaticFiles(directory=OUTPUT_DIR), name="media")
+
+THUMB_DIR = os.path.join(WORK_DIR, "thumbnails")
+os.makedirs(THUMB_DIR, exist_ok=True)
+app.mount("/thumbs", StaticFiles(directory=THUMB_DIR), name="thumbs")
 
 # ── Bundled CC0 Background Music (direct download, no API key) ───────────
 BGM_CATALOG = {
@@ -87,7 +92,8 @@ _state = {
     "video_duration": 0,
     "is_strategizing": False,
     "is_rendering": False,
-    "is_cancelled": False
+    "is_cancelled": False,
+    "energy_peaks": []
 }
 
 class StrategizeRequest(BaseModel):
@@ -150,6 +156,13 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         _state["is_strategizing"] = True
         _state["is_cancelled"] = False
         ui_logger.clear()
+        # Clear stale thumbnails from previous run
+        import glob as _glob
+        for _old in _glob.glob(os.path.join(THUMB_DIR, "thumb_*.jpg")):
+            try:
+                os.remove(_old)
+            except OSError:
+                pass
         ui_logger.log("PROGRESS|0|Initializing AI strategy phase...")
 
         # Find LLM in catalog
@@ -221,6 +234,27 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
 
         if _state["is_cancelled"]: return
 
+        # Audio Energy Analysis
+        ui_logger.log("PROGRESS|38|Analyzing audio energy peaks...")
+        energy_wav = os.path.join(WORK_DIR, "energy_temp.wav")
+        try:
+            import subprocess as _sp
+            _sp.run(
+                ["ffmpeg", "-y", "-i", source_mp4, "-t", "900",
+                 "-ar", "16000", "-ac", "1", energy_wav],
+                capture_output=True, check=True
+            )
+            _state["energy_peaks"] = analyze_audio_energy(energy_wav)
+            ui_logger.log(f"Found {len(_state['energy_peaks'])} high-energy audio moments.")
+        except Exception as _e:
+            ui_logger.log(f"Audio energy analysis skipped: {_e}")
+            _state["energy_peaks"] = []
+        finally:
+            try:
+                os.remove(energy_wav)
+            except OSError:
+                pass
+
         # Phase 0: Persona Detection (Fast Pass)
         ui_logger.log(f"PROGRESS|40|Phase 0/3: Analyzing Video Persona with {fast_llm_entry['label']}...")
         persona = detect_video_persona(_state["word_timestamps"], llm_path=fast_llm_path, gpu_layers=fast_llm_entry["gpu_layers"])
@@ -258,9 +292,18 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
             max_clips=30,
             angle="standard",
             topics=topics,
+            energy_peaks=_state["energy_peaks"],
         )
 
         clips = result.get("highlights", [])
+
+        # Hard-reject clips that start in the opening segment (intros/outros)
+        if clips and _state["word_timestamps"]:
+            video_start = float(_state["word_timestamps"][0].get("start", 0))
+            video_dur = float(_state.get("video_duration", 0))
+            intro_threshold = min(90.0, max(60.0, video_dur * 0.12))
+            clips = [c for c in clips if (float(c.get("start_time", 0)) - video_start) >= intro_threshold]
+
         if not clips:
             ui_logger.log(f"ERROR: No viral moments found in this video.")
             _state["clips"] = []
@@ -276,6 +319,26 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
                 dur = float(c.get("end_time", 0)) - float(c.get("start_time", 0))
             c["duration"] = dur
             c["badge"] = "🎬 Single"
+
+        # Extract thumbnails for each clip
+        import subprocess as _sp
+        for i, c in enumerate(clips):
+            try:
+                thumb_path = os.path.join(THUMB_DIR, f"thumb_{i}.jpg")
+                seek_time = float(c.get("start_time", 0)) + 2.0
+                _sp.run(
+                    ["ffmpeg", "-y", "-ss", str(seek_time), "-i", source_mp4,
+                     "-vframes", "1", "-q:v", "3",
+                     "-vf", "scale=540:960:force_original_aspect_ratio=increase,crop=540:960",
+                     thumb_path],
+                    capture_output=True, timeout=15
+                )
+                if os.path.exists(thumb_path):
+                    c["thumbnail_url"] = f"/thumbs/thumb_{i}.jpg"
+                else:
+                    c["thumbnail_url"] = ""
+            except Exception:
+                c["thumbnail_url"] = ""
 
         _state["clips"] = clips
         cache.save_highlights(url.strip(), _state["clips"])
@@ -316,6 +379,7 @@ async def reset_state():
     _state["topics"] = []
     _state["estimated_clips"] = 0
     _state["video_duration"] = 0
+    _state["energy_peaks"] = []
     _state["is_strategizing"] = False
     _state["is_rendering"] = False
     _state["is_cancelled"] = False
@@ -348,7 +412,12 @@ def _run_render(req: RenderRequest, task_id: str):
         ui_logger.clear()
         ui_logger.log(f"Initializing render for clip index {req.clip_id}...")
         
-        clip = _state["clips"][req.clip_id]
+        clip = _state["clips"][req.clip_id].copy() # Copy to avoid mutating global state
+        
+        # Prevent double-mixing: if user selected a genre, disable AI-suggested BGM
+        if req.bg_music_genre and req.bg_music_genre != "None":
+            clip["music_query"] = ""
+            
         input_mp4 = os.path.join(WORK_DIR, "source.mp4")
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         theme = clip.get("theme", "Storytime")

@@ -47,7 +47,24 @@ CRITICAL EXTRACTION RULES:
 - Do NOT include timestamps or segment numbers. Only the literal spoken words.
 - The clip MUST end on a COMPLETED SENTENCE. Never cut off mid-thought.
 - Each clip must be 100% SELF-CONTAINED. A viewer who sees ONLY this clip must understand the full story.
-- Do NOT hallucinate or invent content. Only use exact spoken words from the transcript."""
+- Do NOT hallucinate or invent content. Only use exact spoken words from the transcript.
+
+NEVER EXTRACT any of the following regardless of how interesting the
+words sound:
+- Podcast or show intros: segments containing phrases like "welcome to",
+  "welcome back", "today on", "in today's episode", "I'm your host",
+  "on this podcast", "this week we're", "joining me today"
+- Outros and closings: "thank you for listening", "subscribe",
+  "follow us", "see you next", "that's all for today", "until next time"
+- Sponsor reads and ad breaks: "this episode is sponsored by",
+  "brought to you by", "use code", "link in the bio", "check out",
+  "discount", "promo code"
+- Segments where the speaker is only describing what they are ABOUT TO
+  say rather than actually saying it — framing and setup language is
+  not a clip
+- Any segment whose primary function is to introduce, frame, or close
+  the content rather than deliver the core insight or story
+"""
 
 
 # ── LLM Management ───────────────────────────────────────────────────────────
@@ -452,6 +469,7 @@ def get_highlights(
     language: str = "",
     angle: str = "standard",
     topics: list = None,
+    energy_peaks: list = None,
 ) -> dict:
     """
     Extract viral clips from the transcript using multi-segment stitching.
@@ -504,12 +522,28 @@ def get_highlights(
             topic_text = _get_text_slice(text, topic["start_time"], topic["end_time"])
             if not topic_text.strip(): continue
 
+            topic_peaks = [] if not energy_peaks else [
+                p for p in energy_peaks
+                if topic.get("start_time", 0) - 5 <= p["time"] <= topic.get("end_time", 9999) + 5
+            ]
+
+            energy_hint = ""
+            if topic_peaks:
+                peak_times = ", ".join(f"{p['time']:.1f}" for p in topic_peaks)
+                energy_hint = (
+                    f"\n\nHIGH-ENERGY AUDIO MOMENTS detected in this topic (laughter, volume\n"
+                    f"spikes, excitement peaks) at these timestamps in seconds:\n"
+                    f"{peak_times}\n"
+                    f"Strongly prefer clips that contain or start near these timestamps.\n"
+                    f"These moments have proven audio engagement signals beyond the text."
+                )
+
             prompt = (
                 f"{virality_prompt}\n\n"
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                 f"Extract ALL viral moments from this section. Target {clips_per_topic} to {clips_per_topic * 2} clips — more is fine if content supports it.\n"
-                f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
+                f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
@@ -534,12 +568,28 @@ def get_highlights(
                 if not topic_text.strip():
                     continue
 
+                topic_peaks = [] if not energy_peaks else [
+                    p for p in energy_peaks
+                    if topic.get("start_time", 0) - 5 <= p["time"] <= topic.get("end_time", 9999) + 5
+                ]
+
+                energy_hint = ""
+                if topic_peaks:
+                    peak_times = ", ".join(f"{p['time']:.1f}" for p in topic_peaks)
+                    energy_hint = (
+                        f"\n\nHIGH-ENERGY AUDIO MOMENTS detected in this topic (laughter, volume\n"
+                        f"spikes, excitement peaks) at these timestamps in seconds:\n"
+                        f"{peak_times}\n"
+                        f"Strongly prefer clips that contain or start near these timestamps.\n"
+                        f"These moments have proven audio engagement signals beyond the text."
+                    )
+
                 prompt = (
                     f"{virality_prompt}\n\n"
                     f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                     f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                     f"Extract ALL viral moments from this section. Target {clips_per_topic} to {clips_per_topic * 2} clips — more is fine if content supports it.\n"
-                    f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
+                    f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.{energy_hint}\n\n"
                     f"Transcript:\n{topic_text}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
                 )

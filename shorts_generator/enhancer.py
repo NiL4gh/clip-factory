@@ -30,7 +30,7 @@ def add_smart_background_music(video_path: str, music_path: str, output_path: st
         "-i", video_path, 
         "-stream_loop", "-1", 
         "-i", music_path, 
-        "-filter_complex", f"[0:a]volume=1.0[a0];[1:a]volume='{vol_expr}':eval=frame[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=2[a]",
+        "-filter_complex", f"[0:a]volume=0.56[a0];[1:a]volume='{vol_expr}':eval=frame[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=2,asetpts=PTS-STARTPTS[a]",
         "-map", "0:v", 
         "-map", "[a]", 
         "-c:v", "copy", 

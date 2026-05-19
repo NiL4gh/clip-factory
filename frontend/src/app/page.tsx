@@ -434,6 +434,7 @@ export default function Dashboard() {
                 <div key={i} onClick={() => setSelectedClip(i)} className={`cursor-pointer group flex flex-col border transition-all duration-300 shadow-sm overflow-hidden rounded-2xl ${selectedClip === i ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/30' : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md'}`}>
                   <div className="flex h-40">
                     <div className="bg-slate-900 w-28 shrink-0 relative overflow-hidden flex flex-col items-center justify-center text-center p-2">
+                      {clip.thumbnail_url && <img src={clip.thumbnail_url || ""} alt="" className="absolute inset-0 w-full h-full object-cover opacity-50" />}
                       <div className="text-white font-bold text-[10px] mb-1 leading-tight drop-shadow-md line-clamp-3">{clip.title || "Untitled Clip"}</div>
                       <div className="text-white/80 text-[9px] uppercase tracking-widest font-bold flex items-center justify-center gap-1 mt-2">
                         <Clock className="w-3 h-3" />

@@ -99,7 +99,7 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
         "ffmpeg", "-y", "-i", input_path,
         "-vf", f"select='{select_parts}',setpts=N/FRAME_RATE/TB",
         "-af", f"aselect='{select_parts}',asetpts=N/SR/TB",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "17",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "16",
         "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
         "-c:a", "aac", "-b:a", "192k",
         output_path
@@ -213,7 +213,7 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
         if dt <= 0:
             continue
         # Half-open interval [t0, t1) — exactly one segment active at any t
-        lerp_expr = f"{x0}+({x1}-{x0})*(t-{t0:.2f})/{dt:.2f}"
+        lerp_expr = f"{x0}+({x1}-{x0})*min((t-{t0:.2f})/0.20,1)"
         parts.append(f"gte(t\\,{t0:.2f})*lt(t\\,{t1:.2f})*({lerp_expr})")
 
     # Before first keypoint: hold first detected position
@@ -232,19 +232,24 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
 
 # ── CapCut-Style Presets ─────────────────────────────────────────────────────
 _CAPTION_STYLES = {
-    # name        : (font_size, main_color,    highlight_color, outline, shadow, bold)
-    "Classic"     : (55,        "&H00FFFFFF",   "&H0000FFFF",    3,       0,      1),  # White + Yellow
-    "Pop"         : (62,        "&H00FFFFFF",   "&H00FF00FF",    4,       2,      1),  # White + Cyan, thick
-    "Glow"        : (55,        "&H00FFFFFF",   "&H00FF00FF",    2,       8,      1),  # White + Magenta, glow
-    "Outline"     : (60,        "&H00FFFFFF",   "&H0000FF00",    5,       0,      1),  # White + Lime, heavy border
-    "Minimal"     : (46,        "&H00FFFFFF",   "&H00FFFFFF",    1,       0,      0),  # White only, no bold
-    "Fire"        : (58,        "&H0000FFFF",   "&H000080FF",    4,       2,      1),  # Yellow + Orange
+    "Classic": {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H0000FFFF&", "outline": 3, "shadow": 0, "bold": 1},
+    "Pop":     {"font_size": 95,  "primary": "&H00FFFFFF&", "highlight": "&H00FF00FF&", "outline": 4, "shadow": 2, "bold": 1},
+    "Glow":    {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H00FF00FF&", "outline": 2, "shadow": 8, "bold": 1},
+    "Outline": {"font_size": 92,  "primary": "&H00FFFFFF&", "highlight": "&H0000FF00&", "outline": 5, "shadow": 0, "bold": 1},
+    "Minimal": {"font_size": 72,  "primary": "&H00FFFFFF&", "highlight": "&H00FFFFFF&", "outline": 1, "shadow": 0, "bold": 0},
+    "Fire":    {"font_size": 90,  "primary": "&H0000FFFF&", "highlight": "&H000080FF&", "outline": 4, "shadow": 2, "bold": 1},
 }
 
 def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Classic", position="Center", **kwargs):
     # Resolve style preset — fall back to Classic if unknown
-    preset = _CAPTION_STYLES.get(style_mode, _CAPTION_STYLES["Classic"])
-    font_size, main_color, high_color, outline, shadow, bold = preset
+    # Resolve style preset — returns a dict with all style attributes
+    style = _CAPTION_STYLES.get(style_mode, _CAPTION_STYLES["Classic"])
+    font_size = style["font_size"]
+    main_color = style["primary"]
+    high_color = style["highlight"]
+    outline = style["outline"]
+    shadow = style["shadow"]
+    bold = style["bold"]
     font_name = "Montserrat"
     p = {"main": main_color, "high": high_color}
 
@@ -264,7 +269,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     ]
     
     if kwargs.get("magic_hook_text"):
-        lines.append(f"Style: MagicHook,{font_name},52,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,3,8,40,40,120,1")
+        lines.append(f"Style: MagicHook,{font_name},64,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,3,4,3,8,40,40,120,1")
 
     lines.extend([
         "",
@@ -273,7 +278,23 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     ])
     
     if kwargs.get("magic_hook_text"):
-        lines.append(f"Dialogue: 0,0:00:00.00,0:00:02.50,MagicHook,,0,0,0,,{kwargs['magic_hook_text'].upper()}")
+        hook_text = kwargs['magic_hook_text']
+        words_list = hook_text.split()
+        current_line = ""
+        wrapped_lines = []
+        for word in words_list:
+            if len(current_line) + len(word) + (1 if current_line else 0) > 22:
+                wrapped_lines.append(current_line)
+                current_line = word
+            else:
+                if current_line:
+                    current_line += " " + word
+                else:
+                    current_line = word
+        if current_line:
+            wrapped_lines.append(current_line)
+        wrapped_text = "\\N".join(wrapped_lines).upper()
+        lines.append(f"Dialogue: 0,0:00:00.00,0:00:02.50,MagicHook,,0,0,0,,{wrapped_text}")
 
     def fmt_time(secs):
         h = int(secs // 3600); m = int((secs % 3600) // 60); s = int(secs % 60); cs = int((secs - int(secs)) * 100)
@@ -304,11 +325,13 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             fade_tag = f"{{\fad({fade_in},{fade_out})}}"
 
             styled = fade_tag
+            hl_color = style["highlight"]
+            main_color = style["primary"]
             for x in chunk:
                 txt = x['word'].strip()
                 txt = txt.upper()
                 if x == w:
-                    styled += f"{{\rHighlight}}{txt}{{\rMain}} "
+                    styled += f"{{\\c{hl_color}\\fscx115\\fscy115}}{txt}{{\\c{main_color}\\fscx100\\fscy100}} "
                 else:
                     styled += f"{txt} "
 
@@ -444,7 +467,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             # Static center crop fallback
             base_crop = f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1"
         
-        filter_complex = f"[0:v]{base_crop},unsharp=3:3:0.3[base];"
+        filter_complex = f"[0:v]{base_crop}[base];"
 
         current_v = "base"
         input_idx = 1
@@ -524,7 +547,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             current_v = next_v
             input_idx += 1
 
-        filter_complex += f";[{current_v}]setpts=PTS-STARTPTS[v_out]"
+        filter_complex += f";[{current_v}]eq=saturation=1.1:gamma=0.95:contrast=1.08:brightness=0.02,setpts=PTS-STARTPTS[v_out]"
         current_v = "v_out"
         filter_complex = filter_complex.replace(";;", ";").rstrip(';')
 
@@ -557,7 +580,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", f"[{current_v}]", "-map", audio_map,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "16",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
             "-c:a", "aac", "-b:a", "192k",
             "-t", str(round(seg_et - seg_st, 3)),  # Explicit duration — prevents looped B-roll inputs from truncating segment
@@ -603,12 +626,12 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             fc_inputs.extend(["-i", s])
         fc_str = (
             "".join(f"[{i}:v][{i}:a]" for i in range(n_segs))
-            + f"concat=n={n_segs}:v=1:a=1[v_concat][a_concat]"
+            + f"concat=n={n_segs}:v=1:a=1[v_concat_raw][a_concat_raw];[v_concat_raw]setpts=PTS-STARTPTS[v_concat];[a_concat_raw]asetpts=PTS-STARTPTS[a_concat]"
         )
         concat_cmd = ["ffmpeg", "-y"] + fc_inputs + [
             "-filter_complex", fc_str,
             "-map", "[v_concat]", "-map", "[a_concat]",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "16",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
             "-c:a", "aac", "-b:a", "192k",
             final_output
@@ -635,7 +658,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     "-stream_loop", "-1",
                     "-i", bgm_path,
                     "-filter_complex",
-                    "[0:a]volume=0.5[speech];[1:a]volume=0.1[bgm];[speech][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]",
+                    "[0:a]volume=0.56[speech];[1:a]volume=0.1[bgm];[speech][bgm]amix=inputs=2:duration=first:dropout_transition=2,asetpts=PTS-STARTPTS[a]",
                     "-map", "0:v", "-map", "[a]",
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                     "-shortest",

@@ -11,12 +11,15 @@ Clip Factory is a production-grade, self-hosted SaaS platform designed to automa
 | Feature | Description |
 |---|---|
 | 🧠 **AI Video Intelligence** | Llama 3 8B auto-detects video persona, genre, and tone to assign perfect Brand Kits and BGM. |
-| 📊 **Strategize-as-Generate** | AI Director scans transcripts to find the 3-5 best viral angles, scoring them by Hook, Body, and Payoff. |
+| 🧠 **Strategize-as-Generate** | AI Director scans transcripts to find the 3-5 best viral angles, scoring them by Hook, Body, and Payoff, skipping Intros/Outros/Sponsors. |
+| ⚡ **Audio Energy Scoring** | Librosa-based audio amplitude tracking passes high-energy moments (laughter, peaks) to the LLM to select highly engaging clips. |
 | 📝 **Transcript Editor** | Interactive word-processor UI — click to strike-through/cut any sentence from the final render. |
 | 🎞️ **Netflix-style Gallery** | Dedicated library view for all rendered clips with hover-to-play video previews and downloads. |
 | 🎨 **Production Brand Kits** | Automated styling modeled after *Hormozi*, *Ali Abdaal*, and *MrBeast* (Montserrat Black typography). |
+| 🎬 **Auto Color Grade** | Zero-cost FFmpeg eq pass automatically boosts saturation (10%), contrast (8%), and brightness for premium output. |
 | ✂️ **AI Natural Arcs** | The AI Director now extracts long, continuous narrative stories. Multi-segment stitching is only used if the speaker goes off-topic. |
-| 🎯 **Dynamic Face Framing** | MediaPipe-based framing with smooth FFmpeg interpolation keeps the speaker perfectly centered in the 9:16 frame. |
+| 📸 **Real Thumbnails** | Auto-extracts actual 9:16 video thumbnails into the strategy dashboard before rendering. |
+| 👤 **Dynamic Face Framing** | MediaPipe-based framing with rapid 0.20s snap interpolation keeps the speaker perfectly centered in the 9:16 frame. |
 | 🎵 **LLM AI Music Search** | The AI Director searches YouTube for the perfect BGM based on your video's vibe (LoFi, Phonk, Suspense). |
 | 🖼️ **Dynamic B-Roll** | Visual keyword extraction → DDG fetch → Ken Burns animated overlays. |
 | 📺 **1080p High Quality** | Enforced 1080p pipeline ensures your Shorts and TikToks meet premium platform standards. |

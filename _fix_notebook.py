@@ -32,14 +32,13 @@ source3 = nb['cells'][3]['source']
 # Add force kill at start
 new_launch_start = [
     "# ─── CELL 2: Launch ClipFactory.ai ─────────────────────────────────────────────\n",
-    "!pkill -9 python\n",
-    "!pkill -9 uvicorn\n",
-    "!pkill -9 ngrok\n",
-    "import time\n",
+    "!pkill -9 uvicorn || true\n",
+    "!pkill -9 ngrok || true\n",
+    "import os, sys, time, subprocess, threading, socket\n",
     "time.sleep(2)\n"
 ]
 # Replace the first few lines
-source3[0:5] = new_launch_start
+source3[0:6] = new_launch_start
 nb['cells'][3]['source'] = source3
 
 with open('colab_launcher.ipynb', 'w', encoding='utf-8') as f:
