@@ -23,3 +23,5 @@ mediapipe>=0.10
 
 # LLM — installed separately in setup.sh with CUDA flags
 # llama-cpp-python
+# Audio Analysis
+librosa>=0.10
