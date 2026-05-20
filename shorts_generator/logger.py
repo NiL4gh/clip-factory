@@ -27,9 +27,15 @@ class UIStreamLogger:
         else:
             m = re.match(r'^PROGRESS\|(\d+)\|(.+)$', message)
             if m:
-                parts = m.group(2).split('|')
-                msg_text = parts[0]
-                eta_val = int(parts[1]) if len(parts) > 1 else None
+                payload = m.group(2)
+                parts = payload.split('|')
+                # If the last part is an integer, treat it as ETA; otherwise no ETA
+                if parts and parts[-1].isdigit():
+                    eta_val = int(parts[-1])
+                    msg_text = '|'.join(parts[:-1])
+                else:
+                    eta_val = None
+                    msg_text = payload
                 entry = {
                     "type": "progress",
                     "percent": int(m.group(1)),
