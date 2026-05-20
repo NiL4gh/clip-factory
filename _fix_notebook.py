@@ -17,7 +17,7 @@ nb['cells'][0]['source'] = [
     "3. **Ghost Processes:** This launcher now force-kills ghost Python processes on every launch.\n"
 ]
 
-# --- Cell 2: Setup (Force Clean) ---
+# --- Cell 2: Setup (Force Clean & yt-dlp Update) ---
 source2 = nb['cells'][2]['source']
 # Add a line to clear cache if needed
 # Finding the git pull part
@@ -25,6 +25,13 @@ for i, line in enumerate(source2):
     if 'git reset --hard' in line:
         source2.insert(i+1, "    !rm -rf /content/clip_factory/projects/* # FORCE: Clear old project cache\n")
         break
+
+# Insert !yt-dlp -U before the python dependencies install
+for i, line in enumerate(source2):
+    if '!pip install -r requirements.txt' in line:
+        source2.insert(i, "!yt-dlp -U\n")
+        break
+
 nb['cells'][2]['source'] = source2
 
 # --- Cell 3: Launch (Force Kill) ---

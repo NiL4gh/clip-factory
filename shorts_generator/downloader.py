@@ -33,8 +33,11 @@ def download_video(url, work_dir, cookie_path=None):
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
     except subprocess.CalledProcessError as e:
-        ui_logger.log(f"yt-dlp failed: {e.stderr[-600:]}")
-        raise RuntimeError(f"yt-dlp failed: {e.stderr[-600:]}")
+        stderr_str = e.stderr or ""
+        ui_logger.log(f"yt-dlp failed: {stderr_str[-600:]}")
+        if any(sig in stderr_str.lower() for sig in ["sign in", "confirm your age", "cookies", "login"]):
+            ui_logger.error("⚠️ cookies.txt may be expired. Re-export from browser.")
+        raise RuntimeError(f"yt-dlp failed: {stderr_str[-600:]}")
 
     ui_logger.log("Download complete.")
     return output_mp4

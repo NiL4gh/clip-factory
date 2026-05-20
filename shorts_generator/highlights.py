@@ -101,24 +101,19 @@ def _parse_json_loose(raw: str):
 
 
 def _query_llm(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
+    # Merging system instructions and user prompt by default to prevent system role support issues and eliminate retries
+    content = f"{system}\n\n{prompt}"
     try:
         resp = llm.create_chat_completion(
             messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": prompt},
+                {"role": "user", "content": content},
             ],
             temperature=0.40,
             max_tokens=max_tokens,
         )
     except Exception as e:
-        ui_logger.log(f"Model error (possibly system role not supported). Retrying with combined user prompt. Details: {e}")
-        resp = llm.create_chat_completion(
-            messages=[
-                {"role": "user", "content": f"{system}\n\n{prompt}"},
-            ],
-            temperature=0.40,
-            max_tokens=max_tokens,
-        )
+        ui_logger.log(f"Model query error: {e}")
+        return []
 
     raw = resp["choices"][0]["message"]["content"].strip()
     parsed = _parse_json_loose(raw)
@@ -136,10 +131,17 @@ def _build_text(transcript_data) -> tuple:
     if isinstance(transcript_data, list):
         words = transcript_data
         lines = []
-        for i in range(0, len(words), 15):
-            group = words[i:i+15]
-            if group:
-                lines.append(f"[{group[0]['start']:.1f}s] {' '.join(w['word'] for w in group)}")
+        curr_group = []
+        for i, w in enumerate(words):
+            if curr_group:
+                prev_w = curr_group[-1]
+                # Secondary pause check: split when speaker pauses exceed 2.0s
+                if w["start"] - prev_w["end"] > 2.0 or len(curr_group) >= 15:
+                    lines.append(f"[{curr_group[0]['start']:.1f}s] {' '.join(x['word'] for x in curr_group)}")
+                    curr_group = []
+            curr_group.append(w)
+        if curr_group:
+            lines.append(f"[{curr_group[0]['start']:.1f}s] {' '.join(x['word'] for x in curr_group)}")
         return "\n".join(lines), words
     if isinstance(transcript_data, dict):
         segs = transcript_data.get("segments", [])
@@ -224,6 +226,24 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
             
         st = raw_words[start_idx]["start"]
         et = raw_words[end_idx]["end"]
+        
+        # B4: Walk-forward sentence-boundary cuts
+        best_extended_et = et
+        for next_idx in range(end_idx + 1, len(raw_words)):
+            next_w = raw_words[next_idx]
+            if next_w["start"] - et > 3.0:
+                break
+            best_extended_et = next_w["end"]
+            has_punc = any(p in next_w["word"] for p in [".", "!", "?"])
+            pause_after = False
+            if next_idx + 1 < len(raw_words):
+                pause_after = (raw_words[next_idx + 1]["start"] - next_w["end"]) > 0.4
+            if has_punc or pause_after:
+                break
+        et = best_extended_et
+
+        # Diagnostic logging (P4)
+        ui_logger.log(f"  [DIAGNOSTIC] Matching sentence: '{sentence[:50]}...' | start_anchor: {start_anchor} | end_anchor: {end_anchor} | Mapped range: {st:.1f}s - {et:.1f}s")
         
         search_idx = end_idx + 1
         
@@ -327,7 +347,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
                 clip["end_time"] = segments[-1]["end_time"]
 
         # Final duration check
-        if total_dur < 15 or total_dur > 120:
+        if total_dur < 12 or total_dur > 120:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
             continue
 
@@ -460,6 +480,34 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
 
 # ── Pass 2: Per-Topic Clip Extraction ────────────────────────────────────────
 
+# 5 one-shot viral hook examples labeled by persona type (L1)
+_VIRAL_HOOKS_EXAMPLES = """
+VIRAL HOOK ONE-SHOT EXAMPLES BY PERSONA TYPE:
+- DEBATE: "Everyone is lying to you about X... here is the real reason why."
+- DEBATE: "They want you to believe X, but the data completely contradicts them."
+- INTERVIEW: "This single question completely broke his brain..."
+- INTERVIEW: "The moment he said X, I knew the interview was over."
+- MONOLOGUE: "I spent 10 years learning X so you can learn it in 30 seconds."
+"""
+
+_DEBATE_PROMPT_ADDITION = """
+PERSONA STYLE: DEBATE
+Focus intensely on conflict, contrarian opinions, rapid-fire back-and-forth arguments, high-tension disagreements, and bold rebuttals.
+Make sure the hook highlights the intellectual clash or the contrarian take.
+"""
+
+_INTERVIEW_PROMPT_ADDITION = """
+PERSONA STYLE: INTERVIEW
+Focus on deep emotional revelations, shocking answers, high-value expert secrets, dramatic pauses, or mind-blowing question-and-answer exchanges.
+Make sure the hook highlights the host's framing or the guest's sudden realization/opinion bomb.
+"""
+
+_MONOLOGUE_PROMPT_ADDITION = """
+PERSONA STYLE: MONOLOGUE
+Focus on direct-to-camera storytelling, step-by-step advice, personal breakthrough realizations, clear educational insights, and actionable tips.
+Make sure the hook builds intense curiosity or promises a specific transformation.
+"""
+
 def get_highlights(
     transcript_data,
     num_clips: int = 5,
@@ -470,6 +518,7 @@ def get_highlights(
     angle: str = "standard",
     topics: list = None,
     energy_peaks: list = None,
+    persona: dict = None,
 ) -> dict:
     """
     Extract viral clips from the transcript using multi-segment stitching.
@@ -493,11 +542,11 @@ def get_highlights(
         f"{lang_hint} Output ONLY raw JSON arrays. No prose, no markdown, no explanation whatsoever."
     )
 
-    # New schema focused on semantic text extraction
+    # New schema focused on semantic text extraction (strict Title formatting L2)
     schema = (
         '[\n'
         '  {\n'
-        '    "title": "Catchy TikTok-style title (max 10 words)",\n'
+        '    "title": "Strictly max 8 words, present tense, high impact, no filler (e.g., Build X in 30 seconds)",\n'
         '    "virality_score": 85,\n'
         '    "ideal_transcript": "The exact word-for-word transcript of the perfect 40-60 second clip. Include the hook at the beginning and the natural conclusion at the end. Do not include timestamps, just the raw spoken words.",\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
@@ -510,8 +559,16 @@ def get_highlights(
 
     all_highlights = []
 
-    # Build the virality prompt with dynamic video duration
-    virality_prompt = _VIRALITY_BASE.format(video_duration_str=video_duration_str)
+    # Fork prompts dynamically based on whether detected persona is a Debate, Interview, or Monologue (L3)
+    persona_genre = (persona or {}).get("genre", "Monologue")
+    persona_addition = _MONOLOGUE_PROMPT_ADDITION
+    if any(k in persona_genre for k in ["Debate", "Rant", "Controversial"]):
+        persona_addition = _DEBATE_PROMPT_ADDITION
+    elif any(k in persona_genre for k in ["Interview", "Podcast"]):
+        persona_addition = _INTERVIEW_PROMPT_ADDITION
+
+    # Build the virality prompt with dynamic video duration, structured hook examples, and persona additions
+    virality_prompt = f"{_VIRALITY_BASE}\n\n{_VIRAL_HOOKS_EXAMPLES}\n\n{persona_addition}".format(video_duration_str=video_duration_str)
 
     if topics and len(topics) > 0:
         # ── Topic-Aware Extraction ──
@@ -638,6 +695,12 @@ def get_highlights(
             overall_st = segments[0]["start_time"]
             overall_et = segments[-1]["end_time"]
 
+            # Composite Scoring (P3)
+            clip_peaks = [p["energy"] for p in (energy_peaks or []) if overall_st <= p["time"] <= overall_et]
+            energy_val = max(clip_peaks) if clip_peaks else 0.0
+            energy_score = int(energy_val * 100)
+            composite_score = int((score * 0.6) + (energy_score * 0.4))
+
             sentences = re.split(r'(?<=[.!?])\s+', ideal_transcript.strip())
             hook_sentence = sentences[0] if sentences else ""
 
@@ -647,7 +710,9 @@ def get_highlights(
                 "segments": segments,
                 "start_time": overall_st,
                 "end_time": overall_et,
-                "score": score,
+                "score": composite_score,
+                "virality_score": score,
+                "energy_score": energy_score,
                 "hook_sentence": hook_sentence,
                 "hook_text": hook_sentence,
                 "virality_reason": h.get("virality_reason", ""),
@@ -667,12 +732,23 @@ def get_highlights(
     # Sort by score
     validated.sort(key=lambda x: x["score"], reverse=True)
 
-    # Dedup: 15-second window based on first segment start
-    seen, deduped = set(), []
+    # Dedup using content Jaccard similarity (>60% word overlap) (B5)
+    def get_words_set(t_str):
+        return set(re.findall(r'\w+', t_str.lower()))
+
+    deduped = []
     for h in validated:
-        key = int(h["start_time"] // 45)
-        if key not in seen:
-            seen.add(key)
+        h_words = get_words_set(h["ideal_transcript"])
+        is_duplicate = False
+        for existing in deduped:
+            e_words = get_words_set(existing["ideal_transcript"])
+            intersection = h_words.intersection(e_words)
+            union = h_words.union(e_words)
+            jaccard = len(intersection) / len(union) if union else 0.0
+            if jaccard > 0.60:
+                is_duplicate = True
+                break
+        if not is_duplicate:
             deduped.append(h)
 
     final = deduped[:max_clips]

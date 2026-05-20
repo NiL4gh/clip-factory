@@ -31,6 +31,34 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
     silent gaps, creating fast-paced jump-cut style delivery.
     Returns the path to the processed file (output_path or input_path if no silence found).
     """
+    # Dynamically calculate FFmpeg silencedetect parameters by evaluating relative sound levels
+    try:
+        import librosa
+        import numpy as np
+        temp_wav = input_path.replace(".mp4", "_rms.wav")
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-i", input_path, "-vn",
+                "-ar", "16000", "-ac", "1", temp_wav
+            ], capture_output=True, check=True)
+            y, sr = librosa.load(temp_wav, sr=16000)
+            rms = librosa.feature.rms(y=y)[0]
+            rms_db = librosa.power_to_db(rms, ref=np.max)
+            mean_db = np.mean(rms_db)
+            dynamic_db = float(mean_db - 12.0)
+            noise_db = int(max(-45.0, min(-20.0, dynamic_db)))
+            ui_logger.log(f"  Dynamic silence threshold calculated: {noise_db} dB (mean RMS db: {mean_db:.1f})")
+        except Exception as e:
+            ui_logger.log(f"  Dynamic silence calculation failed ({e}), using fallback {noise_db} dB")
+        finally:
+            if os.path.exists(temp_wav):
+                try:
+                    os.remove(temp_wav)
+                except OSError:
+                    pass
+    except ImportError:
+        ui_logger.log(f"  librosa or numpy missing, using default silence threshold {noise_db} dB")
+
     # Step 1: Detect silence intervals
     detect_cmd = [
         "ffmpeg", "-i", input_path,
@@ -102,6 +130,7 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
         "-c:v", "libx264", "-preset", "fast", "-crf", "16",
         "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
         "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
         output_path
     ]
     try:
@@ -143,7 +172,7 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
     detector = None
     try:
         import mediapipe.python.solutions.face_detection as mp_face
-        detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.4)
+        detector = mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.3)
     except Exception:
         pass
 
@@ -153,6 +182,7 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
 
     if detector:
         t = 0.0
+        frame_idx = 0
         while t <= duration:
             abs_t = seg_st + t
             cap.set(cv2.CAP_PROP_POS_MSEC, abs_t * 1000)
@@ -173,6 +203,12 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
                 # Convert face center to crop X (top-left of crop window)
                 cx = max(0, min(w - crop_w, face_cx - crop_w // 2))
                 keypoints.append((t, cx))
+
+            frame_idx += 1
+            if frame_idx >= 3 and not keypoints:
+                # If no face is found after checking the first 3 frames, force static crop
+                keypoints.append((0.0, center_x))
+                break
 
             t += sample_interval
 
@@ -303,7 +339,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     chunks = []
     curr = []
     for w in words:
-        if len(curr) >= 3:
+        # Enforce strict word wrapping of max 4 words per line
+        if len(curr) >= 4:
             chunks.append(curr)
             curr = []
         curr.append(w)
@@ -331,7 +368,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
                 txt = x['word'].strip()
                 txt = txt.upper()
                 if x == w:
-                    styled += f"{{\\c{hl_color}\\fscx115\\fscy115}}{txt}{{\\c{main_color}\\fscx100\\fscy100}} "
+                    styled += f"{{\\c{hl_color}\\fscx120\\fscy120}}{txt}{{\\c{main_color}\\fscx100\\fscy100}} "
                 else:
                     styled += f"{txt} "
 
@@ -340,6 +377,27 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
+
+def _generate_text_card(output_path, text, duration, font_file, font_size=64):
+    safe_text = text.replace("'", "").replace(":", "")
+    vf_filter = f"drawtext=text='{safe_text}':fontcolor=white:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2"
+    if font_file and os.path.exists(font_file):
+        safe_font = font_file.replace("\\", "/").replace(":", "\\:")
+        vf_filter = f"drawtext=fontfile='{safe_font}':text='{safe_text}':fontcolor=white:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2"
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=30:d={duration}",
+        "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+        "-vf", vf_filter,
+        "-t", str(duration),
+        "-c:v", "libx264", "-preset", "fast", "-crf", "16",
+        "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        output_path
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
 
 def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  face_center=True, add_subs=True, theme="Storytime", 
@@ -547,13 +605,17 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             current_v = next_v
             input_idx += 1
 
-        filter_complex += f";[{current_v}]eq=saturation=1.1:gamma=0.95:contrast=1.08:brightness=0.02,setpts=PTS-STARTPTS[v_out]"
+        filter_complex += f";[{current_v}]eq=saturation=1.25:gamma=0.95:contrast=1.15:brightness=0.02,vignette,setpts=PTS-STARTPTS[v_out]"
         current_v = "v_out"
         filter_complex = filter_complex.replace(";;", ";").rstrip(';')
 
+        # Apply loudnorm to base speech audio to normalize speaker energy to -16 LUFS
+        filter_complex += f";[{audio_source}]loudnorm=I=-16:TP=-1.5:LRA=11[a_norm]"
+        audio_source_norm = "a_norm"
+
         audio_filter = ""
         if sfx_delays:
-            audio_filter = f"[{audio_source}]volume=1.0[a_base];"
+            audio_filter = f"[{audio_source_norm}]volume=1.0[a_base];"
             amix_inputs = "[a_base]"
             for i, delay_sec in enumerate(sfx_delays):
                 # FIX: use sfx_start_idx (captured before ASS/flash bumped input_idx)
@@ -565,7 +627,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             audio_map = "[a_out]"
             filter_complex += f";{audio_filter}"
         else:
-            filter_complex += f";[{audio_source}]asetpts=PTS-STARTPTS[a_out]"
+            filter_complex += f";[{audio_source_norm}]asetpts=PTS-STARTPTS[a_out]"
             audio_map = "[a_out]"
 
         seg_out = os.path.join(work_dir, f"seg_{out_id}_{idx}.mp4")
@@ -583,6 +645,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             "-c:v", "libx264", "-preset", "fast", "-crf", "16",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
             "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
             "-t", str(round(seg_et - seg_st, 3)),  # Explicit duration — prevents looped B-roll inputs from truncating segment
             seg_out
         ])
@@ -617,6 +680,19 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         raise ValueError("No valid segments could be rendered. (Check your transcript exclusions)")
 
     ui_logger.log("Combining segments into final short...")
+    # Prepend 0.5s opening title card and append 1.5s outro CTA card
+    try:
+        open_card_path = os.path.join(work_dir, f"open_{out_id}.mp4")
+        title_text = clip_data.get("title", "Viral Clip").upper()
+        _generate_text_card(open_card_path, title_text, 0.5, _colab_font, font_size=60)
+        
+        end_card_path = os.path.join(work_dir, f"end_{out_id}.mp4")
+        _generate_text_card(end_card_path, "FOLLOW FOR MORE!", 1.5, _colab_font, font_size=70)
+        
+        rendered_segs = [open_card_path] + rendered_segs + [end_card_path]
+    except Exception as card_err:
+        ui_logger.log(f"  Warning: Title/End card generation failed ({card_err}), continuing without them.")
+
     if len(rendered_segs) == 1:
         shutil.copy2(rendered_segs[0], final_output)
     else:
@@ -634,6 +710,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             "-c:v", "libx264", "-preset", "fast", "-crf", "16",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
             "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
             final_output
         ]
         try:
@@ -661,6 +738,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     "[0:a]volume=0.56[speech];[1:a]volume=0.1[bgm];[speech][bgm]amix=inputs=2:duration=first:dropout_transition=2,asetpts=PTS-STARTPTS[a]",
                     "-map", "0:v", "-map", "[a]",
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                    "-movflags", "+faststart",
                     "-shortest",
                     bgm_output
                 ]

@@ -57,29 +57,66 @@ app.mount("/thumbs", StaticFiles(directory=THUMB_DIR), name="thumbs")
 
 # ── Bundled CC0 Background Music (direct download, no API key) ───────────
 BGM_CATALOG = {
-    "Lofi / Chill":        {"url": "https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3", "file": "bgm_lofi.mp3"},
-    "High Energy / Phonk": {"url": "https://cdn.pixabay.com/audio/2022/10/09/audio_c714eab8c3.mp3", "file": "bgm_energy.mp3"},
-    "Suspense / Dark":     {"url": "https://cdn.pixabay.com/audio/2022/03/15/audio_8cb749d484.mp3", "file": "bgm_suspense.mp3"},
-    "Corporate / Upbeat":  {"url": "https://cdn.pixabay.com/audio/2023/07/30/audio_e08fa075b6.mp3", "file": "bgm_corporate.mp3"},
+    "Lofi":      "lofi hip hop no copyright background music chill beats",
+    "Upbeat":    "upbeat background music no copyright royalty free energetic",
+    "Cinematic": "cinematic background music no copyright epic instrumental",
+    "Chill":     "chill background music no copyright calm relaxing",
 }
 BGM_DIR = os.path.join(WORK_DIR, "bgm")
 
 def _get_bgm(genre: str) -> str:
-    """Download and cache a CC0 BGM track. Returns file path or empty string."""
-    entry = BGM_CATALOG.get(genre)
-    if not entry:
+    """
+    Download a royalty-free BGM track for the given genre using yt-dlp
+    YouTube search. Caches the result at WORK_DIR/bgm_{genre}.mp3.
+    Returns the file path on success, empty string on any failure.
+    """
+    import subprocess, re
+
+    query = BGM_CATALOG.get(genre, "")
+    if not query:
         return ""
-    os.makedirs(BGM_DIR, exist_ok=True)
-    path = os.path.join(BGM_DIR, entry["file"])
-    if not os.path.exists(path):
-        try:
-            ui_logger.log(f"Downloading BGM: {genre}...")
-            _urlreq.urlretrieve(entry["url"], path)
-            ui_logger.log(f"BGM cached: {entry['file']}")
-        except Exception as e:
-            ui_logger.log(f"BGM download failed ({e}) — rendering without music.")
+
+    safe_genre = re.sub(r"[^a-zA-Z0-9_]", "_", genre.lower())
+    out_path = str(WORK_DIR / f"bgm_{safe_genre}.mp3")
+
+    # Return cached file if already downloaded this session
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 10_000:
+        ui_logger.log(f"🎵 BGM cache hit: {safe_genre}")
+        return out_path
+
+    ui_logger.log(f"🎵 Fetching BGM for genre: {genre}")
+    try:
+        cmd = [
+            "yt-dlp",
+            f"ytsearch1:{query}",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--audio-quality", "5",
+            "--no-playlist",
+            "--quiet",
+            "--no-warnings",
+            "-o", out_path.replace(".mp3", ".%(ext)s"),
+        ]
+        result = subprocess.run(
+            cmd,
+            timeout=90,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            ui_logger.log(f"⚠️ BGM download failed (yt-dlp exit {result.returncode})")
             return ""
-    return path
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 10_000:
+            ui_logger.log(f"✅ BGM downloaded: {safe_genre}")
+            return out_path
+        ui_logger.log("⚠️ BGM file missing after download")
+        return ""
+    except subprocess.TimeoutExpired:
+        ui_logger.log("⚠️ BGM download timed out (90s)")
+        return ""
+    except Exception as e:
+        ui_logger.log(f"⚠️ BGM fetch error: {e}")
+        return ""
 
 # In-memory state for the active project
 _state = {
@@ -114,6 +151,21 @@ class RenderRequest(BaseModel):
     bg_music_genre: str = "None"
     broll_intensity: str = "Medium"
     excluded_sentences: List[str] = []
+    title: Optional[str] = None
+
+class BulkRenderRequest(BaseModel):
+    face_center: bool = True
+    magic_hook: bool = True
+    remove_silence: bool = True
+    caption_style: str = "Classic"
+    caption_pos: str = "Bottom"
+    bg_music_genre: str = "None"
+    broll_intensity: str = "Medium"
+    clip_ids: Optional[List[int]] = None
+    titles: Optional[dict] = None
+
+class SessionRequest(BaseModel):
+    url: str
 
 @app.get("/api/config")
 async def get_config():
@@ -151,6 +203,31 @@ async def websocket_logs(websocket: WebSocket):
     except Exception:
         pass
 
+def _save_session(url: str):
+    import hashlib
+    import json
+    try:
+        video_id = hashlib.md5(url.strip().encode("utf-8")).hexdigest()
+        session_dir = os.path.join(BASE_DIR, "sessions", video_id)
+        os.makedirs(session_dir, exist_ok=True)
+        session_file = os.path.join(session_dir, "state.json")
+        
+        session_data = {
+            "clips": _state.get("clips", []),
+            "word_timestamps": _state.get("word_timestamps", []),
+            "current_url": _state.get("current_url"),
+            "persona": _state.get("persona", {}),
+            "topics": _state.get("topics", []),
+            "estimated_clips": _state.get("estimated_clips", 0),
+            "video_duration": _state.get("video_duration", 0),
+            "energy_peaks": _state.get("energy_peaks", [])
+        }
+        with open(session_file, "w", encoding="utf-8") as f:
+            json.dump(session_data, f, ensure_ascii=False, indent=2)
+        ui_logger.log(f"💾 Session saved to Google Drive: sessions/{video_id}")
+    except Exception as e:
+        ui_logger.log(f"⚠️ Failed to save session to Google Drive: {e}")
+
 def _run_strategize(url: str, llm_label: str, whisper_label: str):
     try:
         _state["is_strategizing"] = True
@@ -163,7 +240,17 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
                 os.remove(_old)
             except OSError:
                 pass
-        ui_logger.log("PROGRESS|0|Initializing AI strategy phase...")
+                
+        strategy_start = time.time()
+        def log_progress(pct: int, msg: str):
+            if pct > 0:
+                elapsed = time.time() - strategy_start
+                eta = int(elapsed * (100 - pct) / pct)
+                ui_logger.log(f"PROGRESS|{pct}|{msg}|{eta}")
+            else:
+                ui_logger.log(f"PROGRESS|{pct}|{msg}")
+
+        log_progress(0, "Initializing AI strategy phase...")
 
         # Find LLM in catalog
         llm_entry = LLM_CATALOG[0]
@@ -191,11 +278,11 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         fast_llm_path = os.path.join(LLM_DIR, fast_llm_entry["filename"])
 
         if not os.path.exists(llm_path):
-            ui_logger.log("PROGRESS|5|Downloading main LLM...")
+            log_progress(5, "Downloading main LLM...")
             hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
             
         if not os.path.exists(fast_llm_path):
-            ui_logger.log("PROGRESS|10|Downloading fast-pass LLM...")
+            log_progress(10, "Downloading fast-pass LLM...")
             hf_hub_download(repo_id=fast_llm_entry["repo"], filename=fast_llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
 
         source_mp4 = os.path.join(WORK_DIR, "source.mp4")
@@ -204,7 +291,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         if _state["is_cancelled"]: return
 
         if not os.path.exists(source_mp4) or cache.load_transcript(url.strip()) is None:
-            ui_logger.log("PROGRESS|15|Downloading video...")
+            log_progress(15, "Downloading video...")
             ui_logger.log(f"Looking for cookies at: {COOKIE_PATH}, Exists: {os.path.exists(COOKIE_PATH)}")
             if not os.path.exists(COOKIE_PATH):
                 ui_logger._entries.append({
@@ -212,30 +299,30 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
                     "message": "Cookies file not found. Please upload cookies.txt to your workspace.",
                     "ts": _dt.datetime.now().strftime("%H:%M:%S")
                 })
-                ui_logger.log("PROGRESS|0|Failed.")
+                log_progress(0, "Failed.")
                 return
 
             try:
                 download_video(url.strip(), WORK_DIR, cookie_path=COOKIE_PATH)
             except RuntimeError as e:
                 ui_logger.error(str(e))
-                ui_logger.log("PROGRESS|0|Failed.")
+                log_progress(0, "Failed.")
                 return
 
             if _state["is_cancelled"]: return
-            ui_logger.log("PROGRESS|25|Transcribing audio (this may take a few minutes)...")
+            log_progress(25, "Transcribing audio (this may take a few minutes)...")
             full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
             _state["word_timestamps"] = words
             cache.save_transcript(url.strip(), full_text, words)
         else:
-            ui_logger.log("PROGRESS|25|Transcript loaded from cache.")
+            log_progress(25, "Transcript loaded from cache.")
             cached_t = cache.load_transcript(url.strip())
             _state["word_timestamps"] = cached_t[1]
 
         if _state["is_cancelled"]: return
 
         # Audio Energy Analysis
-        ui_logger.log("PROGRESS|38|Analyzing audio energy peaks...")
+        log_progress(38, "Analyzing audio energy peaks...")
         energy_wav = os.path.join(WORK_DIR, "energy_temp.wav")
         try:
             import subprocess as _sp
@@ -256,9 +343,9 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
                 pass
 
         # Phase 0: Persona Detection (Fast Pass)
-        ui_logger.log(f"PROGRESS|40|Phase 0/3: Analyzing Video Persona with {fast_llm_entry['label']}...")
+        log_progress(40, f"Phase 0/3: Analyzing Video Persona with {fast_llm_entry['label']}...")
         persona = detect_video_persona(_state["word_timestamps"], llm_path=fast_llm_path, gpu_layers=fast_llm_entry["gpu_layers"])
-        ui_logger.log(f"PROGRESS|45|Detected Genre: {persona.get('genre', 'Unknown')} | Tone: {persona.get('tone', 'Unknown')}")
+        log_progress(45, f"Detected Genre: {persona.get('genre', 'Unknown')} | Tone: {persona.get('tone', 'Unknown')}")
         _state["persona"] = persona
 
         # Calculate estimated clip potential
@@ -270,20 +357,20 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
             wts = _state["word_timestamps"]
             _state["video_duration"] = wts[-1].get("end", 0) - wts[0].get("start", 0)
         
-        ui_logger.log(f"PROGRESS|48|Video duration: {_state['video_duration']/60:.0f} min | Estimated clip potential: ~{estimated} clips")
+        log_progress(48, f"Video duration: {_state['video_duration']/60:.0f} min | Estimated clip potential: ~{estimated} clips")
 
         if _state["is_cancelled"]: return
 
         # Phase 1: Topic Indexing
-        ui_logger.log(f"PROGRESS|55|Phase 1/3: Mapping video topics...")
+        log_progress(55, "Phase 1/3: Mapping video topics...")
         topics = get_topic_index(_state["word_timestamps"], llm_path=fast_llm_path, gpu_layers=fast_llm_entry["gpu_layers"])
         _state["topics"] = topics
-        ui_logger.log(f"PROGRESS|65|Found {len(topics)} distinct topics in the video.")
+        log_progress(65, f"Found {len(topics)} distinct topics in the video.")
 
         if _state["is_cancelled"]: return
 
         # Phase 2: Per-Topic Clip Extraction
-        ui_logger.log(f"PROGRESS|70|Phase 2/3: Extracting clips per topic with {llm_entry['label']}...")
+        log_progress(70, f"Phase 2/3: Extracting clips per topic with {llm_entry['label']}...")
         result = get_highlights(
             _state["word_timestamps"],
             num_clips=estimated,
@@ -293,6 +380,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
             angle="standard",
             topics=topics,
             energy_peaks=_state["energy_peaks"],
+            persona=_state["persona"],
         )
 
         clips = result.get("highlights", [])
@@ -309,7 +397,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
             _state["clips"] = []
             cache.save_highlights(url.strip(), _state["clips"])
             cache.save_metadata(url.strip())
-            ui_logger.log(f"PROGRESS|100|Strategy Complete. No clips found.")
+            log_progress(100, "Strategy Complete. No clips found.")
             return
 
         # Process durations and badges
@@ -325,7 +413,14 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         for i, c in enumerate(clips):
             try:
                 thumb_path = os.path.join(THUMB_DIR, f"thumb_{i}.jpg")
-                seek_time = float(c.get("start_time", 0)) + 2.0
+                start_time = float(c.get("start_time", 0))
+                end_time = float(c.get("end_time", 0))
+                peaks_in_clip = [p for p in _state.get("energy_peaks", []) if start_time <= p["time"] <= end_time]
+                if peaks_in_clip:
+                    highest_energy_peak = max(peaks_in_clip, key=lambda x: x["energy"])
+                    seek_time = highest_energy_peak["time"]
+                else:
+                    seek_time = start_time + 2.0
                 _sp.run(
                     ["ffmpeg", "-y", "-ss", str(seek_time), "-i", source_mp4,
                      "-vframes", "1", "-q:v", "3",
@@ -343,7 +438,8 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         _state["clips"] = clips
         cache.save_highlights(url.strip(), _state["clips"])
         cache.save_metadata(url.strip())
-        ui_logger.log(f"PROGRESS|100|Strategy Complete. Found {len(clips)} clips (estimated potential: ~{_state['estimated_clips']}).")
+        _save_session(url.strip())
+        log_progress(100, f"Strategy Complete. Found {len(clips)} clips (estimated potential: ~{_state['estimated_clips']}).")
         
     except Exception as e:
         import traceback
@@ -353,7 +449,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
     finally:
         _state["is_strategizing"] = False
         if _state.get("is_cancelled"):
-            ui_logger.log("PROGRESS|0|Analysis was stopped by the user.")
+            log_progress(0, "Analysis was stopped by the user.")
             _state["is_cancelled"] = False
 
 @app.post("/api/strategize")
@@ -410,7 +506,14 @@ def _run_render(req: RenderRequest, task_id: str):
     try:
         _state["is_rendering"] = True
         ui_logger.clear()
+        ui_logger.log(f"RENDER_STATUS|{req.clip_id}|rendering")
         ui_logger.log(f"Initializing render for clip index {req.clip_id}...")
+        
+        # Update client-edited title if provided
+        if req.title:
+            _state["clips"][req.clip_id]["title"] = req.title
+            if _state.get("current_url"):
+                _save_session(_state["current_url"])
         
         clip = _state["clips"][req.clip_id].copy() # Copy to avoid mutating global state
         
@@ -455,16 +558,118 @@ def _run_render(req: RenderRequest, task_id: str):
         ui_logger.log(f"Rendered successfully: {os.path.basename(out)}")
         _render_status[task_id]["filename"] = os.path.basename(dst)
         _render_status[task_id]["status"] = "done"
+        ui_logger.log(f"RENDER_STATUS|{req.clip_id}|done")
+        
+        # Store rendered filename in the clip state to support CSV export and UI references
+        _state["clips"][req.clip_id]["rendered_filename"] = os.path.basename(dst)
+        if _state.get("current_url"):
+            _save_session(_state["current_url"])
         
     except Exception as e:
         import traceback
         traceback.print_exc()
         ui_logger.log(f"ERROR: {str(e)}")
         _render_status[task_id] = {"status": "error", "error": str(e)}
+        ui_logger.log(f"RENDER_STATUS|{req.clip_id}|error")
     finally:
         _state["is_rendering"] = False
         if _render_status.get(task_id, {}).get("status") != "error":
             _render_status[task_id]["status"] = "done"
+
+def _run_bulk_render(req: BulkRenderRequest):
+    try:
+        _state["is_rendering"] = True
+        ui_logger.clear()
+        
+        num_clips = len(_state["clips"])
+        target_ids = req.clip_ids if (req.clip_ids is not None) else list(range(num_clips))
+        
+        # Update any edited titles
+        if req.titles:
+            for idx_str, new_title in req.titles.items():
+                try:
+                    idx = int(idx_str)
+                    if 0 <= idx < num_clips:
+                        _state["clips"][idx]["title"] = new_title
+                except ValueError:
+                    continue
+            if _state.get("current_url"):
+                _save_session(_state["current_url"])
+                
+        ui_logger.log(f"Starting bulk render for {len(target_ids)} clips sequentially...")
+        
+        # Mark target clips as queued initially
+        for idx in target_ids:
+            if 0 <= idx < num_clips:
+                ui_logger.log(f"RENDER_STATUS|{idx}|queued")
+            
+        input_mp4 = os.path.join(WORK_DIR, "source.mp4")
+        clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
+        
+        for idx in target_ids:
+            if idx < 0 or idx >= num_clips:
+                continue
+            if _state["is_cancelled"]:
+                ui_logger.log("Bulk render cancelled by user.")
+                break
+                
+            ui_logger.log(f"RENDER_STATUS|{idx}|rendering")
+            clip = _state["clips"][idx].copy()
+            
+            # Prevent double-mixing
+            if req.bg_music_genre and req.bg_music_genre != "None":
+                clip["music_query"] = ""
+                
+            theme = clip.get("theme", "Storytime")
+            
+            try:
+                out = render_short(
+                    input_video=input_mp4, clip_data=clip,
+                    word_timestamps=_state["word_timestamps"],
+                    output_dir=clips_dir, work_dir=WORK_DIR,
+                    face_center=req.face_center, add_subs=(req.caption_style != "None"),
+                    theme=theme, caption_style=req.caption_style, caption_pos=req.caption_pos,
+                    override_start=None, override_end=None,
+                    excluded_sentences=[],
+                    magic_hook=req.magic_hook,
+                    remove_silence=req.remove_silence,
+                    broll_intensity=req.broll_intensity,
+                    all_sentences=[]
+                )
+                
+                # BGM mixing
+                if req.bg_music_genre and req.bg_music_genre != "None":
+                    music_path = _get_bgm(req.bg_music_genre)
+                    if music_path:
+                        ui_logger.log(f"Mixing BGM ({req.bg_music_genre}) with dynamic peak swell for clip {idx}...")
+                        try:
+                            enhance_clip(out, clip, music_path=music_path)
+                        except Exception as bgm_err:
+                            ui_logger.log(f"BGM mixing failed ({bgm_err}) for clip {idx} — saved without music.")
+                            
+                import shutil
+                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
+                if out != dst:
+                    shutil.copy2(out, dst)
+                ui_logger.log(f"Rendered clip {idx} successfully: {os.path.basename(out)}")
+                ui_logger.log(f"RENDER_STATUS|{idx}|done")
+                
+                # Store rendered filename in the clip state to support CSV export and UI references
+                _state["clips"][idx]["rendered_filename"] = os.path.basename(dst)
+                if _state.get("current_url"):
+                    _save_session(_state["current_url"])
+                
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                ui_logger.log(f"ERROR rendering clip {idx}: {str(e)}")
+                ui_logger.log(f"RENDER_STATUS|{idx}|error")
+                
+    except Exception as e:
+        ui_logger.log(f"Bulk render error: {str(e)}")
+    finally:
+        _state["is_rendering"] = False
 
 @app.post("/api/render")
 async def render(req: RenderRequest, background_tasks: BackgroundTasks):
@@ -479,6 +684,106 @@ async def render(req: RenderRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(_run_render, req, task_id)
     return {"message": "Render started.", "task_id": task_id}
 
+@app.post("/api/render_all")
+async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
+    if _state["is_rendering"] or _state["is_strategizing"]:
+        raise HTTPException(status_code=400, detail="A task is already running.")
+    if not _state["clips"]:
+        raise HTTPException(status_code=400, detail="No clips available to render.")
+    
+    background_tasks.add_task(_run_bulk_render, req)
+    return {"message": "Bulk render started."}
+
+@app.get("/api/download_all")
+async def download_all(background_tasks: BackgroundTasks):
+    import glob
+    import zipfile
+    files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+    if not files:
+        raise HTTPException(status_code=404, detail="No rendered clips found to download.")
+        
+    zip_path = os.path.join(WORK_DIR, f"all_clips_{int(time.time())}.zip")
+    
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file in files:
+                zipf.write(file, os.path.basename(file))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
+        
+    def remove_file(path: str):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+            
+    background_tasks.add_task(remove_file, zip_path)
+    
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename="clipfactory_all_clips.zip"
+    )
+
+@app.post("/api/check_session")
+async def check_session(req: SessionRequest):
+    import hashlib
+    url = req.url.strip()
+    video_id = hashlib.md5(url.encode("utf-8")).hexdigest()
+    session_file = os.path.join(BASE_DIR, "sessions", video_id, "state.json")
+    exists = os.path.exists(session_file)
+    return {"exists": exists, "video_id": video_id}
+
+@app.post("/api/restore_session")
+async def restore_session(req: SessionRequest):
+    import hashlib
+    import json
+    url = req.url.strip()
+    video_id = hashlib.md5(url.encode("utf-8")).hexdigest()
+    session_file = os.path.join(BASE_DIR, "sessions", video_id, "state.json")
+    if not os.path.exists(session_file):
+        raise HTTPException(status_code=404, detail="No session found for this URL.")
+    try:
+        with open(session_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        _state["clips"] = data.get("clips", [])
+        _state["word_timestamps"] = data.get("word_timestamps", [])
+        _state["current_url"] = data.get("current_url", url)
+        _state["persona"] = data.get("persona", {})
+        _state["topics"] = data.get("topics", [])
+        _state["estimated_clips"] = data.get("estimated_clips", 0)
+        _state["video_duration"] = data.get("video_duration", 0)
+        _state["energy_peaks"] = data.get("energy_peaks", [])
+        _state["is_strategizing"] = False
+        _state["is_rendering"] = False
+        _state["is_cancelled"] = False
+        
+        ui_logger.clear()
+        ui_logger.log(f"✅ Session successfully restored from Google Drive: {video_id}")
+        return {"status": "success", "message": "Session restored."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to restore session: {str(e)}")
+
+def _get_video_duration_ffprobe(filepath: str) -> float:
+    import subprocess, json
+    try:
+        cmd = [
+            "ffprobe", "-v", "quiet", 
+            "-print_format", "json", 
+            "-show_streams", 
+            "-select_streams", "v:0", 
+            filepath
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if res.returncode == 0:
+            data = json.loads(res.stdout)
+            streams = data.get("streams", [])
+            if streams and "duration" in streams[0]:
+                return float(streams[0]["duration"])
+    except Exception as e:
+        print(f"Error probing duration for {filepath}: {e}")
+    return 0.0
+
 @app.get("/api/gallery")
 async def get_gallery():
     import glob
@@ -488,15 +793,62 @@ async def get_gallery():
     for f in files:
         try:
             stat = os.stat(f)
+            duration = _get_video_duration_ffprobe(f)
             result.append({
                 "filename": os.path.basename(f),
                 "url": f"/media/{os.path.basename(f)}",
                 "size_mb": round(stat.st_size / (1024 * 1024), 1),
                 "created_at": _dt.datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %H:%M"),
+                "created_at_ts": float(stat.st_mtime),
+                "duration": duration
             })
         except OSError:
             continue
     return result
+
+@app.get("/api/export_csv")
+async def export_csv():
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["filename", "clip title", "hook sentence", "virality score", "duration"])
+    
+    import glob
+    existing_files = {os.path.basename(f) for f in glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))}
+    
+    for clip in _state.get("clips", []):
+        fn = clip.get("rendered_filename")
+        if fn and fn in existing_files:
+            writer.writerow([
+                fn,
+                clip.get("title", ""),
+                clip.get("hook_sentence", ""),
+                clip.get("score", ""),
+                clip.get("duration", "")
+            ])
+            
+    output.seek(0)
+    return StreamingResponse(
+        io.StringIO(output.getvalue()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=clipfactory_metadata.csv"}
+    )
+
+@app.post("/api/clear_gallery")
+async def clear_gallery():
+    import glob
+    files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+    deleted_count = 0
+    for f in files:
+        try:
+            os.remove(f)
+            deleted_count += 1
+        except OSError:
+            continue
+    return {"status": "success", "message": f"Deleted {deleted_count} rendered clips from gallery."}
 
 # ── Serve Next.js static build (Catch-all for SPA) ──────────
 FRONTEND_DIR = os.path.join(REPO_DIR, "frontend", "out")

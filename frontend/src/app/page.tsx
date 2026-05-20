@@ -5,7 +5,7 @@ import {
   Play, Scissors, Sparkles,
   Activity, Zap, CheckCircle2,
   Clock, TrendingUp, Music, Type, Download,
-  Film, RefreshCw, Eye, EyeOff, ArrowRight, Settings2, Volume2, StopCircle, Trash2, Tag
+  Film, RefreshCw, Eye, EyeOff, ArrowRight, Settings2, Volume2, StopCircle, Trash2, Tag, Copy
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -34,6 +34,8 @@ interface GalleryItem {
   url: string;
   size_mb: number;
   created_at: string;
+  created_at_ts?: number;
+  duration?: number;
 }
 
 interface WordTimestamp {
@@ -49,6 +51,14 @@ function formatTime(seconds: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
+function formatEta(seconds: number | undefined | null): string {
+  if (seconds === undefined || seconds === null || isNaN(seconds) || seconds < 0) return "";
+  if (seconds < 60) return `${seconds}s remaining`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s remaining`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main Dashboard                                                     */
 /* ------------------------------------------------------------------ */
@@ -59,7 +69,6 @@ const DEFAULT_SETTINGS = {
   caption_style: "Classic",
   caption_pos: "Bottom",
   bg_music_genre: "None",
-  broll_intensity: "Medium",
 };
 
 export default function Dashboard() {
@@ -73,13 +82,73 @@ export default function Dashboard() {
   const [activeView, setActiveView] = useState<"workspace" | "gallery">("workspace");
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
-    const [progress, setProgress] = useState<{percent: number; message: string} | null>(null);
+  const [progress, setProgress] = useState<{percent: number; message: string; eta?: number | null} | null>(null);
 
   // Model selectors
   const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3 8B Instruct Q4");
   const [whisperLabel, setWhisperLabel] = useState("⭐ medium");
   const [catalogData, setCatalogData] = useState<{llm_catalog:{label:string}[], whisper_catalog:{label:string}[], bgm_genres:string[]}>({llm_catalog:[], whisper_catalog:[], bgm_genres:[]});
   const [renderSettings, setRenderSettings] = useState<Record<number, typeof DEFAULT_SETTINGS>>({});
+
+  // New UI states
+  const [globalSettings, setGlobalSettings] = useState(DEFAULT_SETTINGS);
+  const [cardRenderStates, setCardRenderStates] = useState<Record<number, "idle" | "queued" | "rendering" | "done" | "error">>({});
+  const [sortBy, setSortBy] = useState<"score" | "energy" | "duration">("score");
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [pendingRestoreUrl, setPendingRestoreUrl] = useState("");
+  const [selectedForRender, setSelectedForRender] = useState<Record<number, boolean>>({});
+  const [editedTitles, setEditedTitles] = useState<Record<number, string>>({});
+  const [editingTitleIdx, setEditingTitleIdx] = useState<number | null>(null);
+  const [tempTitle, setTempTitle] = useState("");
+  const [galleryFilter, setGalleryFilter] = useState<"all" | "today" | "over30" | "under30">("all");
+
+  const addLog = (message: string) => {
+    const timestampRegex = /^\[\d{2}:\d{2}:\d{2}\]/;
+    if (timestampRegex.test(message)) {
+      setLogs(prev => [...prev, message]);
+    } else {
+      const now = new Date();
+      const hh = now.getHours().toString().padStart(2, '0');
+      const mm = now.getMinutes().toString().padStart(2, '0');
+      const ss = now.getSeconds().toString().padStart(2, '0');
+      setLogs(prev => [...prev, `[${hh}:${mm}:${ss}] ${message}`]);
+    }
+  };
+
+  const selectedCount = useMemo(() => {
+    return Object.values(selectedForRender).filter(Boolean).length;
+  }, [selectedForRender]);
+
+  const filteredGallery = useMemo(() => {
+    return gallery.filter(video => {
+      if (galleryFilter === "all") return true;
+      if (galleryFilter === "today") {
+        const midnight = new Date();
+        midnight.setHours(0, 0, 0, 0);
+        const midnightTs = midnight.getTime() / 1000;
+        return (video as any).created_at_ts >= midnightTs;
+      }
+      if (galleryFilter === "over30") {
+        return ((video as any).duration || 0) >= 30;
+      }
+      if (galleryFilter === "under30") {
+        return ((video as any).duration || 0) < 30;
+      }
+      return true;
+    });
+  }, [gallery, galleryFilter]);
+
+  const clearGallery = async () => {
+    if (!confirm("Are you sure you want to clear all rendered clips from the gallery? This cannot be undone.")) return;
+    try {
+      await axios.post(`${API_BASE}/clear_gallery`);
+      addLog("🗑️ Gallery cleared.");
+      fetchGallery();
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || "Unknown error";
+      addLog(`❌ Failed to clear gallery: ${msg}`);
+    }
+  };
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -102,12 +171,25 @@ export default function Dashboard() {
   useEffect(() => {
     if (results?.clips?.length && results?.persona) {
       const base = {
-        ...DEFAULT_SETTINGS,
+        ...globalSettings,
         bg_music_genre: results.persona.suggested_bgm || "None",
       };
       const init: Record<number, typeof DEFAULT_SETTINGS> = {};
       results.clips.forEach((_: any, idx: number) => { init[idx] = { ...base }; });
       setRenderSettings(init);
+
+      // Pre-select top 5 clips by composite score (clip.score or clip.virality_score)
+      const sortedIdxs = results.clips
+        .map((c: any, i: number) => ({ idx: i, score: c.virality_score || c.score || 0 }))
+        .sort((a: any, b: any) => b.score - a.score)
+        .slice(0, 5)
+        .map((item: any) => item.idx);
+      
+      const newSelected: Record<number, boolean> = {};
+      results.clips.forEach((_: any, idx: number) => {
+        newSelected[idx] = sortedIdxs.includes(idx);
+      });
+      setSelectedForRender(newSelected);
     }
   }, [results]);
 
@@ -125,12 +207,27 @@ export default function Dashboard() {
       [clipIdx]: { ...(prev[clipIdx] || DEFAULT_SETTINGS), [key]: value }
     }));
   };
+  const updateGlobalSetting = (key: string, value: any) => {
+    setGlobalSettings(prev => {
+      const updated = { ...prev, [key]: value };
+      if (results?.clips?.length) {
+        setRenderSettings(rPrev => {
+          const rUpdated = { ...rPrev };
+          results.clips.forEach((_: any, idx: number) => {
+            rUpdated[idx] = { ...(rUpdated[idx] || DEFAULT_SETTINGS), [key]: value };
+          });
+          return rUpdated;
+        });
+      }
+      return updated;
+    });
+  };
   const handleCancel = async () => {
     try {
       await axios.post(`${API_BASE}/cancel_strategize`);
       setStatus("idle");
       setProgress(null);
-      setLogs(prev => [...prev, "❌ Analysis cancelled by user."]);
+      addLog("❌ Analysis cancelled by user.");
     } catch {}
   };
 
@@ -143,6 +240,9 @@ export default function Dashboard() {
       setResults(null);
       setSelectedClip(null);
       setProgress(null);
+      setCardRenderStates({});
+      setSelectedForRender({});
+      setEditedTitles({});
     } catch {}
   };
 
@@ -153,33 +253,37 @@ export default function Dashboard() {
     try {
       const entry = JSON.parse(event.data);
       if (entry.type === "progress") {
-        setProgress({ percent: entry.percent || 0, message: entry.message || "" });
+        setProgress({ percent: entry.percent || 0, message: entry.message || "", eta: entry.eta });
       } else if (entry.type === "error") {
-        setLogs(prev => [...prev, `❌ ERROR: ${entry.message}`]);
+        addLog(`❌ ERROR: ${entry.message}`);
+      } else if (entry.type === "render_status") {
+        setCardRenderStates(prev => ({ ...prev, [entry.clip_id]: entry.status }));
       } else if (entry.type === "status") {
         if (!LOG_BLOCKLIST.test(entry.message)) {
-          setLogs(prev => [...prev, entry.message]);
+          addLog(entry.message);
         }
       }
     } catch {
       // Legacy fallback — plain string, still filter
       if (!LOG_BLOCKLIST.test(event.data)) {
-        setLogs(prev => [...prev, event.data]);
+        addLog(event.data);
       }
     }
   };
 
-  const handleStrategize = async () => {
-    if (!url) return;
+  const startStrategize = async (targetUrl: string) => {
     setStatus("strategizing");
-    setLogs(["Initializing AI Director Pipeline..."]);
+    setLogs([]);
+    addLog("Initializing AI Director Pipeline...");
     setSelectedClip(null);
+    setProgress(null);
+    setShowRestoreModal(false);
 
     const ws = new WebSocket(wsUrl());
     ws.onmessage = handleWsMessage;
 
     try {
-      await axios.post(`${API_BASE}/strategize`, { url, llm_label: llmLabel, whisper_label: whisperLabel });
+      await axios.post(`${API_BASE}/strategize`, { url: targetUrl, llm_label: llmLabel, whisper_label: whisperLabel });
       const poll = setInterval(async () => {
         const res = await axios.get(`${API_BASE}/results`);
         if (res.data.status === "done") {
@@ -192,10 +296,46 @@ export default function Dashboard() {
     } catch (error: any) {
       const msg = error.response?.data?.detail || error.message || "Unknown error";
       console.error(error);
-      setLogs(prev => [...prev, `❌ Error starting strategize phase: ${msg}`]);
+      addLog(`❌ Error starting strategize phase: ${msg}`);
       setStatus("error");
       ws.close();
     }
+  };
+
+  const restoreSession = async (targetUrl: string) => {
+    setShowRestoreModal(false);
+    setStatus("loading");
+    setLogs([]);
+    addLog("Restoring session from Google Drive...");
+    
+    try {
+      const res = await axios.post(`${API_BASE}/restore_session`, { url: targetUrl });
+      if (res.data.status === "success") {
+        const resultsRes = await axios.get(`${API_BASE}/results`);
+        setResults(resultsRes.data);
+        setStatus("done");
+        addLog("✅ Session successfully restored from Google Drive.");
+      }
+    } catch (error: any) {
+      const msg = error.response?.data?.detail || error.message || "Unknown error";
+      addLog(`❌ Failed to restore session: ${msg}`);
+      setStatus("error");
+    }
+  };
+
+  const handleStrategize = async () => {
+    if (!url) return;
+    try {
+      const checkRes = await axios.post(`${API_BASE}/check_session`, { url: url.trim() });
+      if (checkRes.data.exists) {
+        setPendingRestoreUrl(url);
+        setShowRestoreModal(true);
+        return;
+      }
+    } catch (err) {
+      // Ignore and proceed
+    }
+    await startStrategize(url);
   };
 
   const renderClip = async (index: number) => {
@@ -210,7 +350,8 @@ export default function Dashboard() {
       const res = await axios.post(`${API_BASE}/render`, {
         clip_id: index,
         ...settings,
-        excluded_sentences: exSentences
+        excluded_sentences: exSentences,
+        title: editedTitles[index] || undefined
       });
       
       const taskId = res.data.task_id;
@@ -226,8 +367,40 @@ export default function Dashboard() {
         } else if (statusRes.data.status === "error") {
           clearInterval(poll);
           setStatus("error");
-          setLogs(prev => [...prev, `❌ Render Error: ${statusRes.data.error}`]);
+          addLog(`❌ Render Error: ${statusRes.data.error}`);
           ws.close();
+        }
+      }, 2000);
+    } catch {
+      setStatus("error");
+      ws.close();
+    }
+  };
+
+  const renderAllClips = async () => {
+    setStatus("rendering");
+    const ws = new WebSocket(wsUrl());
+    ws.onmessage = handleWsMessage;
+
+    const selectedIds = Object.entries(selectedForRender)
+      .filter(([_, checked]) => checked)
+      .map(([idxStr]) => parseInt(idxStr));
+
+    try {
+      await axios.post(`${API_BASE}/render_all`, {
+        ...globalSettings,
+        clip_ids: selectedIds.length > 0 ? selectedIds : undefined,
+        titles: editedTitles
+      });
+      const poll = setInterval(async () => {
+        const statusRes = await axios.get(`${API_BASE}/status`);
+        if (!statusRes.data.is_rendering) {
+          clearInterval(poll);
+          setStatus("done");
+          setProgress(null);
+          ws.close();
+          fetchGallery();
+          setActiveView("gallery");
         }
       }, 2000);
     } catch {
@@ -270,6 +443,20 @@ export default function Dashboard() {
     }
     return sentences;
   }, [results]);
+
+  const sortedClips = useMemo(() => {
+    if (!results?.clips) return [];
+    const list = results.clips.map((clip: any, idx: number) => ({ ...clip, originalIdx: idx }));
+    if (sortBy === "score") {
+      list.sort((a: any, b: any) => (b.virality_score || b.score || 0) - (a.virality_score || a.score || 0));
+    } else if (sortBy === "energy") {
+      list.sort((a: any, b: any) => (b.energy_score || 0) - (a.energy_score || 0));
+    } else if (sortBy === "duration") {
+      const getDur = (c: any) => c.duration || (parseFloat(c.end_time || 0) - parseFloat(c.start_time || 0));
+      list.sort((a: any, b: any) => getDur(b) - getDur(a));
+    }
+    return list;
+  }, [results?.clips, sortBy]);
 
   const toggleSentence = (clipIdx: number, sentence: any) => {
     setExcludedSentences(prev => {
@@ -373,7 +560,12 @@ export default function Dashboard() {
           <div className="bg-white border border-slate-200 rounded-xl p-5 mb-8 shadow-sm">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-bold text-slate-800">{progress.message}</span>
-              <span className="text-sm font-bold text-indigo-600">{progress.percent}%</span>
+              <div className="flex items-center gap-2">
+                {progress.eta !== undefined && progress.eta !== null && (
+                  <span className="text-xs text-slate-500 font-medium">({formatEta(progress.eta)})</span>
+                )}
+                <span className="text-sm font-bold text-indigo-600">{progress.percent}%</span>
+              </div>
             </div>
             <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
               <div 
@@ -422,50 +614,183 @@ export default function Dashboard() {
                 <h3 className="text-xl font-bold text-slate-800">Clip Strategy Result</h3>
                 <p className="text-slate-500 text-xs">Persona: <span className="text-indigo-600 font-semibold">{results.persona?.type || "General"}</span></p>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100">
-                  {results.clips?.length || 0} Clips Found
+              <div className="flex items-center gap-3">
+                {/* SORT CONTROLS DROPDOWN */}
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-sm text-xs">
+                  <span className="font-bold text-slate-500">Sort:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as any)}
+                    className="font-bold text-slate-800 outline-none bg-transparent cursor-pointer"
+                  >
+                    <option value="score">Virality Score</option>
+                    <option value="energy">Energy Score</option>
+                    <option value="duration">Duration</option>
+                  </select>
+                </div>
+
+                {/* BULK RENDER ALL BUTTON */}
+                <button
+                  onClick={renderAllClips}
+                  disabled={status === "rendering" || status === "strategizing"}
+                  className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 disabled:opacity-50 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5 fill-white" />
+                  {selectedCount > 0 ? `Render Selected (${selectedCount})` : "Render All"}
+                </button>
+
+                <div className="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-indigo-100 shadow-sm">
+                  {selectedCount} Selected / {results.clips?.length || 0} Clips
                 </div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {results.clips?.map((clip: any, i: number) => (
-                <div key={i} onClick={() => setSelectedClip(i)} className={`cursor-pointer group flex flex-col border transition-all duration-300 shadow-sm overflow-hidden rounded-2xl ${selectedClip === i ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/30' : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md'}`}>
-                  <div className="flex h-40">
-                    <div className="bg-slate-900 w-28 shrink-0 relative overflow-hidden flex flex-col items-center justify-center text-center p-2">
-                      {clip.thumbnail_url && <img src={clip.thumbnail_url || ""} alt="" className="absolute inset-0 w-full h-full object-cover opacity-50" />}
-                      <div className="text-white font-bold text-[10px] mb-1 leading-tight drop-shadow-md line-clamp-3">{clip.title || "Untitled Clip"}</div>
-                      <div className="text-white/80 text-[9px] uppercase tracking-widest font-bold flex items-center justify-center gap-1 mt-2">
-                        <Clock className="w-3 h-3" />
-                        {formatTime(clip.duration || (parseFloat(clip.end_time || 0) - parseFloat(clip.start_time || 0)))}
-                      </div>
-                      <div className="absolute top-2 left-2 bg-white/90 backdrop-blur text-[9px] font-bold text-slate-800 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
-                        <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> {Math.round(clip.score || 0)}
-                      </div>
-                    </div>
+              {sortedClips.map((clip: any) => {
+                const clipIdx = clip.originalIdx;
+                return (
+                  <div key={clipIdx} onClick={() => setSelectedClip(clipIdx)} className={`cursor-pointer group flex flex-col border transition-all duration-300 shadow-sm overflow-hidden rounded-2xl ${selectedClip === clipIdx ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/30' : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md'}`}>
+                    <div className="flex h-40">
+                      <div className="bg-slate-900 w-28 shrink-0 relative overflow-hidden flex flex-col items-center justify-center text-center p-2">
+                        {clip.thumbnail_url && <img src={clip.thumbnail_url || ""} alt="" className="absolute inset-0 w-full h-full object-cover opacity-50" />}
+                        
+                        {/* CHECKBOX FOR BULK SELECTION */}
+                        <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={!!selectedForRender[clipIdx]}
+                            onChange={(e) => {
+                              setSelectedForRender(prev => ({ ...prev, [clipIdx]: e.target.checked }));
+                            }}
+                            className="w-4 h-4 cursor-pointer accent-indigo-600 rounded"
+                          />
+                        </div>
 
-                    <div className="p-4 flex-1 flex flex-col justify-between">
-                      <div className="space-y-2">
-                        <p className="text-[11px] text-slate-700 border-l-2 border-indigo-200 pl-2 italic line-clamp-3">
-                          <span className="font-bold text-indigo-500 mr-1 not-italic">Hook:</span> 
-                          "{clip.hook_sentence || clip.description}"
-                        </p>
+                        {/* INLINE EDITABLE CLIP TITLES */}
+                        <div className="relative z-10 w-full px-1">
+                          {editingTitleIdx === clipIdx ? (
+                            <input
+                              type="text"
+                              value={tempTitle}
+                              onChange={(e) => setTempTitle(e.target.value)}
+                              onBlur={() => {
+                                if (tempTitle.trim()) {
+                                  setEditedTitles(prev => ({ ...prev, [clipIdx]: tempTitle.trim() }));
+                                }
+                                setEditingTitleIdx(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  if (tempTitle.trim()) {
+                                    setEditedTitles(prev => ({ ...prev, [clipIdx]: tempTitle.trim() }));
+                                  }
+                                  setEditingTitleIdx(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingTitleIdx(null);
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              autoFocus
+                              className="bg-black/85 text-white text-[10px] font-bold p-1 rounded border border-indigo-500 w-full text-center outline-none"
+                            />
+                          ) : (
+                            <div 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingTitleIdx(clipIdx);
+                                setTempTitle(editedTitles[clipIdx] || clip.title || "Untitled Clip");
+                              }}
+                              className="text-white font-bold text-[10px] mb-1 leading-tight drop-shadow-md line-clamp-3 hover:underline cursor-text hover:text-indigo-200 transition-colors"
+                              title="Click to edit title"
+                            >
+                              {editedTitles[clipIdx] || clip.title || "Untitled Clip"}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-white/80 text-[9px] uppercase tracking-widest font-bold flex items-center justify-center gap-1 mt-2 relative z-10">
+                          <Clock className="w-3 h-3" />
+                          {formatTime(clip.duration || (parseFloat(clip.end_time || 0) - parseFloat(clip.start_time || 0)))}
+                        </div>
+                        
+                        {/* SURFACES VIRALITY & ENERGY SCORES SIDE-BY-SIDE */}
+                        <div className="absolute bottom-2 left-2 flex flex-col gap-1 z-10">
+                          <div className="bg-white/90 text-[8px] font-bold text-slate-800 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
+                            <TrendingUp className="w-2 h-2 text-emerald-500" /> V: {Math.round(clip.virality_score || clip.score || 0)}
+                          </div>
+                          <div className="bg-white/90 text-[8px] font-bold text-slate-800 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
+                            <Zap className="w-2 h-2 text-indigo-500" /> E: {Math.round(clip.energy_score || 0)}
+                          </div>
+                        </div>
+
+                        {/* PER-CARD RENDERING STATUS OVERLAY WITH ESTIMATES */}
+                        {cardRenderStates[clipIdx] && cardRenderStates[clipIdx] !== "idle" && (
+                          <div className="absolute inset-0 bg-black/80 backdrop-blur-xs flex flex-col items-center justify-center p-2 z-20 text-center">
+                            {cardRenderStates[clipIdx] === "queued" && (
+                              <>
+                                <Clock className="w-5 h-5 text-slate-400 animate-pulse mb-1" />
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Queued</span>
+                                <span className="text-[9px] text-slate-400 mt-1 font-semibold">~{Math.round((clip.duration || 30) * 4)}s</span>
+                              </>
+                            )}
+                            {cardRenderStates[clipIdx] === "rendering" && (
+                              <>
+                                <RefreshCw className="w-5 h-5 text-indigo-400 animate-spin mb-1" />
+                                <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-wider">Rendering</span>
+                                <span className="text-[9px] text-indigo-400 mt-1 font-semibold">~{Math.round((clip.duration || 30) * 4)}s</span>
+                              </>
+                            )}
+                            {cardRenderStates[clipIdx] === "done" && (
+                              <>
+                                <CheckCircle2 className="w-5 h-5 text-emerald-400 mb-1" />
+                                <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">Done</span>
+                              </>
+                            )}
+                            {cardRenderStates[clipIdx] === "error" && (
+                              <>
+                                <StopCircle className="w-5 h-5 text-rose-500 mb-1" />
+                                <span className="text-[9px] font-bold text-rose-500 uppercase tracking-wider">Failed</span>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2 mt-3">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); renderClip(i); }}
-                          disabled={status === "rendering"}
-                          className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white text-[10px] font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                        >
-                          <Zap className="w-3 h-3" />
-                          Render
-                        </button>
+
+                      <div className="p-4 flex-1 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-[11px] text-slate-700 border-l-2 border-indigo-200 pl-2 italic line-clamp-3">
+                              <span className="font-bold text-indigo-500 mr-1 not-italic">Hook:</span> 
+                              "{clip.hook_sentence || clip.description}"
+                            </p>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(clip.hook_sentence || clip.description || "");
+                                addLog("Hook copied to clipboard!");
+                              }}
+                              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition-colors shrink-0"
+                              title="Copy Hook"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-3">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); renderClip(clipIdx); }}
+                            disabled={status === "rendering"}
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white text-[10px] font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                          >
+                            <Zap className="w-3 h-3" />
+                            Render
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : (
@@ -481,17 +806,67 @@ export default function Dashboard() {
             <div>
               <h2 className="text-xl font-bold text-slate-800">Render Gallery</h2>
             </div>
-            <button 
-              onClick={fetchGallery}
-              className="p-1.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-500 transition-colors shadow-sm"
-            >
-              <RefreshCw className={`w-4 h-4 ${status === "rendering" ? "animate-spin" : ""}`} />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* GALLERY FILTER DROPDOWN */}
+              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-sm text-xs">
+                <span className="font-bold text-slate-500">Filter:</span>
+                <select
+                  value={galleryFilter}
+                  onChange={(e) => setGalleryFilter(e.target.value as any)}
+                  className="font-bold text-slate-800 outline-none bg-transparent cursor-pointer"
+                >
+                  <option value="all">All</option>
+                  <option value="today">Rendered Today</option>
+                  <option value="over30">&gt; 30s</option>
+                  <option value="under30">&lt; 30s</option>
+                </select>
+              </div>
+
+              {/* EXPORT CSV BUTTON */}
+              {gallery.length > 0 && (
+                <a
+                  href={`${API_BASE}/export_csv`}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  Export CSV
+                </a>
+              )}
+
+              {/* DOWNLOAD ALL (ZIP) BUTTON */}
+              {gallery.length > 0 && (
+                <a
+                  href={`${API_BASE}/download_all`}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download All (ZIP)
+                </a>
+              )}
+
+              {/* CLEAR GALLERY BUTTON */}
+              {gallery.length > 0 && (
+                <button
+                  onClick={clearGallery}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear Gallery
+                </button>
+              )}
+
+              <button 
+                onClick={fetchGallery}
+                className="p-1.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-500 transition-colors shadow-sm"
+              >
+                <RefreshCw className={`w-4 h-4 ${status === "rendering" ? "animate-spin" : ""}`} />
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {gallery.map((video, i) => (
-              <div key={i} className="bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-xl">
+            {filteredGallery.map((video, i) => (
+              <div key={i} className="bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-xl animate-fadeIn">
                 <div className="bg-slate-900 aspect-[9/16] relative group">
                   <video
                     className="w-full h-full object-cover cursor-pointer"
@@ -523,10 +898,10 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
-            {gallery.length === 0 && (
+            {filteredGallery.length === 0 && (
               <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm">
-                <Film className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-500 font-medium text-sm">No rendered clips yet.</p>
+                <Film className="w-10 h-10 text-slate-300 mx-auto mb-3 text-slate-400 opacity-30" />
+                <p className="text-slate-500 font-medium text-sm">No matching rendered clips found.</p>
               </div>
             )}
           </div>
@@ -538,7 +913,7 @@ export default function Dashboard() {
         <div className="p-5 border-b border-slate-100 bg-slate-50 sticky top-0 z-20">
           <h3 className="font-bold text-slate-800 flex items-center gap-2">
             <Settings2 className="w-5 h-5 text-indigo-500" />
-            Advanced Settings
+            {selectedClip !== null ? "Advanced Settings" : "Global Defaults"}
           </h3>
         </div>
         
@@ -569,16 +944,6 @@ export default function Dashboard() {
                 >
                   <option value="None">None</option>
                   {(catalogData.bgm_genres || []).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">B-Roll Intensity</span>
-                <select 
-                  value={getSettings(selectedClip).broll_intensity}
-                  onChange={(e) => updateSetting(selectedClip, "broll_intensity", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  {["None", "Low", "Medium", "High"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
@@ -670,12 +1035,135 @@ export default function Dashboard() {
             </button>
           </div>
         ) : (
-          <div className="p-8 text-center text-slate-400 mt-10">
-            <Settings2 className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            <p className="text-xs font-medium">Select a clip from the workspace to edit its settings.</p>
+          /* GLOBAL RENDER DEFAULTS SIDEBAR PANEL */
+          <div className="p-5 space-y-6 animate-fadeIn">
+            <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mb-2">
+              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block mb-1">Global Configuration</span>
+              <p className="text-xs font-bold text-indigo-900">Bulk Render Defaults</p>
+            </div>
+
+            <div className="flex-shrink-0 space-y-4">
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Caption Style</span>
+                <select
+                  value={globalSettings.caption_style}
+                  onChange={(e) => updateGlobalSetting("caption_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Music</span>
+                <select 
+                  value={globalSettings.bg_music_genre}
+                  onChange={(e) => updateGlobalSetting("bg_music_genre", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  <option value="None">None</option>
+                  {(catalogData.bgm_genres || []).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Caption Position</span>
+                <select 
+                  value={globalSettings.caption_pos}
+                  onChange={(e) => updateGlobalSetting("caption_pos", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["Top", "Center", "Bottom"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5 text-indigo-500" /> Face Tracking
+                  </span>
+                </div>
+                <label className="setting-toggle">
+                  <input type="checkbox" checked={globalSettings.face_center} onChange={(e) => updateGlobalSetting("face_center", e.target.checked)} />
+                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                </label>
+              </div>
+              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Magic Hook
+                  </span>
+                </div>
+                <label className="setting-toggle">
+                  <input type="checkbox" checked={globalSettings.magic_hook} onChange={(e) => updateGlobalSetting("magic_hook", e.target.checked)} />
+                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                </label>
+              </div>
+              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Silences
+                  </span>
+                </div>
+                <label className="setting-toggle">
+                  <input type="checkbox" checked={globalSettings.remove_silence} onChange={(e) => updateGlobalSetting("remove_silence", e.target.checked)} />
+                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                </label>
+              </div>
+            </div>
+
+            {results?.clips?.length > 0 && (
+              <button 
+                onClick={renderAllClips} 
+                disabled={status === "rendering" || status === "strategizing"}
+                className="w-full mt-4 py-3.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:bg-slate-300 transition-colors shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 active:scale-[0.98]"
+              >
+                <Sparkles className="w-4 h-4 fill-white" />
+                Render All Clips
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {/* PREMIUM GOOGLE DRIVE SESSION RESTORE MODAL */}
+      {showRestoreModal && (
+        <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-md max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Restore Session?</h3>
+                <p className="text-xs text-slate-500">Google Drive session found</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 mb-6">
+              A previously completed strategy session for this video exists on Google Drive. Would you like to restore it to save processing time and API usage?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => restoreSession(pendingRestoreUrl)}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Yes, Restore
+              </button>
+              <button
+                onClick={() => {
+                  setShowRestoreModal(false);
+                  startStrategize(pendingRestoreUrl);
+                }}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm transition-all border border-slate-200 flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                No, Start Fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

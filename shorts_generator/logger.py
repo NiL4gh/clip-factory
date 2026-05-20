@@ -16,20 +16,33 @@ class UIStreamLogger:
 
     def log(self, message: str):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        m = re.match(r'^PROGRESS\|(\d+)\|(.+)$', message)
-        if m:
+        m_render = re.match(r'^RENDER_STATUS\|(\d+)\|(.+)$', message)
+        if m_render:
             entry = {
-                "type": "progress",
-                "percent": int(m.group(1)),
-                "message": m.group(2).strip(),
+                "type": "render_status",
+                "clip_id": int(m_render.group(1)),
+                "status": m_render.group(2).strip(),
                 "ts": timestamp,
             }
         else:
-            entry = {
-                "type": "status",
-                "message": message.strip(),
-                "ts": timestamp,
-            }
+            m = re.match(r'^PROGRESS\|(\d+)\|(.+)$', message)
+            if m:
+                parts = m.group(2).split('|')
+                msg_text = parts[0]
+                eta_val = int(parts[1]) if len(parts) > 1 else None
+                entry = {
+                    "type": "progress",
+                    "percent": int(m.group(1)),
+                    "message": f"[{timestamp}] {msg_text.strip()}",
+                    "ts": timestamp,
+                    "eta": eta_val
+                }
+            else:
+                entry = {
+                    "type": "status",
+                    "message": f"[{timestamp}] {message.strip()}",
+                    "ts": timestamp,
+                }
         self._entries.append(entry)
         print(f"[{timestamp}] {message}")
 
@@ -37,7 +50,7 @@ class UIStreamLogger:
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         entry = {
             "type": "error",
-            "message": message.strip(),
+            "message": f"[{timestamp}] ERROR: {message.strip()}",
             "ts": timestamp,
         }
         self._entries.append(entry)

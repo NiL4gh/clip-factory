@@ -25,3 +25,7 @@ mediapipe>=0.10
 # llama-cpp-python
 # Audio Analysis
 librosa>=0.10
+
+# Backend API
+fastapi>=0.100.0
+uvicorn>=0.23.0
