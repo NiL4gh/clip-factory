@@ -167,15 +167,19 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
     if not ideal_transcript or not raw_words:
         return []
 
-    sentences = re.split(r'(?<=[.!?])\s+', ideal_transcript.strip())
+    sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
     sentences = [s.strip() for s in sentences if s.strip()]
 
     segments = []
     current_segment = None
     search_idx = 0
 
+    import unicodedata
     def normalize_word(w):
-        return re.sub(r'[^a-z0-9]', '', w.lower())
+        if not w:
+            return ""
+        normalized = "".join(c for c in w if not unicodedata.category(c).startswith(('P', 'S')))
+        return normalized.lower()
 
     raw_normalized = [normalize_word(w["word"]) for w in raw_words]
 
@@ -234,7 +238,7 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
             if next_w["start"] - et > 3.0:
                 break
             best_extended_et = next_w["end"]
-            has_punc = any(p in next_w["word"] for p in [".", "!", "?"])
+            has_punc = any(p in next_w["word"] for p in [".", "!", "?", "।", "|"])
             pause_after = False
             if next_idx + 1 < len(raw_words):
                 pause_after = (raw_words[next_idx + 1]["start"] - next_w["end"]) > 0.4
@@ -326,7 +330,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
         # Duration check: >90s -> slice transcript and remap
         if total_dur > 90:
-            sentences = re.split(r'(?<=[.!?])\s+', ideal_transcript.strip())
+            sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
             sliced_transcript = ""
             for s in sentences:
                 test_transcript = (sliced_transcript + " " + s).strip()
@@ -701,7 +705,7 @@ def get_highlights(
             energy_score = int(energy_val * 100)
             composite_score = int((score * 0.6) + (energy_score * 0.4))
 
-            sentences = re.split(r'(?<=[.!?])\s+', ideal_transcript.strip())
+            sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
             hook_sentence = sentences[0] if sentences else ""
 
             normalized.append({
