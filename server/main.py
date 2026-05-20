@@ -274,14 +274,17 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
                 wsp_size = entry["size"]
                 break
 
-        llm_path = os.path.join(LLM_DIR, llm_entry["filename"])
-        fast_llm_path = os.path.join(LLM_DIR, fast_llm_entry["filename"])
+        is_gemini_main = llm_entry["filename"].startswith("gemini-")
+        is_gemini_fast = fast_llm_entry["filename"].startswith("gemini-")
 
-        if not os.path.exists(llm_path):
+        llm_path = llm_entry["filename"] if is_gemini_main else os.path.join(LLM_DIR, llm_entry["filename"])
+        fast_llm_path = fast_llm_entry["filename"] if is_gemini_fast else os.path.join(LLM_DIR, fast_llm_entry["filename"])
+
+        if not is_gemini_main and not os.path.exists(llm_path):
             log_progress(5, "Downloading main LLM...")
             hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
             
-        if not os.path.exists(fast_llm_path):
+        if not is_gemini_fast and not os.path.exists(fast_llm_path):
             log_progress(10, "Downloading fast-pass LLM...")
             hf_hub_download(repo_id=fast_llm_entry["repo"], filename=fast_llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
 

@@ -60,8 +60,12 @@ if not os.path.exists(COOKIE_PATH):
 # ── Font Configuration ───────────────────────────────────────────
 FONT_PATH = "/content/work/Montserrat-Bold.ttf"
 
-# ── Local LLM catalog ────────────────────────────────────────────
+# ── Local & API LLM catalog ───────────────────────────────────────
 LLM_CATALOG = [
+    {"label": "♊ Google Gemini 2.5 Flash (API)",
+     "filename": "gemini-2.5-flash",
+     "repo": "google",
+     "gpu_layers": 0},
     {"label": "🦙 LLaMA 3 8B Instruct Q4",
      "filename": "Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
      "repo": "bartowski/Meta-Llama-3-8B-Instruct-GGUF",

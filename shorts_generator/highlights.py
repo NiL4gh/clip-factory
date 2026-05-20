@@ -72,6 +72,9 @@ words sound:
 # ── LLM Management ───────────────────────────────────────────────────────────
 
 def _get_llm(llm_path: str, gpu_layers: int = 35):
+    if isinstance(llm_path, str) and llm_path.startswith("gemini-"):
+        return llm_path
+
     from llama_cpp import Llama
     if llm_path not in _llm_cache:
         ui_logger.log("Loading local LLM model...")
@@ -102,7 +105,67 @@ def _parse_json_loose(raw: str):
         return []
 
 
+def _query_gemini(model_name: str, system: str, prompt: str, max_tokens: int = 3000) -> list:
+    import os
+    import urllib.request
+    import json
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        ui_logger.log("ERROR: GEMINI_API_KEY environment variable is not set!")
+        raise RuntimeError("Missing GEMINI_API_KEY in environment or .env file.")
+        
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": f"System Instructions:\n{system}\n\nUser Request:\n{prompt}"}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.4,
+            "maxOutputTokens": max_tokens
+        }
+    }
+    
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+    
+    try:
+        ui_logger.log(f"Querying Gemini API ({model_name})...")
+        with urllib.request.urlopen(req) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            raw_text = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            parsed = _parse_json_loose(raw_text)
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict):
+                return parsed.get("highlights", parsed.get("clips", parsed.get("topics", [parsed])))
+            return []
+    except Exception as e:
+        ui_logger.log(f"Gemini API Error: {e}")
+        if hasattr(e, "read"):
+            try:
+                err_body = e.read().decode('utf-8')
+                ui_logger.log(f"API Response Details: {err_body}")
+            except:
+                pass
+        return []
+
+
 def _query_llm(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
+    if isinstance(llm, str) and llm.startswith("gemini-"):
+        return _query_gemini(llm, system, prompt, max_tokens)
+
     # Merging system instructions and user prompt by default to prevent system role support issues and eliminate retries
     content = f"{system}\n\n{prompt}"
     try:
@@ -555,6 +618,8 @@ def get_highlights(
         '  {\n'
         '    "title": "Strictly max 8 words, present tense, high impact, no filler (e.g., Build X in 30 seconds)",\n'
         '    "virality_score": 85,\n'
+        '    "start_timestamp": 12.4,\n'
+        '    "end_timestamp": 54.1,\n'
         '    "ideal_transcript": "The exact word-for-word transcript of the perfect 30-60 second clip. It MUST be a detailed, long paragraph of at least 5 to 10 consecutive sentences (typically 50-100 words) to ensure sufficient duration. Do not include timestamps, just copy the raw spoken words exactly.",\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
@@ -576,6 +641,13 @@ def get_highlights(
 
     # Build the virality prompt with dynamic video duration, structured hook examples, and persona additions
     virality_prompt = f"{_VIRALITY_BASE}\n\n{_VIRAL_HOOKS_EXAMPLES}\n\n{persona_addition}".format(video_duration_str=video_duration_str)
+    virality_prompt += (
+        "\n\n═══════════════════════════════════════════════════════\n"
+        "TIMESTAMP EXTRACTION RULES:\n"
+        "- The 'start_timestamp' and 'end_timestamp' fields must be floating point numbers (in seconds).\n"
+        "- They must correspond precisely to the bracketed timestamps (e.g., [12.5s]) inside the transcript.\n"
+        "- Example: If the perfect clip starts at '[25.1s] So here is why...' and ends at '[58.6s] ...and that is it.', then set 'start_timestamp': 25.1 and 'end_timestamp': 58.6.\n"
+    )
 
     if topics and len(topics) > 0:
         # ── Topic-Aware Extraction ──
@@ -687,12 +759,34 @@ def get_highlights(
     for h in all_highlights:
         try:
             ideal_transcript = h.get("ideal_transcript", "")
-            if not ideal_transcript:
-                continue
-
-            segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
+            
+            start_ts = h.get("start_timestamp")
+            end_ts = h.get("end_timestamp")
+            
+            if start_ts is not None and end_ts is not None:
+                try:
+                    start_ts = float(start_ts)
+                    end_ts = float(end_ts)
+                    if raw_words:
+                        matching_words = [w for w in raw_words if start_ts <= w["start"] <= end_ts]
+                        if matching_words:
+                            start_ts = matching_words[0]["start"]
+                            end_ts = matching_words[-1]["end"]
+                    segments = [{"start_time": start_ts, "end_time": end_ts}]
+                except (ValueError, TypeError):
+                    segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
+            else:
+                segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
+                
             if not segments:
                 continue
+
+            if not ideal_transcript:
+                if raw_words:
+                    matching_words = [w for w in raw_words if segments[0]["start_time"] <= w["start"] <= segments[-1]["end_time"]]
+                    ideal_transcript = " ".join(w["word"] for w in matching_words)
+                else:
+                    ideal_transcript = "No transcript text available."
 
             score = max(0, min(100, int(h.get("virality_score", h.get("score", 50)))))
             theme = h.get("theme", "Storytime")
