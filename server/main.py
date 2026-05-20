@@ -389,7 +389,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
         if clips and _state["word_timestamps"]:
             video_start = float(_state["word_timestamps"][0].get("start", 0))
             video_dur = float(_state.get("video_duration", 0))
-            intro_threshold = min(90.0, max(60.0, video_dur * 0.12))
+            intro_threshold = min(15.0, max(5.0, video_dur * 0.02))
             clips = [c for c in clips if (float(c.get("start_time", 0)) - video_start) >= intro_threshold]
 
         if not clips:

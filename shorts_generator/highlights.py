@@ -10,7 +10,7 @@ import re
 from .logger import ui_logger
 
 _llm_cache = {}
-CHUNK_CHARS = 12_000  # Conservative size for 8k context models (Llama 3, Gemma 2)
+CHUNK_CHARS = 3000  # More granular chunks to ensure we identify 5-10+ topics for 15-20 clips
 
 
 # ── Opus-Style Viral Director Prompt ─────────────────────────────────────────
@@ -42,6 +42,8 @@ CRITICAL EXTRACTION RULES:
 - Every clip MUST start with a hook that grabs attention in the first 3 seconds.
 - Every clip MUST have a clear narrative arc: Hook (Beginning) -> Context/Value (Middle) -> Payoff/Conclusion (End).
 - Extract the longest possible natural narrative arc. A clip MUST be a single, continuous, unbroken story or argument.
+- Each clip's ideal_transcript MUST be a complete, multi-sentence paragraph of at least 50 to 150 words (30-60 seconds of speech).
+- NEVER extract single-sentence statements or quick phrases that last less than 15 seconds. Ensure the extracted text flows logically with a beginning, middle, and end.
 - Only extract multi-segment clips if the speaker pauses for more than 3 seconds or goes completely off-topic in the middle of a great point. Do NOT stitch unrelated thoughts together just to make the video longer.
 - A 60-second continuous thought is infinitely better than a 60-second stitched Frankenstein clip.
 - Do NOT include timestamps or segment numbers. Only the literal spoken words.
@@ -448,7 +450,8 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             "- Each topic must have accurate start_time and end_time from the transcript timestamps\n"
             "- Topics should NOT overlap\n"
             "- Include ALL sections — do not skip any part of the transcript\n"
-            "- A 10-minute section typically has 5-10 topics\n\n"
+            "- A 3-minute section typically has 1-3 topics\n"
+            "- Identify at least 2 distinct topics for this section if possible to ensure we don't group everything together\n\n"
             f"Transcript:\n{chunk}\n\n"
             f"Respond ONLY with a JSON array:\n{topic_schema}"
         )
@@ -552,7 +555,7 @@ def get_highlights(
         '  {\n'
         '    "title": "Strictly max 8 words, present tense, high impact, no filler (e.g., Build X in 30 seconds)",\n'
         '    "virality_score": 85,\n'
-        '    "ideal_transcript": "The exact word-for-word transcript of the perfect 40-60 second clip. Include the hook at the beginning and the natural conclusion at the end. Do not include timestamps, just the raw spoken words.",\n'
+        '    "ideal_transcript": "The exact word-for-word transcript of the perfect 30-60 second clip. It MUST be a detailed, long paragraph of at least 5 to 10 consecutive sentences (typically 50-100 words) to ensure sufficient duration. Do not include timestamps, just copy the raw spoken words exactly.",\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
