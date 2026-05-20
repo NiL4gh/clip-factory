@@ -129,7 +129,7 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
         "-af", f"aselect='{select_parts}',asetpts=N/SR/TB",
         "-c:v", "libx264", "-preset", "fast", "-crf", "16",
         "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart",
         output_path
     ]
@@ -393,7 +393,7 @@ def _generate_text_card(output_path, text, duration, font_file, font_size=64):
         "-t", str(duration),
         "-c:v", "libx264", "-preset", "fast", "-crf", "16",
         "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart",
         output_path
     ]
@@ -644,7 +644,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             "-map", f"[{current_v}]", "-map", audio_map,
             "-c:v", "libx264", "-preset", "fast", "-crf", "16",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
             "-movflags", "+faststart",
             "-t", str(round(seg_et - seg_st, 3)),  # Explicit duration — prevents looped B-roll inputs from truncating segment
             seg_out
@@ -709,7 +709,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             "-map", "[v_concat]", "-map", "[a_concat]",
             "-c:v", "libx264", "-preset", "fast", "-crf", "16",
             "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
             "-movflags", "+faststart",
             final_output
         ]
@@ -737,7 +737,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     "-filter_complex",
                     "[0:a]volume=0.56[speech];[1:a]volume=0.1[bgm];[speech][bgm]amix=inputs=2:duration=first:dropout_transition=2,asetpts=PTS-STARTPTS[a]",
                     "-map", "0:v", "-map", "[a]",
-                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
                     "-movflags", "+faststart",
                     "-shortest",
                     bgm_output
