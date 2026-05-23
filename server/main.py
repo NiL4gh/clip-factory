@@ -169,13 +169,47 @@ class BulkRenderRequest(BaseModel):
 class SessionRequest(BaseModel):
     url: str
 
+_GEMINI_KEY_VALID_CACHE = {}
+
+def _is_gemini_key_valid() -> bool:
+    import os, urllib.request, json
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return False
+
+    if api_key in _GEMINI_KEY_VALID_CACHE:
+        return _GEMINI_KEY_VALID_CACHE[api_key]
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{"parts": [{"text": "ping"}]}],
+        "generationConfig": {"maxOutputTokens": 5}
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            if resp.status == 200:
+                _GEMINI_KEY_VALID_CACHE[api_key] = True
+                return True
+    except Exception:
+        pass
+    _GEMINI_KEY_VALID_CACHE[api_key] = False
+    return False
+
+
 @app.get("/api/config")
 async def get_config():
     return {
         "llm_catalog": [{"label": e["label"]} for e in LLM_CATALOG],
         "whisper_catalog": [{"label": e["label"]} for e in WHISPER_CATALOG],
         "bgm_genres": list(BGM_CATALOG.keys()),
-        "gemini_active": bool(os.getenv("GEMINI_API_KEY")),
+        "gemini_active": _is_gemini_key_valid(),
     }
 
 @app.get("/api/heartbeat")
@@ -279,6 +313,22 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
 
         is_gemini_main = llm_entry["filename"].startswith("gemini-")
         is_gemini_fast = fast_llm_entry["filename"].startswith("gemini-")
+
+        if is_gemini_main and not _is_gemini_key_valid():
+            ui_logger.log("WARNING: Gemini API key is invalid or not set! Automatically falling back to local LLaMA-3 model to prevent failure.")
+            for entry in LLM_CATALOG:
+                if "LLaMA 3" in entry["label"]:
+                    llm_entry = entry
+                    break
+            is_gemini_main = False
+
+        if is_gemini_fast and not _is_gemini_key_valid():
+            ui_logger.log("WARNING: Gemini API key is invalid or not set! Automatically falling back to local Gemma-2 model to prevent failure.")
+            for entry in LLM_CATALOG:
+                if "Gemma 2" in entry["label"]:
+                    fast_llm_entry = entry
+                    break
+            is_gemini_fast = False
 
         llm_path = llm_entry["filename"] if is_gemini_main else os.path.join(LLM_DIR, llm_entry["filename"])
         fast_llm_path = fast_llm_entry["filename"] if is_gemini_fast else os.path.join(LLM_DIR, fast_llm_entry["filename"])
