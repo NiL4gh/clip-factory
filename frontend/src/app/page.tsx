@@ -163,7 +163,12 @@ export default function Dashboard() {
       .then(res => setBackendVersion(res.data.version))
       .catch(() => setBackendVersion("Offline"));
     axios.get(`${API_BASE}/config`)
-      .then(res => setCatalogData(res.data))
+      .then(res => {
+        setCatalogData(res.data);
+        if (res.data.gemini_active) {
+          setLlmLabel("♊ Google Gemini 2.5 Flash (API)");
+        }
+      })
       .catch(() => {});
   }, []);
 

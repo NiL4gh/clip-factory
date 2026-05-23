@@ -4,6 +4,8 @@ import uuid
 import time
 import asyncio
 import datetime as _dt
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 import urllib.request as _urlreq
 from typing import List, Optional
 from fastapi import FastAPI, BackgroundTasks, WebSocket, HTTPException
@@ -149,7 +151,7 @@ class RenderRequest(BaseModel):
     caption_style: str = "Classic"
     caption_pos: str = "Bottom"
     bg_music_genre: str = "None"
-    broll_intensity: str = "Medium"
+    broll_intensity: str = "None"
     excluded_sentences: List[str] = []
     title: Optional[str] = None
 
@@ -160,7 +162,7 @@ class BulkRenderRequest(BaseModel):
     caption_style: str = "Classic"
     caption_pos: str = "Bottom"
     bg_music_genre: str = "None"
-    broll_intensity: str = "Medium"
+    broll_intensity: str = "None"
     clip_ids: Optional[List[int]] = None
     titles: Optional[dict] = None
 
@@ -173,6 +175,7 @@ async def get_config():
         "llm_catalog": [{"label": e["label"]} for e in LLM_CATALOG],
         "whisper_catalog": [{"label": e["label"]} for e in WHISPER_CATALOG],
         "bgm_genres": list(BGM_CATALOG.keys()),
+        "gemini_active": bool(os.getenv("GEMINI_API_KEY")),
     }
 
 @app.get("/api/heartbeat")
@@ -520,11 +523,19 @@ def _run_render(req: RenderRequest, task_id: str):
         
         clip = _state["clips"][req.clip_id].copy() # Copy to avoid mutating global state
         
-        # Prevent double-mixing: if user selected a genre, disable AI-suggested BGM
-        if req.bg_music_genre and req.bg_music_genre != "None":
-            clip["music_query"] = ""
+        # Defer BGM entirely to the user's bg_music_genre selection
+        clip["music_query"] = ""
             
         input_mp4 = os.path.join(WORK_DIR, "source.mp4")
+        if not os.path.exists(input_mp4):
+            url = _state.get("current_url")
+            if url:
+                ui_logger.log(f"📥 Source video missing from session storage. Auto-downloading from: {url}...")
+                download_video(url, WORK_DIR, cookie_path=COOKIE_PATH)
+                ui_logger.log("✅ Source video downloaded successfully.")
+            else:
+                raise FileNotFoundError("Source video file is missing and no current URL is available in session state.")
+
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         theme = clip.get("theme", "Storytime")
         
@@ -607,6 +618,15 @@ def _run_bulk_render(req: BulkRenderRequest):
                 ui_logger.log(f"RENDER_STATUS|{idx}|queued")
             
         input_mp4 = os.path.join(WORK_DIR, "source.mp4")
+        if not os.path.exists(input_mp4):
+            url = _state.get("current_url")
+            if url:
+                ui_logger.log(f"📥 Source video missing from session storage. Auto-downloading from: {url}...")
+                download_video(url, WORK_DIR, cookie_path=COOKIE_PATH)
+                ui_logger.log("✅ Source video downloaded successfully.")
+            else:
+                raise FileNotFoundError("Source video file is missing and no current URL is available in session state.")
+
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         
         for idx in target_ids:
@@ -619,9 +639,8 @@ def _run_bulk_render(req: BulkRenderRequest):
             ui_logger.log(f"RENDER_STATUS|{idx}|rendering")
             clip = _state["clips"][idx].copy()
             
-            # Prevent double-mixing
-            if req.bg_music_genre and req.bg_music_genre != "None":
-                clip["music_query"] = ""
+            # Defer BGM entirely to the user's bg_music_genre selection
+            clip["music_query"] = ""
                 
             theme = clip.get("theme", "Storytime")
             

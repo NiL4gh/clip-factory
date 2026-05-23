@@ -5,10 +5,36 @@ import shutil
 import cv2
 import urllib.request
 import re as _re
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from shorts_generator.config import FONT_PATH
 from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
 from .logger import ui_logger
+
+_DETECTED_ENCODER = None
+
+def _get_best_encoder():
+    global _DETECTED_ENCODER
+    if _DETECTED_ENCODER is not None:
+        return _DETECTED_ENCODER
+
+    _DETECTED_ENCODER = "libx264"
+    try:
+        res = subprocess.run(["ffmpeg", "-encoders"], capture_output=True, text=True, timeout=5)
+        if res.returncode == 0 and "h264_nvenc" in res.stdout:
+            test_cmd = [
+                "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.1",
+                "-c:v", "h264_nvenc", "-f", "null", "-"
+            ]
+            test_res = subprocess.run(test_cmd, capture_output=True, timeout=5)
+            if test_res.returncode == 0:
+                _DETECTED_ENCODER = "h264_nvenc"
+                ui_logger.log("⚡ Nvidia NVENC GPU hardware acceleration detected and enabled!")
+    except Exception:
+        pass
+
+    return _DETECTED_ENCODER
 
 # Ensure we have our premium font (Montserrat-Bold) available on Colab
 _FONT_DIR  = "/content/work"
@@ -123,16 +149,28 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
         f"between(t\\,{s:.3f}\\,{e:.3f})" for s, e in non_silent
     )
     
+    encoder = _get_best_encoder()
+    enc_args = ["-c:v", encoder]
+    if encoder == "h264_nvenc":
+        enc_args.extend(["-preset", "fast"])
+    else:
+        enc_args.extend(["-preset", "fast", "-crf", "16"])
+
     trim_cmd = [
         "ffmpeg", "-y", "-i", input_path,
         "-vf", f"select='{select_parts}',setpts=N/FRAME_RATE/TB",
         "-af", f"aselect='{select_parts}',asetpts=N/SR/TB",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "16",
-        "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
+    ] + enc_args + [
+        "-profile:v", "high", "-pix_fmt", "yuv420p",
+    ]
+    if encoder == "libx264":
+        trim_cmd.extend(["-x264opts", "keyint=30"])
+
+    trim_cmd.extend([
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart",
         output_path
-    ]
+    ])
     try:
         subprocess.run(trim_cmd, check=True, capture_output=True, text=True)
         return output_path
@@ -191,8 +229,11 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
                 break
 
             h, w = frame.shape[:2]
-            # Resize for speed
-            small = cv2.resize(frame, (w // 2, h // 2))
+            # Resize aggressively smaller (max width 320) for 10x faster CPU processing in MediaPipe
+            target_scale_w = 320
+            scale_factor = target_scale_w / w
+            target_scale_h = int(h * scale_factor)
+            small = cv2.resize(frame, (target_scale_w, target_scale_h))
             rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
             res = detector.process(rgb)
 
@@ -268,7 +309,7 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
 
 # ── CapCut-Style Presets ─────────────────────────────────────────────────────
 _CAPTION_STYLES = {
-    "Classic": {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H0000FFFF&", "outline": 3, "shadow": 0, "bold": 1},
+    "Classic": {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H0000FFFF&", "outline": 4, "shadow": 2, "bold": 1},
     "Pop":     {"font_size": 95,  "primary": "&H00FFFFFF&", "highlight": "&H00FF00FF&", "outline": 4, "shadow": 2, "bold": 1},
     "Glow":    {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H00FF00FF&", "outline": 2, "shadow": 8, "bold": 1},
     "Outline": {"font_size": 92,  "primary": "&H00FFFFFF&", "highlight": "&H0000FF00&", "outline": 5, "shadow": 0, "bold": 1},
@@ -300,8 +341,9 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,120,1",
-        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,120,1"
+        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,360,1",
+        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,360,1",
+        f"Style: Header,{font_name},64,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,2,8,40,40,180,1"
     ]
     
     if kwargs.get("magic_hook_text"):
@@ -336,11 +378,32 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         h = int(secs // 3600); m = int((secs % 3600) // 60); s = int(secs % 60); cs = int((secs - int(secs)) * 100)
         return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
+    seg_duration = max(0, words[-1]['end'] - time_offset) if words else 0.0
+    if kwargs.get("header_text") and seg_duration > 0:
+        header_text = kwargs["header_text"].strip().upper()
+        # Wrap header text to 2 lines if it is too long (e.g. > 20 characters)
+        words_list = header_text.split()
+        current_line = ""
+        wrapped_lines = []
+        for word in words_list:
+            if len(current_line) + len(word) + (1 if current_line else 0) > 20:
+                wrapped_lines.append(current_line)
+                current_line = word
+            else:
+                if current_line:
+                    current_line += " " + word
+                else:
+                    current_line = word
+        if current_line:
+            wrapped_lines.append(current_line)
+        wrapped_header = "\\N".join(wrapped_lines)
+        lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
+
     chunks = []
     curr = []
     for w in words:
-        # Enforce strict word wrapping of max 4 words per line
-        if len(curr) >= 4:
+        # Enforce strict word wrapping of max 3 words per line
+        if len(curr) >= 3:
             chunks.append(curr)
             curr = []
         curr.append(w)
@@ -570,12 +633,14 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     input_idx += 1
 
         sfx_path = os.path.join(work_dir, "pop.mp3")
-        sfx_ok = get_sfx(sfx_path) and os.path.exists(sfx_path)
-        if not sfx_ok:
-            ui_logger.log("SFX download failed — skipping pop sounds (clip will still render).")
-            sfx_delays = []  # clear so audio filter is skipped safely
-        for delay in sfx_delays:
-            inputs.extend(["-i", sfx_path])
+        if sfx_delays:
+            sfx_ok = get_sfx(sfx_path) and os.path.exists(sfx_path)
+            if not sfx_ok:
+                ui_logger.log("SFX download failed — skipping pop sounds (clip will still render).")
+                sfx_delays = []  # clear so audio filter is skipped safely
+            else:
+                for delay in sfx_delays:
+                    inputs.extend(["-i", sfx_path])
 
         # FIX: snapshot the SFX starting index NOW, before ASS subtitles and
         # flash drawbox increment input_idx for non-input filter operations.
@@ -591,7 +656,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
             _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st,
                           theme=theme, style_mode=caption_style, position=caption_pos,
-                          magic_hook_text=mh_text)
+                          magic_hook_text=mh_text, header_text=clip_data.get("title", ""))
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
             safe_fonts_dir = _FONT_DIR.replace("\\", "/").replace(":", "\\:")
@@ -638,12 +703,24 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             
         cmd.extend(inputs)
         
+        encoder = _get_best_encoder()
+        enc_args = ["-c:v", encoder]
+        if encoder == "h264_nvenc":
+            enc_args.extend(["-preset", "fast"])
+        else:
+            enc_args.extend(["-preset", "fast", "-crf", "16"])
+
         # High quality encoding parameters, enforcing a hard end to prevent infinitely hanging processes
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", f"[{current_v}]", "-map", audio_map,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "16",
-            "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
+        ] + enc_args + [
+            "-profile:v", "high", "-pix_fmt", "yuv420p",
+        ])
+        if encoder == "libx264":
+            cmd.extend(["-x264opts", "keyint=30"])
+
+        cmd.extend([
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
             "-movflags", "+faststart",
             "-t", str(round(seg_et - seg_st, 3)),  # Explicit duration — prevents looped B-roll inputs from truncating segment
@@ -655,16 +732,23 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True)
             import re as _re_ffmpeg
             total_time_secs = seg_et - seg_st
+            last_pct = -1
+            stderr_lines = []
             for line in proc.stderr:
+                stderr_lines.append(line)
                 m = _re_ffmpeg.search(r'time=(\d+):(\d+):(\d+\.\d+)', line)
                 if m and total_time_secs > 0:
                     h, m_m, s = float(m.group(1)), float(m.group(2)), float(m.group(3))
                     cur_secs = h*3600 + m_m*60 + s
                     pct = min(99, int((cur_secs / total_time_secs) * 100))
-                    ui_logger.log(f"PROGRESS|{pct}|Rendering {pct}%...")
+                    if pct > last_pct:
+                        ui_logger.log(f"PROGRESS|{pct}|Rendering {pct}%...")
+                        last_pct = pct
             proc.wait()
             if proc.returncode != 0:
-                raise subprocess.CalledProcessError(proc.returncode, cmd, stderr="FFmpeg failed")
+                err_msg = "".join(stderr_lines[-20:])  # last 20 lines of stderr
+                ui_logger.log(f"FFmpeg error details:\n{err_msg}")
+                raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=err_msg)
             ui_logger.log(f"PROGRESS|100|Rendering 100%...")
         except subprocess.CalledProcessError as e:
             ui_logger.log(f"FFmpeg error: {e.stderr[-500:] if hasattr(e, 'stderr') and e.stderr else 'unknown'}")
@@ -700,21 +784,43 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         fc_inputs = []
         for s in rendered_segs:
             fc_inputs.extend(["-i", s])
-        fc_str = (
-            "".join(f"[{i}:v][{i}:a]" for i in range(n_segs))
+        
+        # Apply fps and setsar normalization to every segment before concatenating 
+        # to prevent FFmpeg hangs from frame-rate/timebase mismatches
+        fc_str = ""
+        for i in range(n_segs):
+            fc_str += f"[{i}:v]fps=30,settb=1/30,setsar=1[v{i}];"
+        fc_str += (
+            "".join(f"[v{i}][{i}:a]" for i in range(n_segs))
             + f"concat=n={n_segs}:v=1:a=1[v_concat_raw][a_concat_raw];[v_concat_raw]setpts=PTS-STARTPTS[v_concat];[a_concat_raw]asetpts=PTS-STARTPTS[a_concat]"
         )
+
+        encoder = _get_best_encoder()
+        enc_args = ["-c:v", encoder]
+        if encoder == "h264_nvenc":
+            enc_args.extend(["-preset", "fast"])
+        else:
+            enc_args.extend(["-preset", "fast", "-crf", "16"])
+
         concat_cmd = ["ffmpeg", "-y"] + fc_inputs + [
             "-filter_complex", fc_str,
             "-map", "[v_concat]", "-map", "[a_concat]",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "16",
-            "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
+        ] + enc_args + [
+            "-profile:v", "high", "-pix_fmt", "yuv420p",
+        ]
+        if encoder == "libx264":
+            concat_cmd.extend(["-x264opts", "keyint=30"])
+
+        concat_cmd.extend([
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
             "-movflags", "+faststart",
             final_output
-        ]
+        ])
         try:
-            subprocess.run(concat_cmd, check=True, capture_output=True, text=True)
+            subprocess.run(concat_cmd, check=True, capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            ui_logger.log("FFmpeg concat timed out after 60s!")
+            raise RuntimeError("FFmpeg concatenation timed out due to segment stream mismatch.")
         except subprocess.CalledProcessError as e:
             ui_logger.log(f"FFmpeg concat error: {e.stderr[-500:]}")
             raise
