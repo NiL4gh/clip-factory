@@ -14,44 +14,125 @@ CHUNK_CHARS = 3000  # More granular chunks to ensure we identify 5-10+ topics fo
 
 
 # ── Opus-Style Viral Director Prompt ─────────────────────────────────────────
-_VIRALITY_BASE = """You are an exhaustive video editor. Your goal is to find EVERY single distinct thought, story, or high-value moment in this transcript that could stand alone as a Short. Do not force content. If a section is boring, skip it. If a section has 5 good moments, extract all 5. A 2-hour podcast typically yields 15-30 natural clips. Leave no good content behind.
+_VIRALITY_BASE = """You are an expert short-form video editor who has studied thousands of viral TikTok, Instagram Reels, and YouTube Shorts clips. Your job is to hunt through this transcript and identify every moment that has the natural shape of a viral clip. A 2-hour podcast typically contains 15-30 of these moments. Your job is to find all of them.
 
 TOTAL VIDEO DURATION: {video_duration_str}
-CRITICAL: Do not force quotas. Just extract the natural clips.
 
 ═══════════════════════════════════════════════════════
-VIRALITY SIGNALS (ranked by importance):
+THE SHAPE OF A VIRAL CLIP — LEARN THIS PATTERN:
 
-1. SCROLL-STOPPING HOOKS (The first 3 seconds)
-   - Curiosity gaps: "The reason most people fail at X is..."
-   - Bold/contrarian claims: "X is actually a scam, here's the truth."
+Every viral clip from a podcast or interview has the same three-part shape.
+Your job is to find moments in the transcript where this shape already exists
+naturally in what the speaker said. You are not creating structure — you are
+recognizing it.
 
-2. OPINION BOMBS & HOT TAKES (High shareability)
-   - Statements that divide the audience.
-   - Challenging conventional wisdom.
+PART 1 — THE ENTRY POINT (the first thing the viewer hears):
+This is a line that makes a scrolling viewer stop and watch. It works because
+it creates an open question in their mind — something feels unresolved, surprising,
+or counterintuitive. They have to keep watching to understand it.
 
-3. REVELATION & PROOF (High save rate)
-   - Insider secrets or specific "how-to" steps.
+What it sounds like in real transcripts:
+- A bold claim that challenges something most people believe:
+  "The problem with goal-setting is that it's actually working against you."
+- A specific surprising detail that implies a bigger story:
+  "I fired my entire sales team on a Tuesday and revenue went up 40%."
+- A question that the viewer immediately wants the answer to:
+  "Why do the most disciplined people I know get the least done?"
+- A contradiction that doesn't make sense yet:
+  "The harder I worked on my marriage, the worse it got."
 
-4. EMOTIONAL PEAKS
-   - Genuine surprise, frustration, or breakthrough realizations.
+What it does NOT sound like:
+- Introductions: "So today I want to talk about..."
+- Context-setting: "A little background on this topic..."
+- Transitions: "So moving on to the next point..."
+- Agreements: "Yeah, exactly, that's a great point..."
+
+PART 2 — THE BUILD (the middle of the clip):
+This is where the speaker explains, proves, or tells the story behind the
+entry point. The viewer stays because they want the answer to the question
+the entry point created. The build is what separates a viral clip from a
+viral quote — it earns the payoff through substance.
+
+What it sounds like:
+- The speaker walks through the logic behind their claim step by step
+- The speaker tells a specific story or gives a concrete example
+- The speaker challenges the conventional wisdom and explains why it's wrong
+- The speaker reveals what they discovered, learned, or experienced
+
+The build must be substantial — at least 3-5 sentences of development.
+A clip with a great entry point and no build feels hollow and gets skipped.
+
+PART 3 — THE LANDING (the last thing the viewer hears):
+This is the line that closes the loop. The viewer was holding a question
+in their mind since the entry point — the landing answers it in a way that
+feels satisfying, surprising, or memorable. This is the line people screenshot,
+share, or quote. It is the reason the clip was worth watching.
+
+What it sounds like:
+- A reframe that makes the viewer see something differently:
+  "So the goal was never the goal. The goal was who you had to become to get it."
+- A hard truth delivered plainly:
+  "Most people aren't failing because they lack discipline. They're failing
+   because they're optimizing for the wrong thing."
+- A specific actionable conclusion:
+  "Stop setting outcome goals. Set process goals. Track the behavior, not the result."
+- An emotional release — a moment of genuine humor, vulnerability, or relief
+
+The landing MUST be the actual conclusion of the thought. If the speaker
+is still mid-explanation, mid-story, or mid-argument when you cut — the
+clip has no landing. Keep reading the transcript forward until the thought
+closes naturally. That closing line is your landing.
 
 ═══════════════════════════════════════════════════════
-CRITICAL EXTRACTION RULES:
+HOW TO HUNT FOR THESE MOMENTS:
 
-- Every clip MUST start with a hook that grabs attention in the first 3 seconds.
-- Every clip MUST have a clear narrative arc: Hook (Beginning) -> Context/Value (Middle) -> Payoff/Conclusion (End).
-- NO CLIFFHANGERS OR INCOMPLETE THOUGHTS: The clip MUST end on a fully resolved, completed thought. It is strictly BANNED to end a clip on a setup sentence, transition, or conjunction (e.g., ending with "but if I said", "and then", "so we", "because they", "if you").
-- COMPLETED PAYOFF: If a clip introduces a comparison or contrast (e.g., "if I said A... but if I said B..."), the clip MUST contain both sides of the comparison to make sense. Never cut off before the payoff.
-- Extract the longest possible natural narrative arc. A clip MUST be a single, continuous, unbroken story or argument.
-- Each clip's ideal_transcript MUST be a complete, multi-sentence paragraph of at least 50 to 150 words (30-60 seconds of speech).
-- NEVER extract single-sentence statements or quick phrases that last less than 15 seconds. Ensure the extracted text flows logically with a beginning, middle, and end.
-- Only extract multi-segment clips if the speaker pauses for more than 3 seconds or goes completely off-topic in the middle of a great point. Do NOT stitch unrelated thoughts together just to make the video longer.
-- A 60-second continuous thought is infinitely better than a 60-second stitched Frankenstein clip.
-- Do NOT include timestamps or segment numbers. Only the literal spoken words.
-- The clip MUST end on a COMPLETED SENTENCE. Never cut off mid-thought.
-- Each clip must be 100% SELF-CONTAINED. A viewer who sees ONLY this clip must understand the full story.
-- Do NOT hallucinate or invent content. Only use exact spoken words from the transcript.
+Read through the transcript and look for these trigger patterns that signal
+a complete viral clip is nearby:
+
+TRIGGER 1 — CONTRAST STATEMENTS:
+Any time the speaker says "but", "however", "the problem is", "here's the
+thing", "what most people don't realize", "the truth is", "what nobody
+tells you" — a clip is likely starting. Read forward from that point and
+find where the thought fully closes.
+
+TRIGGER 2 — SPECIFIC NUMBERS OR DETAILS:
+Any time the speaker uses a specific number, statistic, or concrete detail
+("10 years", "40%", "every single time", "$50,000") — these signal a real
+story or real evidence is coming. These clips have high credibility and
+shareability.
+
+TRIGGER 3 — PERSONAL STORIES WITH A LESSON:
+Any time the speaker says "I remember when", "there was this moment",
+"I used to think", "I made this mistake" — a story arc is beginning.
+Read forward until the speaker explicitly draws the lesson from the story.
+That lesson is your landing.
+
+TRIGGER 4 — DIRECT AUDIENCE ADDRESS:
+Any time the speaker shifts from talking about themselves or others to
+talking directly to the listener — "if you're struggling with", "here's
+what I want you to understand", "stop doing this" — these clips feel
+personal and convert well because the viewer feels spoken to directly.
+
+TRIGGER 5 — OPINION BOMBS:
+Any time the speaker says something that a significant portion of the
+audience would disagree with or find surprising — these clips generate
+comments and shares because they provoke a reaction. Find where the
+speaker defends or explains the opinion. That explanation is the build.
+The original statement is the entry point.
+
+═══════════════════════════════════════════════════════
+EXTRACTION RULES:
+
+- Extract EVERY moment that has a clear Entry Point, Build, and Landing.
+  If a topic section has 5 such moments, extract all 5.
+- Each clip's ideal_transcript must be 50 to 150 words of continuous
+  spoken text. This represents approximately 30-60 seconds of speech.
+- Always extend the ideal_transcript forward until the thought fully
+  closes. Never end on a sentence that is still building toward something.
+- Never cut in the middle of a sentence, story, or argument.
+- Only the exact spoken words from the transcript. No invented content.
+- Do not stitch unrelated thoughts together. One continuous passage only.
+- Do not extract intros, outros, sponsor reads, or off-topic transitions.
 
 NEVER EXTRACT any of the following regardless of how interesting the
 words sound:
@@ -226,11 +307,9 @@ def _get_text_slice(full_text: str, start_time: float, end_time: float) -> str:
         m = re.match(r'^\[(\d+\.?\d*)s\]', line.strip())
         if m:
             t = float(m.group(1))
-            # Provide 5s of preceding context and 25s of succeeding context to prevent thought cutoffs
-            if start_time - 5 <= t <= end_time + 25:
+            if start_time - 5 <= t <= end_time + 5:
                 result.append(line)
     return "\n".join(result) if result else full_text[:CHUNK_CHARS]
-
 
 def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> list:
     if not ideal_transcript or not raw_words:
@@ -620,7 +699,7 @@ def get_highlights(
     schema = (
         '[\n'
         '  {\n'
-        '    "title": "Strictly 3 to 5 words, ultra high-impact viral hook/punchline in ALL CAPS (e.g., THE WEALTH LIE, ACCUMULATE DEBT, STOP SAVING NOW, BUILD IN 30 SECONDS). Must be highly dramatic and act as a screen-anchor header.",\n'
+        '    "title": "Strictly max 8 words, present tense, high impact, no filler (e.g., Build X in 30 seconds)",\n'
         '    "virality_score": 85,\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
@@ -628,7 +707,8 @@ def get_highlights(
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
-        '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"]\n'
+        '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
+        '    "hook_text": "Max 8 words. The punchline of this clip — the single most surprising or counterintuitive conclusion it delivers. NOT a summary. NOT copied from the transcript. A bold declarative statement that creates a curiosity gap: the viewer reads it and thinks wait, how is that possible? Use plain conversational language. No hashtags, no emojis, no colons, no filler phrases like Here is why or The truth about. Reflect the PAYOFF, not the topic. Examples: Your goals are making you fail. / Busy people get less done. / Most advice is just fear in disguise."\n'
         '  }\n'
         ']'
     )
@@ -819,7 +899,7 @@ def get_highlights(
                 "virality_score": score,
                 "energy_score": energy_score,
                 "hook_sentence": hook_sentence,
-                "hook_text": hook_sentence,
+                "hook_text": h.get("hook_text", hook_sentence),
                 "virality_reason": h.get("virality_reason", ""),
                 "theme": theme,
                 "music_query": h.get("music_query", ""),
