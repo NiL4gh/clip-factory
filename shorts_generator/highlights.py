@@ -41,6 +41,8 @@ CRITICAL EXTRACTION RULES:
 
 - Every clip MUST start with a hook that grabs attention in the first 3 seconds.
 - Every clip MUST have a clear narrative arc: Hook (Beginning) -> Context/Value (Middle) -> Payoff/Conclusion (End).
+- NO CLIFFHANGERS OR INCOMPLETE THOUGHTS: The clip MUST end on a fully resolved, completed thought. It is strictly BANNED to end a clip on a setup sentence, transition, or conjunction (e.g., ending with "but if I said", "and then", "so we", "because they", "if you").
+- COMPLETED PAYOFF: If a clip introduces a comparison or contrast (e.g., "if I said A... but if I said B..."), the clip MUST contain both sides of the comparison to make sense. Never cut off before the payoff.
 - Extract the longest possible natural narrative arc. A clip MUST be a single, continuous, unbroken story or argument.
 - Each clip's ideal_transcript MUST be a complete, multi-sentence paragraph of at least 50 to 150 words (30-60 seconds of speech).
 - NEVER extract single-sentence statements or quick phrases that last less than 15 seconds. Ensure the extracted text flows logically with a beginning, middle, and end.
@@ -224,9 +226,11 @@ def _get_text_slice(full_text: str, start_time: float, end_time: float) -> str:
         m = re.match(r'^\[(\d+\.?\d*)s\]', line.strip())
         if m:
             t = float(m.group(1))
-            if start_time - 5 <= t <= end_time + 5:
+            # Provide 5s of preceding context and 25s of succeeding context to prevent thought cutoffs
+            if start_time - 5 <= t <= end_time + 25:
                 result.append(line)
     return "\n".join(result) if result else full_text[:CHUNK_CHARS]
+
 
 def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> list:
     if not ideal_transcript or not raw_words:
@@ -616,7 +620,7 @@ def get_highlights(
     schema = (
         '[\n'
         '  {\n'
-        '    "title": "Strictly max 8 words, present tense, high impact, no filler (e.g., Build X in 30 seconds)",\n'
+        '    "title": "Strictly 3 to 5 words, ultra high-impact viral hook/punchline in ALL CAPS (e.g., THE WEALTH LIE, ACCUMULATE DEBT, STOP SAVING NOW, BUILD IN 30 SECONDS). Must be highly dramatic and act as a screen-anchor header.",\n'
         '    "virality_score": 85,\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'

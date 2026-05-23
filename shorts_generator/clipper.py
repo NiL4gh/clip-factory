@@ -275,6 +275,17 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
     # Sort keypoints by time
     keypoints.sort(key=lambda k: k[0])
 
+    # If the maximum deviation between all face crop_x coordinates is small (e.g. < 35 pixels),
+    # then the speaker is practically stationary. Keep it completely static to avoid creeping/pan creep!
+    if len(keypoints) > 1:
+        cx_vals = [kp[1] for kp in keypoints]
+        min_cx = min(cx_vals)
+        max_cx = max(cx_vals)
+        if (max_cx - min_cx) < 35:
+            avg_cx = int(sum(cx_vals) / len(cx_vals))
+            ui_logger.log(f"  Stationary face detected (movement spread: {max_cx - min_cx}px < 35px). Forcing stable static crop.")
+            keypoints = [(0.0, avg_cx)]
+
     # If only one keypoint, hold that position
     if len(keypoints) == 1:
         x_expr = str(keypoints[0][1])
@@ -343,11 +354,11 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,360,1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,360,1",
-        f"Style: Header,{font_name},64,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,2,8,40,40,180,1"
+        f"Style: Header,{font_name},76,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,0,8,40,40,80,1"
     ]
     
     if kwargs.get("magic_hook_text"):
-        lines.append(f"Style: MagicHook,{font_name},64,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,3,4,3,8,40,40,120,1")
+        lines.append(f"Style: MagicHook,{font_name},56,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,3,0,8,40,40,180,1")
 
     lines.extend([
         "",
