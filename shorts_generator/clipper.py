@@ -218,6 +218,7 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
     sample_interval = 2.0
     keypoints = []  # list of (relative_time, crop_x)
 
+    FACE_MOVE_THRESHOLD_PX = 30
     if detector:
         t = 0.0
         frame_idx = 0
@@ -243,7 +244,8 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
                 face_cx = int((bbox.xmin + bbox.width / 2) * w)
                 # Convert face center to crop X (top-left of crop window)
                 cx = max(0, min(w - crop_w, face_cx - crop_w // 2))
-                keypoints.append((t, cx))
+                if not keypoints or abs(cx - keypoints[-1][1]) > FACE_MOVE_THRESHOLD_PX:
+                    keypoints.append((t, cx))
 
             frame_idx += 1
             if frame_idx >= 3 and not keypoints:
@@ -275,21 +277,9 @@ def _generate_dynamic_crop(source_video, seg_st, seg_et):
     # Sort keypoints by time
     keypoints.sort(key=lambda k: k[0])
 
-    # If the maximum deviation between all face crop_x coordinates is small (e.g. < 35 pixels),
-    # then the speaker is practically stationary. Keep it completely static to avoid creeping/pan creep!
-    if len(keypoints) > 1:
-        cx_vals = [kp[1] for kp in keypoints]
-        min_cx = min(cx_vals)
-        max_cx = max(cx_vals)
-        if (max_cx - min_cx) < 35:
-            avg_cx = int(sum(cx_vals) / len(cx_vals))
-            ui_logger.log(f"  Stationary face detected (movement spread: {max_cx - min_cx}px < 35px). Forcing stable static crop.")
-            keypoints = [(0.0, avg_cx)]
-
-    # If only one keypoint, hold that position
+    # If only one keypoint, hold that position by duplicating it at the segment duration
     if len(keypoints) == 1:
-        x_expr = str(keypoints[0][1])
-        return f"crop={crop_w}:{crop_h}:{x_expr}:0"
+        keypoints.append((duration, keypoints[0][1]))
 
     # Build piecewise linear interpolation using nested if(between(...))
     # Each segment: if between(t, t0, t1) then lerp(x0, x1, (t-t0)/(t1-t0))
@@ -354,11 +344,11 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,360,1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,360,1",
-        f"Style: Header,{font_name},76,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,0,8,40,40,80,1"
+        f"Style: Header,{font_name},64,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,2,8,40,40,180,1"
     ]
     
     if kwargs.get("magic_hook_text"):
-        lines.append(f"Style: MagicHook,{font_name},56,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,3,0,8,40,40,180,1")
+        lines.append(f"Style: MagicHook,{font_name},52,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,3,4,3,8,40,40,60,1")
 
     lines.extend([
         "",
@@ -366,13 +356,19 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
     ])
     
+    def fmt_time(secs):
+        h = int(secs // 3600); m = int((secs % 3600) // 60); s = int(secs % 60); cs = int((secs - int(secs)) * 100)
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+    seg_duration = max(0, words[-1]['end'] - time_offset) if words else 0.0
+
     if kwargs.get("magic_hook_text"):
         hook_text = kwargs['magic_hook_text']
         words_list = hook_text.split()
         current_line = ""
         wrapped_lines = []
         for word in words_list:
-            if len(current_line) + len(word) + (1 if current_line else 0) > 22:
+            if len(current_line) + len(word) + (1 if current_line else 0) > 18:
                 wrapped_lines.append(current_line)
                 current_line = word
             else:
@@ -383,13 +379,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         if current_line:
             wrapped_lines.append(current_line)
         wrapped_text = "\\N".join(wrapped_lines).upper()
-        lines.append(f"Dialogue: 0,0:00:00.00,0:00:02.50,MagicHook,,0,0,0,,{wrapped_text}")
-
-    def fmt_time(secs):
-        h = int(secs // 3600); m = int((secs % 3600) // 60); s = int(secs % 60); cs = int((secs - int(secs)) * 100)
-        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
-
-    seg_duration = max(0, words[-1]['end'] - time_offset) if words else 0.0
+        lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},MagicHook,,0,0,0,,{wrapped_text}")
     if kwargs.get("header_text") and seg_duration > 0:
         header_text = kwargs["header_text"].strip().upper()
         # Wrap header text to 2 lines if it is too long (e.g. > 20 characters)
@@ -463,6 +453,7 @@ def _generate_text_card(output_path, text, duration, font_file, font_size=64):
         "ffmpeg", "-y",
         "-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=30:d={duration}",
         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+        "-map", "0:v", "-map", "1:a",
         "-vf", vf_filter,
         "-t", str(duration),
         "-c:v", "libx264", "-preset", "fast", "-crf", "16",
@@ -801,8 +792,9 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         fc_str = ""
         for i in range(n_segs):
             fc_str += f"[{i}:v]fps=30,settb=1/30,setsar=1[v{i}];"
+            fc_str += f"[{i}:a]aresample=48000,asetpts=PTS-STARTPTS[a{i}];"
         fc_str += (
-            "".join(f"[v{i}][{i}:a]" for i in range(n_segs))
+            "".join(f"[v{i}][a{i}]" for i in range(n_segs))
             + f"concat=n={n_segs}:v=1:a=1[v_concat_raw][a_concat_raw];[v_concat_raw]setpts=PTS-STARTPTS[v_concat];[a_concat_raw]asetpts=PTS-STARTPTS[a_concat]"
         )
 
@@ -828,9 +820,9 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             final_output
         ])
         try:
-            subprocess.run(concat_cmd, check=True, capture_output=True, text=True, timeout=60)
+            subprocess.run(concat_cmd, check=True, capture_output=True, text=True, timeout=300)
         except subprocess.TimeoutExpired:
-            ui_logger.log("FFmpeg concat timed out after 60s!")
+            ui_logger.log("FFmpeg concat timed out after 300s!")
             raise RuntimeError("FFmpeg concatenation timed out due to segment stream mismatch.")
         except subprocess.CalledProcessError as e:
             ui_logger.log(f"FFmpeg concat error: {e.stderr[-500:]}")
