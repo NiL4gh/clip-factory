@@ -67,8 +67,10 @@ const DEFAULT_SETTINGS = {
   magic_hook: true,
   remove_silence: true,
   caption_style: "Classic",
-  caption_pos: "Bottom",
+  caption_pos: "bottom",
   bg_music_genre: "None",
+  bg_style: "black",
+  hook_position: "top",
 };
 
 export default function Dashboard() {
@@ -931,6 +933,19 @@ export default function Dashboard() {
 
             <div className="flex-shrink-0 space-y-4">
               <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-500">BACKGROUND</span>
+                <select 
+                  value={getSettings(selectedClip).bg_style}
+                  onChange={(e) => updateSetting(selectedClip, "bg_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  <option value="black">Black</option>
+                  <option value="blur">Blur</option>
+                  <option value="gradient">Gradient</option>
+                  <option value="brand">Brand</option>
+                </select>
+              </div>
+              <div className="space-y-1">
                 <span className="text-xs font-bold text-slate-500">Caption Style</span>
                 <select
                   value={getSettings(selectedClip).caption_style}
@@ -958,23 +973,13 @@ export default function Dashboard() {
                   onChange={(e) => updateSetting(selectedClip, "caption_pos", e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
-                  {["Top", "Center", "Bottom"].map(s => <option key={s} value={s}>{s}</option>)}
+                  <option value="bottom">Inside Bottom</option>
+                  <option value="top">Inside Top</option>
                 </select>
               </div>
             </div>
             
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Eye className="w-3.5 h-3.5 text-indigo-500" /> Face Tracking
-                  </span>
-                </div>
-                <label className="setting-toggle">
-                  <input type="checkbox" checked={getSettings(selectedClip).face_center} onChange={(e) => updateSetting(selectedClip, "face_center", e.target.checked)} />
-                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                </label>
-              </div>
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -1049,6 +1054,19 @@ export default function Dashboard() {
 
             <div className="flex-shrink-0 space-y-4">
               <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-500">BACKGROUND</span>
+                <select 
+                  value={globalSettings.bg_style}
+                  onChange={(e) => updateGlobalSetting("bg_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  <option value="black">Black</option>
+                  <option value="blur">Blur</option>
+                  <option value="gradient">Gradient</option>
+                  <option value="brand">Brand</option>
+                </select>
+              </div>
+              <div className="space-y-1">
                 <span className="text-xs font-bold text-slate-500">Caption Style</span>
                 <select
                   value={globalSettings.caption_style}
@@ -1076,23 +1094,13 @@ export default function Dashboard() {
                   onChange={(e) => updateGlobalSetting("caption_pos", e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
-                  {["Top", "Center", "Bottom"].map(s => <option key={s} value={s}>{s}</option>)}
+                  <option value="bottom">Inside Bottom</option>
+                  <option value="top">Inside Top</option>
                 </select>
               </div>
             </div>
             
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Eye className="w-3.5 h-3.5 text-indigo-500" /> Face Tracking
-                  </span>
-                </div>
-                <label className="setting-toggle">
-                  <input type="checkbox" checked={globalSettings.face_center} onChange={(e) => updateGlobalSetting("face_center", e.target.checked)} />
-                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                </label>
-              </div>
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">

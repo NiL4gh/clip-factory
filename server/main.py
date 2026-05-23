@@ -154,6 +154,8 @@ class RenderRequest(BaseModel):
     broll_intensity: str = "None"
     excluded_sentences: List[str] = []
     title: Optional[str] = None
+    bg_style: str = "black"
+    hook_position: str = "top"
 
 class BulkRenderRequest(BaseModel):
     face_center: bool = True
@@ -165,6 +167,8 @@ class BulkRenderRequest(BaseModel):
     broll_intensity: str = "None"
     clip_ids: Optional[List[int]] = None
     titles: Optional[dict] = None
+    bg_style: str = "black"
+    hook_position: str = "top"
 
 class SessionRequest(BaseModel):
     url: str
@@ -602,7 +606,9 @@ def _run_render(req: RenderRequest, task_id: str):
             magic_hook=req.magic_hook,
             remove_silence=req.remove_silence,
             broll_intensity=req.broll_intensity,
-            all_sentences=all_sentences
+            all_sentences=all_sentences,
+            bg_style=req.bg_style,
+            hook_position=req.hook_position
         )
         
         # ── BGM mixing via enhance_clip ──
@@ -706,7 +712,9 @@ def _run_bulk_render(req: BulkRenderRequest):
                     magic_hook=req.magic_hook,
                     remove_silence=req.remove_silence,
                     broll_intensity=req.broll_intensity,
-                    all_sentences=[]
+                    all_sentences=[],
+                    bg_style=req.bg_style,
+                    hook_position=req.hook_position
                 )
                 
                 # BGM mixing

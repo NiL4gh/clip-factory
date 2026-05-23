@@ -12,6 +12,80 @@ from shorts_generator.config import FONT_PATH
 from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
 from .logger import ui_logger
 
+# ── 1:1 Layout constants & Background frame extractor ────────────────────────
+LAYOUT_TOP_ZONE_H  = 320   # px — hook text zone above video
+LAYOUT_VIDEO_SIZE  = 1080  # px — 1:1 video square width/height
+LAYOUT_VIDEO_Y     = 320   # px — y offset where video square starts
+LAYOUT_BOT_ZONE_H  = 520   # px — caption/hook zone below video
+
+def _extract_bg_frame(input_path: str, timestamp: float, output_path: str) -> bool:
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-ss", str(timestamp), "-i", input_path,
+            "-vframes", "1", "-q:v", "2", output_path
+        ]
+        res = subprocess.run(cmd, capture_output=True)
+        if res.returncode == 0 and os.path.exists(output_path):
+            return True
+        return False
+    except Exception as e:
+        ui_logger.log(f"Warning: _extract_bg_frame failed: {e}")
+        return False
+
+def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: float, clip_duration: float):
+    # VIDEO LAYER
+    video_layer = (
+        "[0:v]crop=ih:ih,scale=1080:1080,setsar=1,"
+        "eq=saturation=1.25:gamma=0.95:contrast=1.15:"
+        "brightness=0.02,vignette[video_graded]"
+    )
+
+    # BACKGROUND LAYER — four branches on bg_style
+    bg_style_lower = bg_style.lower() if bg_style else "black"
+    if bg_style_lower == "black":
+        extra_input_args = []
+        bg_layer = f"color=c=black:s=1080x1920:r={fps}[bg]"
+    elif bg_style_lower == "brand":
+        extra_input_args = []
+        bg_layer = f"color=c=0x0f172a:s=1080x1920:r={fps}[bg]"
+    elif bg_style_lower == "blur":
+        extra_input_args = [
+            "-loop", "1",
+            "-t", str(clip_duration),
+            "-i", bg_frame_path
+        ]
+        bg_layer = (
+            "[1:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,boxblur=20:5,"
+            "colorchannelmixer=rr=0.6:gg=0.6:bb=0.6[bg]"
+        )
+    elif bg_style_lower == "gradient":
+        extra_input_args = [
+            "-loop", "1",
+            "-t", str(clip_duration),
+            "-i", bg_frame_path
+        ]
+        bg_layer = (
+            "[1:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,boxblur=40:10,"
+            "colorchannelmixer=rr=0.3:gg=0.3:bb=0.3[bg]"
+        )
+    else:
+        # Fallback to black
+        extra_input_args = []
+        bg_layer = f"color=c=black:s=1080x1920:r={fps}[bg]"
+
+    # COMPOSITE
+    composite = (
+        f"[bg][video_graded]overlay=0:{LAYOUT_VIDEO_Y},"
+        "setpts=PTS-STARTPTS[vout]"
+    )
+
+    filter_complex = f"{bg_layer};{video_layer};{composite}"
+    output_map = "[vout]"
+
+    return extra_input_args, filter_complex, output_map
+
 _DETECTED_ENCODER = None
 
 def _get_best_encoder():
@@ -177,137 +251,6 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
     except subprocess.CalledProcessError:
         return input_path
 
-def _generate_dynamic_crop(source_video, seg_st, seg_et):
-    """
-    Samples the video every 2 seconds using MediaPipe face detection,
-    records face center X/Y at each sample point, then generates an FFmpeg
-    crop filter expression with linear interpolation between keypoints.
-
-    Returns an FFmpeg crop expression string like:
-      crop=CW:CH:X_EXPR:Y_EXPR
-
-    where X_EXPR smoothly interpolates between detected face positions.
-    If no face is found in any sample, returns a Ken Burns fallback
-    (5% rightward drift over the segment duration).
-    """
-    cap = cv2.VideoCapture(source_video)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    ret, probe_frame = cap.read()
-    if not ret:
-        cap.release()
-        return None  # Caller will use static crop fallback
-
-    src_h, src_w = probe_frame.shape[:2]
-    # 9:16 crop dimensions from source height
-    crop_w = int(src_h * 9 / 16)
-    crop_h = src_h
-
-    # Clamp crop_w to source width
-    if crop_w > src_w:
-        crop_w = src_w
-
-    # ── Phase 1: Sample faces every 2 seconds using MediaPipe ──
-    detector = None
-    try:
-        import mediapipe.python.solutions.face_detection as mp_face
-        detector = mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.3)
-    except Exception:
-        pass
-
-    duration = seg_et - seg_st
-    sample_interval = 2.0
-    keypoints = []  # list of (relative_time, crop_x)
-
-    FACE_MOVE_THRESHOLD_PX = 30
-    if detector:
-        t = 0.0
-        frame_idx = 0
-        while t <= duration:
-            abs_t = seg_st + t
-            cap.set(cv2.CAP_PROP_POS_MSEC, abs_t * 1000)
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            h, w = frame.shape[:2]
-            # Resize aggressively smaller (max width 320) for 10x faster CPU processing in MediaPipe
-            target_scale_w = 320
-            scale_factor = target_scale_w / w
-            target_scale_h = int(h * scale_factor)
-            small = cv2.resize(frame, (target_scale_w, target_scale_h))
-            rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-            res = detector.process(rgb)
-
-            if res.detections:
-                best = max(res.detections, key=lambda d: d.score[0])
-                bbox = best.location_data.relative_bounding_box
-                face_cx = int((bbox.xmin + bbox.width / 2) * w)
-                # Convert face center to crop X (top-left of crop window)
-                cx = max(0, min(w - crop_w, face_cx - crop_w // 2))
-                if not keypoints or abs(cx - keypoints[-1][1]) > FACE_MOVE_THRESHOLD_PX:
-                    keypoints.append((t, cx))
-
-            frame_idx += 1
-            if frame_idx >= 3 and not keypoints:
-                # If no face is found after checking the first 3 frames, force static crop
-                keypoints.append((0.0, center_x))
-                break
-
-            t += sample_interval
-
-        detector.close()
-
-    cap.release()
-
-    # ── Phase 2: Build FFmpeg crop expression ──
-    center_x = max(0, (src_w - crop_w) // 2)
-
-    if not keypoints:
-        # Ken Burns fallback: slow 5% rightward drift, never static
-        ui_logger.log("  No face detected — applying subtle Ken Burns pan.")
-        max_drift = int(src_w * 0.05)
-        start_x = max(0, center_x - max_drift // 2)
-        end_x = min(src_w - crop_w, start_x + max_drift)
-        if duration > 0:
-            x_expr = f"{start_x}+({end_x}-{start_x})*t/{duration:.2f}"
-        else:
-            x_expr = str(center_x)
-        return f"crop={crop_w}:{crop_h}:{x_expr}:0"
-
-    # Sort keypoints by time
-    keypoints.sort(key=lambda k: k[0])
-
-    # If only one keypoint, hold that position by duplicating it at the segment duration
-    if len(keypoints) == 1:
-        keypoints.append((duration, keypoints[0][1]))
-
-    # Build piecewise linear interpolation using nested if(between(...))
-    # Each segment: if between(t, t0, t1) then lerp(x0, x1, (t-t0)/(t1-t0))
-    parts = []
-    for i in range(len(keypoints) - 1):
-        t0, x0 = keypoints[i]
-        t1, x1 = keypoints[i + 1]
-        dt = t1 - t0
-        if dt <= 0:
-            continue
-        # Half-open interval [t0, t1) — exactly one segment active at any t
-        lerp_expr = f"{x0}+({x1}-{x0})*min((t-{t0:.2f})/0.20,1)"
-        parts.append(f"gte(t\\,{t0:.2f})*lt(t\\,{t1:.2f})*({lerp_expr})")
-
-    # Before first keypoint: hold first detected position
-    first_t, first_x = keypoints[0]
-    parts.insert(0, f"lt(t\\,{first_t:.2f})*{first_x}")
-
-    # At and after last keypoint: hold last detected position (half-open end)
-    last_t, last_x = keypoints[-1]
-    parts.append(f"gte(t\\,{last_t:.2f})*{last_x}")
-
-    x_expr = "+".join(parts)
-
-    ui_logger.log(f"  Dynamic face tracking: {len(keypoints)} keypoints across {duration:.1f}s")
-    return f"crop={crop_w}:{crop_h}:{x_expr}:0"
-
-
 # ── CapCut-Style Presets ─────────────────────────────────────────────────────
 _CAPTION_STYLES = {
     "Classic": {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H0000FFFF&", "outline": 4, "shadow": 2, "bold": 1},
@@ -331,8 +274,13 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     font_name = "Montserrat"
     p = {"main": main_color, "high": high_color}
 
-    align_map = {"Top": 8, "Center": 5, "Bottom": 2}
-    align = align_map.get(position, 2)  # Default Bottom — CapCut style
+    caption_pos = position.lower() if position else "bottom"
+    if caption_pos == "top":
+        align = 8
+        margin_v = 360
+    else:  # bottom
+        align = 2
+        margin_v = 560
 
     lines = [
         "[Script Info]",
@@ -342,13 +290,19 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,360,1",
-        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,360,1",
-        f"Style: Header,{font_name},64,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,2,8,40,40,180,1"
+        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,{margin_v},1",
+        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,{margin_v},1",
+        f"Style: Header,{font_name},64,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,2,8,40,40,40,1"
     ]
     
     if kwargs.get("magic_hook_text"):
-        lines.append(f"Style: MagicHook,{font_name},52,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,3,4,3,8,40,40,60,1")
+        hook_pos = kwargs.get("hook_position", "top").lower()
+        if hook_pos == "bottom":
+            hook_align = 2
+        else:
+            hook_align = 8
+        hook_margin = 80
+        lines.append(f"Style: MagicHook,{font_name},52,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,3,4,3,{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
         "",
@@ -469,9 +423,12 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  caption_style="Classic", caption_pos="Bottom",
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
-                 all_sentences=None, padding=3.0):
+                 all_sentences=None, padding=3.0, bg_style="black", hook_position="top"):
 
     ui_logger.log("Initializing render pipeline...")
+    cap_fps = cv2.VideoCapture(input_video)
+    fps = cap_fps.get(cv2.CAP_PROP_FPS) or 30.0
+    cap_fps.release()
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(work_dir, exist_ok=True)
 
@@ -574,26 +531,28 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         is_peak = (seg_st <= float(clip_data.get("peak_moment", 0)) <= seg_et)
 
-        # ── Setup Video/Audio Inputs ──
-        inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
+        # ── Setup Video/Audio Inputs & 1:1 Layout ──
+        bg_frame_path = None
+        if bg_style in ["blur", "gradient"]:
+            bg_timestamp = min(seg_st + 2.0, seg_et)
+            bg_frame_path = os.path.join(work_dir, f"bg_frame_{out_id}_{idx}.jpg")
+            _extract_bg_frame(input_video, bg_timestamp, bg_frame_path)
+
+        clip_duration = seg_et - seg_st
+        extra_input_args, layout_fc, layout_out = _build_layout_filtergraph(
+            bg_style, bg_frame_path, fps, clip_duration
+        )
+
+        if extra_input_args:
+            inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video] + extra_input_args
+            input_idx = 2
+        else:
+            inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
+            input_idx = 1
         audio_source = "0:a"
         
-        # ── Dynamic Face-Tracking Crop (MediaPipe interpolation) ──
-        if face_center:
-            dynamic_crop = _generate_dynamic_crop(input_video, seg_st, seg_et)
-            if dynamic_crop:
-                # Dynamic crop produces native-res crop, then scale to 1080x1920
-                base_crop = f"{dynamic_crop},scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1"
-            else:
-                base_crop = f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1"
-        else:
-            # Static center crop fallback
-            base_crop = f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1"
-        
-        filter_complex = f"[0:v]{base_crop}[base];"
-
-        current_v = "base"
-        input_idx = 1
+        filter_complex = layout_fc + ";"
+        current_v = "vout"
         sfx_delays = []
         for i_b, b in enumerate(broll_kws):
             if isinstance(b, str):
@@ -658,7 +617,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
             _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st,
                           theme=theme, style_mode=caption_style, position=caption_pos,
-                          magic_hook_text=mh_text, header_text=clip_data.get("title", ""))
+                          magic_hook_text=mh_text, header_text=clip_data.get("title", ""),
+                          hook_position=hook_position)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
             safe_fonts_dir = _FONT_DIR.replace("\\", "/").replace(":", "\\:")
@@ -672,8 +632,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             current_v = next_v
             input_idx += 1
 
-        filter_complex += f";[{current_v}]eq=saturation=1.25:gamma=0.95:contrast=1.15:brightness=0.02,vignette,setpts=PTS-STARTPTS[v_out]"
-        current_v = "v_out"
+        # eq, vignette, and setpts are already handled in the layout filtergraph, so we do not re-apply them.
         filter_complex = filter_complex.replace(";;", ";").rstrip(';')
 
         # Apply loudnorm to base speech audio to normalize speaker energy to -16 LUFS
