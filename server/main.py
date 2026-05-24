@@ -26,8 +26,8 @@ from shorts_generator.config import (
     BASE_DIR, WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR,
     COOKIE_PATH, LLM_CATALOG, WHISPER_CATALOG, PROJECTS_DIR,
 )
-from shorts_generator.downloader import download_video
-from shorts_generator.transcriber import transcribe_audio
+from shorts_generator.downloader import download_video, download_srt
+from shorts_generator.transcriber import transcribe_audio, parse_srt_to_word_timestamps
 from shorts_generator.highlights import get_highlights, get_topic_index, detect_video_persona, estimate_clip_potential
 from shorts_generator.clipper import render_short
 from shorts_generator.enhancer import enhance_clip
@@ -35,6 +35,45 @@ from shorts_generator import cache
 from shorts_generator.logger import ui_logger
 from shorts_generator.audio_analyzer import analyze_audio_energy
 from huggingface_hub import hf_hub_download
+
+import subprocess
+
+_GPU_ENCODER = "libx264"  # fallback default
+
+_ENCODER_CANDIDATES = [
+    ("h264_nvenc",  ["-c:v", "h264_nvenc", "-preset", "fast"]),
+    ("h264_amf",    ["-c:v", "h264_amf",   "-quality", "speed"]),
+    ("h264_qsv",    ["-c:v", "h264_qsv",   "-preset", "fast"]),
+]
+
+def _probe_encoder(codec_name: str) -> bool:
+    """Return True if the given encoder is available on this system."""
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.1",
+                "-c:v", codec_name, "-t", "0.1", "-f", "null", "-"
+            ],
+            capture_output=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+for encoder_name, encoder_args in _ENCODER_CANDIDATES:
+    if _probe_encoder(encoder_name):
+        _GPU_ENCODER = encoder_name
+        ui_logger.log(f"⚡ GPU Encoder selected: {encoder_name}")
+        break
+else:
+    ui_logger.log("💻 No GPU encoder found — using CPU libx264")
+
+# Update the clipper._DETECTED_ENCODER global state
+import shorts_generator.clipper as clipper
+clipper._DETECTED_ENCODER = _GPU_ENCODER
+
 
 app = FastAPI(title="ClipFactory AI Director API")
 
@@ -121,6 +160,28 @@ def _get_bgm(genre: str) -> str:
         return ""
 
 # In-memory state for the active project
+# Highlight Dict Schema:
+# - title: str
+# - ideal_transcript: str
+# - segments: list
+# - start_time: float
+# - end_time: float
+# - score: int (composite)
+# - virality_score: int
+# - energy_score: int
+# - hook_score: int (0-25)
+# - engagement_score: int (0-25)
+# - value_score: int (0-25)
+# - shareability_score: int (0-25)
+# - hook_sentence: str
+# - hook_text: str
+# - hook_type: str
+# - virality_reason: str
+# - theme: str
+# - music_query: str
+# - broll_keywords: list
+# - emoji_moments: list
+# - source_topic: str
 _state = {
     "clips": [], 
     "word_timestamps": [], 
@@ -156,6 +217,8 @@ class RenderRequest(BaseModel):
     title: Optional[str] = None
     bg_style: str = "black"
     hook_position: str = "top"
+    hook_display: str = "full"  # "full" | "3s" | "off"
+    show_outro: bool = False
 
 class BulkRenderRequest(BaseModel):
     face_center: bool = True
@@ -169,6 +232,8 @@ class BulkRenderRequest(BaseModel):
     titles: Optional[dict] = None
     bg_style: str = "black"
     hook_position: str = "top"
+    hook_display: str = "full"  # "full" | "3s" | "off"
+    show_outro: bool = False
 
 class SessionRequest(BaseModel):
     url: str
@@ -370,10 +435,33 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
                 return
 
             if _state["is_cancelled"]: return
-            log_progress(25, "Transcribing audio (this may take a few minutes)...")
-            full_text, words = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
-            _state["word_timestamps"] = words
-            cache.save_transcript(url.strip(), full_text, words)
+            log = ui_logger.log
+            def _extract_video_id(url: str) -> str:
+                import re
+                match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
+                return match.group(1) if match else "video"
+
+            # SRT fast-path: attempt YouTube subtitle download before running Whisper
+            srt_path = download_srt(
+                video_url=_state["current_url"],
+                output_dir=str(WORK_DIR),
+                video_id=_extract_video_id(_state["current_url"])
+            )
+            word_timestamps = []
+            if srt_path:
+                log("⚡ SRT subtitle found — skipping Whisper transcription")
+                word_timestamps = parse_srt_to_word_timestamps(srt_path)
+                if not word_timestamps:
+                    log("⚠ SRT parse returned empty — falling back to Whisper")
+                    srt_path = None
+                else:
+                    full_text = " ".join(w["word"] for w in word_timestamps)
+                    cache.save_transcript(url.strip(), full_text, word_timestamps)
+            if not srt_path:
+                log("🎙 Running Faster-Whisper transcription...")
+                full_text, word_timestamps = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
+                cache.save_transcript(url.strip(), full_text, word_timestamps)
+            _state["word_timestamps"] = word_timestamps
         else:
             log_progress(25, "Transcript loaded from cache.")
             cached_t = cache.load_transcript(url.strip())
@@ -467,6 +555,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
                 dur = float(c.get("end_time", 0)) - float(c.get("start_time", 0))
             c["duration"] = dur
             c["badge"] = "🎬 Single"
+            c["hook_type"] = c.get("hook_type", "curiosity_gap")
 
         # Extract thumbnails for each clip
         import subprocess as _sp
@@ -608,7 +697,9 @@ def _run_render(req: RenderRequest, task_id: str):
             broll_intensity=req.broll_intensity,
             all_sentences=all_sentences,
             bg_style=req.bg_style,
-            hook_position=req.hook_position
+            hook_position=req.hook_position,
+            hook_display=req.hook_display,
+            show_outro=req.show_outro
         )
         
         # ── BGM mixing via enhance_clip ──
@@ -714,7 +805,9 @@ def _run_bulk_render(req: BulkRenderRequest):
                     broll_intensity=req.broll_intensity,
                     all_sentences=[],
                     bg_style=req.bg_style,
-                    hook_position=req.hook_position
+                    hook_position=req.hook_position,
+                    hook_display=req.hook_display,
+                    show_outro=req.show_outro
                 )
                 
                 # BGM mixing

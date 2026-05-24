@@ -94,19 +94,20 @@ def _get_best_encoder():
         return _DETECTED_ENCODER
 
     _DETECTED_ENCODER = "libx264"
-    try:
-        res = subprocess.run(["ffmpeg", "-encoders"], capture_output=True, text=True, timeout=5)
-        if res.returncode == 0 and "h264_nvenc" in res.stdout:
+    candidates = ["h264_nvenc", "h264_amf", "h264_qsv"]
+    for codec in candidates:
+        try:
             test_cmd = [
                 "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.1",
-                "-c:v", "h264_nvenc", "-f", "null", "-"
+                "-c:v", codec, "-f", "null", "-"
             ]
             test_res = subprocess.run(test_cmd, capture_output=True, timeout=5)
             if test_res.returncode == 0:
-                _DETECTED_ENCODER = "h264_nvenc"
-                ui_logger.log("⚡ Nvidia NVENC GPU hardware acceleration detected and enabled!")
-    except Exception:
-        pass
+                _DETECTED_ENCODER = codec
+                ui_logger.log(f"⚡ {codec} GPU hardware acceleration detected and enabled!")
+                break
+        except Exception:
+            pass
 
     return _DETECTED_ENCODER
 
@@ -224,11 +225,15 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
     )
     
     encoder = _get_best_encoder()
-    enc_args = ["-c:v", encoder]
     if encoder == "h264_nvenc":
-        enc_args.extend(["-preset", "fast"])
+        enc_args = ["-c:v", "h264_nvenc", "-preset", "fast"]
+    elif encoder == "h264_amf":
+        enc_args = ["-c:v", "h264_amf", "-quality", "speed"]
+    elif encoder == "h264_qsv":
+        enc_args = ["-c:v", "h264_qsv", "-preset", "fast"]
     else:
-        enc_args.extend(["-preset", "fast", "-crf", "16"])
+        enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
+
 
     trim_cmd = [
         "ffmpeg", "-y", "-i", input_path,
@@ -317,23 +322,31 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     seg_duration = max(0, words[-1]['end'] - time_offset) if words else 0.0
 
     if kwargs.get("magic_hook_text"):
-        hook_text = kwargs['magic_hook_text']
-        words_list = hook_text.split()
-        current_line = ""
-        wrapped_lines = []
-        for word in words_list:
-            if len(current_line) + len(word) + (1 if current_line else 0) > 18:
-                wrapped_lines.append(current_line)
-                current_line = word
-            else:
-                if current_line:
-                    current_line += " " + word
-                else:
+        hook_display = kwargs.get("hook_display", "full")
+        if hook_display != "off":
+            hook_text = kwargs['magic_hook_text']
+            words_list = hook_text.split()
+            current_line = ""
+            wrapped_lines = []
+            for word in words_list:
+                if len(current_line) + len(word) + (1 if current_line else 0) > 18:
+                    wrapped_lines.append(current_line)
                     current_line = word
-        if current_line:
-            wrapped_lines.append(current_line)
-        wrapped_text = "\\N".join(wrapped_lines).upper()
-        lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},MagicHook,,0,0,0,,{wrapped_text}")
+                else:
+                    if current_line:
+                        current_line += " " + word
+                    else:
+                        current_line = word
+            if current_line:
+                wrapped_lines.append(current_line)
+            wrapped_text = "\\N".join(wrapped_lines).upper()
+            
+            if hook_display == "3s":
+                hook_end_time = min(3.0, seg_duration)
+                wrapped_text_tagged = r"{\fad(0,500)}" + wrapped_text
+                lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(hook_end_time + 0.5)},MagicHook,,0,0,0,,{wrapped_text_tagged}")
+            else:  # "full"
+                lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},MagicHook,,0,0,0,,{wrapped_text}")
     if kwargs.get("header_text") and seg_duration > 0:
         header_text = kwargs["header_text"].strip().upper()
         # Wrap header text to 2 lines if it is too long (e.g. > 20 characters)
@@ -423,7 +436,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  caption_style="Classic", caption_pos="Bottom",
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
-                 all_sentences=None, padding=3.0, bg_style="black", hook_position="top"):
+                 all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False):
 
     ui_logger.log("Initializing render pipeline...")
     cap_fps = cv2.VideoCapture(input_video)
@@ -618,7 +631,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st,
                           theme=theme, style_mode=caption_style, position=caption_pos,
                           magic_hook_text=mh_text, header_text=clip_data.get("title", ""),
-                          hook_position=hook_position)
+                          hook_position=hook_position, hook_display=hook_display)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
             safe_fonts_dir = _FONT_DIR.replace("\\", "/").replace(":", "\\:")
@@ -665,11 +678,14 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         cmd.extend(inputs)
         
         encoder = _get_best_encoder()
-        enc_args = ["-c:v", encoder]
         if encoder == "h264_nvenc":
-            enc_args.extend(["-preset", "fast"])
+            enc_args = ["-c:v", "h264_nvenc", "-preset", "fast"]
+        elif encoder == "h264_amf":
+            enc_args = ["-c:v", "h264_amf", "-quality", "speed"]
+        elif encoder == "h264_qsv":
+            enc_args = ["-c:v", "h264_qsv", "-preset", "fast"]
         else:
-            enc_args.extend(["-preset", "fast", "-crf", "16"])
+            enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
 
         # High quality encoding parameters, enforcing a hard end to prevent infinitely hanging processes
         cmd.extend([
@@ -727,14 +743,10 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     ui_logger.log("Combining segments into final short...")
     # Prepend 0.5s opening title card and append 1.5s outro CTA card
     try:
-        open_card_path = os.path.join(work_dir, f"open_{out_id}.mp4")
-        title_text = clip_data.get("title", "Viral Clip").upper()
-        _generate_text_card(open_card_path, title_text, 0.5, _colab_font, font_size=60)
-        
-        end_card_path = os.path.join(work_dir, f"end_{out_id}.mp4")
-        _generate_text_card(end_card_path, "FOLLOW FOR MORE!", 1.5, _colab_font, font_size=70)
-        
-        rendered_segs = [open_card_path] + rendered_segs + [end_card_path]
+        if show_outro:
+            end_card_path = os.path.join(work_dir, f"end_{out_id}.mp4")
+            _generate_text_card(end_card_path, "FOLLOW FOR MORE!", 1.5, _colab_font, font_size=70)
+            rendered_segs = rendered_segs + [end_card_path]
     except Exception as card_err:
         ui_logger.log(f"  Warning: Title/End card generation failed ({card_err}), continuing without them.")
 
@@ -758,11 +770,14 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         )
 
         encoder = _get_best_encoder()
-        enc_args = ["-c:v", encoder]
         if encoder == "h264_nvenc":
-            enc_args.extend(["-preset", "fast"])
+            enc_args = ["-c:v", "h264_nvenc", "-preset", "fast"]
+        elif encoder == "h264_amf":
+            enc_args = ["-c:v", "h264_amf", "-quality", "speed"]
+        elif encoder == "h264_qsv":
+            enc_args = ["-c:v", "h264_qsv", "-preset", "fast"]
         else:
-            enc_args.extend(["-preset", "fast", "-crf", "16"])
+            enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
 
         concat_cmd = ["ffmpeg", "-y"] + fc_inputs + [
             "-filter_complex", fc_str,

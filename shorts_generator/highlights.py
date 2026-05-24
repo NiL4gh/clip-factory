@@ -151,6 +151,45 @@ words sound:
   the content rather than deliver the core insight or story
 """
 
+_TRIGGER_WORDS = """
+VIRAL TRIGGER WORD REFERENCE (use these to sharpen hook_text):
+- Insider Words (create exclusivity): "secret", "nobody tells you",
+  "they don't want you to know", "behind the scenes", "what they hide",
+  "industry secret"
+- Helper Words (promise value): "how to", "the fix", "what actually works",
+  "step by step", "the solution", "here's how"
+- Thinker Words (spark curiosity): "why", "the real reason", "the truth
+  about", "what actually happened", "the root cause"
+- Amplifier Words (raise stakes): "brutal", "shocking", "raw", "honest",
+  "unpopular opinion", "controversial", "most people don't"
+- FOMO Words (create urgency): "before it's too late", "stop missing out",
+  "everyone else already knows", "you're behind", "the window is closing"
+"""
+
+_HOOK_TYPES = """
+PSYCHOLOGICAL HOOK TYPE — you must classify each clip's hook into exactly
+one of these five types and set the hook_type field accordingly:
+
+1. "curiosity_gap" — Information asymmetry. Imply knowledge the viewer
+   lacks. Example hook: "Nobody talks about this, but it explains
+   everything."
+2. "loss_aversion" — Trigger fear of losing something or missing out.
+   Example hook: "Stop wasting time on X before it's too late."
+3. "self_identification" — Directly address a specific identity or
+   struggle so the viewer feels seen. Example hook: "If you've ever
+   struggled with X, this is for you."
+4. "pattern_interrupt" — A contrarian statement that breaks the viewer's
+   expected narrative. Example hook: "I quit X after 10 years. Here's
+   what changed."
+5. "open_loop" — Create an unresolved tension that demands completion.
+   Example hook: "The third point is the one that actually matters."
+
+Choose the type that best fits the clip's actual content and tone.
+Do not force a type. If the clip is primarily educational with no strong
+psychological trigger, use "curiosity_gap" as default.
+"""
+
+
 
 # ── LLM Management ───────────────────────────────────────────────────────────
 
@@ -701,6 +740,10 @@ def get_highlights(
         '  {\n'
         '    "title": "Strictly max 8 words, present tense, high impact, no filler (e.g., Build X in 30 seconds)",\n'
         '    "virality_score": 85,\n'
+        '    "hook_score": 20, // integer 0-25 — how scroll-stopping is the opening moment\n'
+        '    "engagement_score": 20, // integer 0-25 — how compelling is the middle content\n'
+        '    "value_score": 20, // integer 0-25 — educational or entertainment value\n'
+        '    "shareability_score": 20, // integer 0-25 — would someone actively share this\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
         '    "ideal_transcript": "The exact word-for-word transcript of the perfect 30-60 second clip. It MUST be a detailed, long paragraph of at least 5 to 10 consecutive sentences (typically 50-100 words) to ensure sufficient duration. Do not include timestamps, just copy the raw spoken words exactly.",\n'
@@ -708,7 +751,8 @@ def get_highlights(
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
         '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
-        '    "hook_text": "Max 8 words. The punchline of this clip — the single most surprising or counterintuitive conclusion it delivers. NOT a summary. NOT copied from the transcript. A bold declarative statement that creates a curiosity gap: the viewer reads it and thinks wait, how is that possible? Use plain conversational language. No hashtags, no emojis, no colons, no filler phrases like Here is why or The truth about. Reflect the PAYOFF, not the topic. Examples: Your goals are making you fail. / Busy people get less done. / Most advice is just fear in disguise."\n'
+        '    "hook_text": "Max 8 words. The punchline of this clip — the single most surprising or counterintuitive conclusion it delivers. NOT a summary. NOT copied from the transcript. A bold declarative statement that creates a curiosity gap: the viewer reads it and thinks wait, how is that possible? Use plain conversational language. No hashtags, no emojis, no colons, no filler phrases like Here is why or The truth about. Reflect the PAYOFF, not the topic. Examples: Your goals are making you fail. / Busy people get less done. / Most advice is just fear in disguise.",\n'
+        '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\""\n'
         '  }\n'
         ']'
     )
@@ -725,6 +769,7 @@ def get_highlights(
 
     # Build the virality prompt with dynamic video duration, structured hook examples, and persona additions
     virality_prompt = f"{_VIRALITY_BASE}\n\n{_VIRAL_HOOKS_EXAMPLES}\n\n{persona_addition}".format(video_duration_str=video_duration_str)
+    virality_prompt += f"\n\n{_TRIGGER_WORDS}\n\n{_HOOK_TYPES}"
     virality_prompt += (
         "\n\n═══════════════════════════════════════════════════════\n"
         "TIMESTAMP EXTRACTION RULES:\n"
@@ -732,6 +777,32 @@ def get_highlights(
         "- They must correspond precisely to the bracketed timestamps (e.g., [12.5s]) inside the transcript.\n"
         "- Example: If the perfect clip starts at '[25.1s] So here is why...' and ends at '[58.6s] ...and that is it.', then set 'start_timestamp': 25.1 and 'end_timestamp': 58.6.\n"
     )
+    virality_prompt += """
+---
+SELF-VALIDATION — MANDATORY BEFORE RETURNING OUTPUT
+Before returning the JSON array, silently verify every item in this list.
+If any check fails, fix the output before returning. Do not explain the
+fix. Simply return the corrected JSON.
+
+□ Every clip has all required fields: title, ideal_transcript, segments,
+  score, virality_score, energy_score, hook_sentence, hook_text, hook_type,
+  virality_reason, theme, music_query, broll_keywords, emoji_moments,
+  source_topic
+□ hook_type is exactly one of: curiosity_gap | loss_aversion |
+  self_identification | pattern_interrupt | open_loop
+□ hook_text is 8 words or fewer — if longer, trim it
+□ virality_score is an integer between 0 and 100 — not a string, not a float
+□ hook_score, engagement_score, value_score, shareability_score are each integers between 0 and 25
+□ score is an integer between 0 and 100
+□ broll_keywords is a list of strings, not a single string
+□ emoji_moments is a list of strings
+□ segments is a list of objects each with start_time and end_time as floats
+□ No field has a null value — use empty string "" or empty list [] as fallback
+□ Output is a valid JSON array only — no markdown, no commentary, no
+  explanation outside the array
+
+---
+"""
 
     if topics and len(topics) > 0:
         # ── Topic-Aware Extraction ──
@@ -888,6 +959,11 @@ def get_highlights(
 
             sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
             hook_sentence = sentences[0] if sentences else ""
+            hook_type = h.get("hook_type", "curiosity_gap")
+            hook_score = int(h.get("hook_score", 0) or 0)
+            engagement_score = int(h.get("engagement_score", 0) or 0)
+            value_score = int(h.get("value_score", 0) or 0)
+            shareability_score = int(h.get("shareability_score", 0) or 0)
 
             normalized.append({
                 "title": h.get("title", "Untitled Clip"),
@@ -898,8 +974,13 @@ def get_highlights(
                 "score": composite_score,
                 "virality_score": score,
                 "energy_score": energy_score,
+                "hook_score": hook_score,
+                "engagement_score": engagement_score,
+                "value_score": value_score,
+                "shareability_score": shareability_score,
                 "hook_sentence": hook_sentence,
                 "hook_text": h.get("hook_text", hook_sentence),
+                "hook_type": hook_type,
                 "virality_reason": h.get("virality_reason", ""),
                 "theme": theme,
                 "music_query": h.get("music_query", ""),

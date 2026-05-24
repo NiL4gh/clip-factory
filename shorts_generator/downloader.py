@@ -41,3 +41,36 @@ def download_video(url, work_dir, cookie_path=None):
 
     ui_logger.log("Download complete.")
     return output_mp4
+
+def download_srt(video_url: str, output_dir: str, video_id: str) -> str | None:
+    try:
+        from shorts_generator.config import BASE_DIR
+        cookie_path = os.path.join(BASE_DIR, "cookies.txt")
+        
+        # Build yt-dlp command to download auto-generated English SRT subtitles
+        cmd = [
+            'yt-dlp',
+            '--write-auto-sub',
+            '--sub-lang', 'en',
+            '--convert-subs', 'srt',
+            '--skip-download',
+            '--no-warnings',
+            '--cookies', str(cookie_path),
+            '-o', f"{output_dir}/{video_id}.%(ext)s",
+            video_url
+        ]
+        
+        # Run the command with a 30 second timeout
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=30)
+        
+        # Search for first matching file matching the pattern output_dir/video_id*.srt
+        pattern = os.path.join(output_dir, f"{video_id}*.srt")
+        matches = glob.glob(pattern)
+        if matches:
+            return matches[0]
+            
+        return None
+    except Exception as e:
+        ui_logger.log(f"Warning: download_srt failed: {e}")
+        return None
+

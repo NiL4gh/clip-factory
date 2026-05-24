@@ -71,6 +71,8 @@ const DEFAULT_SETTINGS = {
   bg_music_genre: "None",
   bg_style: "black",
   hook_position: "top",
+  hook_display: "full",
+  show_outro: false,
 };
 
 export default function Dashboard() {
@@ -95,7 +97,7 @@ export default function Dashboard() {
   // New UI states
   const [globalSettings, setGlobalSettings] = useState(DEFAULT_SETTINGS);
   const [cardRenderStates, setCardRenderStates] = useState<Record<number, "idle" | "queued" | "rendering" | "done" | "error">>({});
-  const [sortBy, setSortBy] = useState<"score" | "energy" | "duration">("score");
+  const [sortBy, setSortBy] = useState<"score" | "energy" | "duration" | "hook">("score");
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [pendingRestoreUrl, setPendingRestoreUrl] = useState("");
   const [selectedForRender, setSelectedForRender] = useState<Record<number, boolean>>({});
@@ -461,6 +463,8 @@ export default function Dashboard() {
     } else if (sortBy === "duration") {
       const getDur = (c: any) => c.duration || (parseFloat(c.end_time || 0) - parseFloat(c.start_time || 0));
       list.sort((a: any, b: any) => getDur(b) - getDur(a));
+    } else if (sortBy === "hook") {
+      list.sort((a: any, b: any) => (b.hook_score || 0) - (a.hook_score || 0));
     }
     return list;
   }, [results?.clips, sortBy]);
@@ -633,6 +637,7 @@ export default function Dashboard() {
                     <option value="score">Virality Score</option>
                     <option value="energy">Energy Score</option>
                     <option value="duration">Duration</option>
+                    <option value="hook">Hook Score</option>
                   </select>
                 </div>
 
@@ -728,6 +733,23 @@ export default function Dashboard() {
                           <div className="bg-white/90 text-[8px] font-bold text-slate-800 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
                             <Zap className="w-2 h-2 text-indigo-500" /> E: {Math.round(clip.energy_score || 0)}
                           </div>
+                          {(clip.hook_score || clip.engagement_score || clip.value_score ||
+                            clip.shareability_score) ? (
+                            <div className="flex gap-1 flex-wrap mt-1">
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
+                                H{clip.hook_score ?? 0}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
+                                En{clip.engagement_score ?? 0}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
+                                Va{clip.value_score ?? 0}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
+                                Sh{clip.shareability_score ?? 0}
+                              </span>
+                            </div>
+                          ) : null}
                         </div>
 
                         {/* PER-CARD RENDERING STATUS OVERLAY WITH ESTIMATES */}
@@ -991,6 +1013,20 @@ export default function Dashboard() {
                   <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
                 </label>
               </div>
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">
+                  Hook Display
+                </label>
+                <select
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2 outline-none cursor-pointer font-medium"
+                  value={getSettings(selectedClip).hook_display ?? "full"}
+                  onChange={(e) => updateSetting(selectedClip, "hook_display", e.target.value)}
+                >
+                  <option value="full">Full Duration</option>
+                  <option value="3s">3 Seconds (Fade)</option>
+                  <option value="off">Hidden</option>
+                </select>
+              </div>
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -999,6 +1035,20 @@ export default function Dashboard() {
                 </div>
                 <label className="setting-toggle">
                   <input type="checkbox" checked={getSettings(selectedClip).remove_silence} onChange={(e) => updateSetting(selectedClip, "remove_silence", e.target.checked)} />
+                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                </label>
+              </div>
+              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <p className="text-xs font-bold text-slate-800">Outro CTA</p>
+                  <p className="text-[9px] text-slate-500 font-semibold">Append call-to-action card</p>
+                </div>
+                <label className="setting-toggle">
+                  <input
+                    type="checkbox"
+                    checked={getSettings(selectedClip).show_outro ?? false}
+                    onChange={(e) => updateSetting(selectedClip, "show_outro", e.target.checked)}
+                  />
                   <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
                 </label>
               </div>
@@ -1112,6 +1162,20 @@ export default function Dashboard() {
                   <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
                 </label>
               </div>
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block">
+                  Hook Display
+                </label>
+                <select
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2 outline-none cursor-pointer font-medium"
+                  value={globalSettings.hook_display ?? "full"}
+                  onChange={(e) => updateGlobalSetting("hook_display", e.target.value)}
+                >
+                  <option value="full">Full Duration</option>
+                  <option value="3s">3 Seconds (Fade)</option>
+                  <option value="off">Hidden</option>
+                </select>
+              </div>
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -1120,6 +1184,20 @@ export default function Dashboard() {
                 </div>
                 <label className="setting-toggle">
                   <input type="checkbox" checked={globalSettings.remove_silence} onChange={(e) => updateGlobalSetting("remove_silence", e.target.checked)} />
+                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+                </label>
+              </div>
+              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                  <p className="text-xs font-bold text-slate-800">Outro CTA</p>
+                  <p className="text-[9px] text-slate-500 font-semibold">Append call-to-action card</p>
+                </div>
+                <label className="setting-toggle">
+                  <input
+                    type="checkbox"
+                    checked={globalSettings.show_outro ?? false}
+                    onChange={(e) => updateGlobalSetting("show_outro", e.target.checked)}
+                  />
                   <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
                 </label>
               </div>
