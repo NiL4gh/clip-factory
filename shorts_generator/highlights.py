@@ -752,6 +752,7 @@ def get_highlights(
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
         '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
         '    "hook_text": "Max 8 words. The punchline of this clip — the single most surprising or counterintuitive conclusion it delivers. NOT a summary. NOT copied from the transcript. A bold declarative statement that creates a curiosity gap: the viewer reads it and thinks wait, how is that possible? Use plain conversational language. No hashtags, no emojis, no colons, no filler phrases like Here is why or The truth about. Reflect the PAYOFF, not the topic. Examples: Your goals are making you fail. / Busy people get less done. / Most advice is just fear in disguise.",\n'
+        '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12–18 words) authored for social media — NOT copied from the transcript. Write it as if a top creator is teasing this clip to make someone stop scrolling. Use one of these proven patterns: Contrast (Nobody tells you this about [topic], but it changed everything for me.), Number (This one rule about [topic] is worth more than 10 years of advice.), Direct address (If you\'re struggling with [topic], you need to hear this right now.), Opinion bomb (The thing everyone gets wrong about [topic] is embarrassing.), or Story tease (He made $52k a year and was wealthier than people earning millions.). The hook must be specific to THIS clip\'s content — no generic lines. Maximum 18 words. Do not copy any phrase verbatim from the transcript.",\n'
         '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\""\n'
         '  }\n'
         ']'
@@ -958,7 +959,10 @@ fix. Simply return the corrected JSON.
             composite_score = int((score * 0.6) + (energy_score * 0.4))
 
             sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
-            hook_sentence = sentences[0] if sentences else ""
+            # Read from LLM output, fallback to first sentence if empty/missing
+            hook_sentence = h.get("hook_sentence", "").strip()
+            if not hook_sentence:
+                hook_sentence = sentences[0] if sentences else ""
             hook_type = h.get("hook_type", "curiosity_gap")
             hook_score = int(h.get("hook_score", 0) or 0)
             engagement_score = int(h.get("engagement_score", 0) or 0)

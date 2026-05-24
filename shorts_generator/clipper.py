@@ -226,11 +226,11 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
     
     encoder = _get_best_encoder()
     if encoder == "h264_nvenc":
-        enc_args = ["-c:v", "h264_nvenc", "-preset", "fast"]
+        enc_args = ["-c:v", "h264_nvenc", "-preset", "fast", "-rc", "vbr", "-cq", "16", "-b:v", "0"]
     elif encoder == "h264_amf":
-        enc_args = ["-c:v", "h264_amf", "-quality", "speed"]
+        enc_args = ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "16", "-qp_p", "16"]
     elif encoder == "h264_qsv":
-        enc_args = ["-c:v", "h264_qsv", "-preset", "fast"]
+        enc_args = ["-c:v", "h264_qsv", "-preset", "fast", "-global_quality", "16"]
     else:
         enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
 
@@ -679,11 +679,11 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         
         encoder = _get_best_encoder()
         if encoder == "h264_nvenc":
-            enc_args = ["-c:v", "h264_nvenc", "-preset", "fast"]
+            enc_args = ["-c:v", "h264_nvenc", "-preset", "fast", "-rc", "vbr", "-cq", "16", "-b:v", "0"]
         elif encoder == "h264_amf":
-            enc_args = ["-c:v", "h264_amf", "-quality", "speed"]
+            enc_args = ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "16", "-qp_p", "16"]
         elif encoder == "h264_qsv":
-            enc_args = ["-c:v", "h264_qsv", "-preset", "fast"]
+            enc_args = ["-c:v", "h264_qsv", "-preset", "fast", "-global_quality", "16"]
         else:
             enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
 
@@ -771,11 +771,11 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         encoder = _get_best_encoder()
         if encoder == "h264_nvenc":
-            enc_args = ["-c:v", "h264_nvenc", "-preset", "fast"]
+            enc_args = ["-c:v", "h264_nvenc", "-preset", "fast", "-rc", "vbr", "-cq", "16", "-b:v", "0"]
         elif encoder == "h264_amf":
-            enc_args = ["-c:v", "h264_amf", "-quality", "speed"]
+            enc_args = ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "16", "-qp_p", "16"]
         elif encoder == "h264_qsv":
-            enc_args = ["-c:v", "h264_qsv", "-preset", "fast"]
+            enc_args = ["-c:v", "h264_qsv", "-preset", "fast", "-global_quality", "16"]
         else:
             enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
 
