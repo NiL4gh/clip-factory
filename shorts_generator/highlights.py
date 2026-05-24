@@ -128,6 +128,7 @@ EXTRACTION RULES:
 - Each clip's ideal_transcript must be 50 to 220 words of continuous
   spoken text. This represents approximately 30-90 seconds of speech. This expanded length ensures you have ample room to capture the complete payoff or answer.
 - THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcript—in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
+- VALUABLE INSIGHT FALLBACK: While structured story arcs are preferred, if a section contains highly engaging, funny, contrarian, or educational discussion but lacks a formal question/resolution payoff, you MUST still extract it! Simply ensure it ends on a completed, coherent thought so the viewer gets clear value. Never be too conservative or return zero clips; prioritize extracting the most entertaining, informative, or high-energy blocks available in the text.
 - Always extend the ideal_transcript forward until the thought fully
   closes. Never end on a sentence that is still building toward something.
 - Never cut in the middle of a sentence, story, or argument.
