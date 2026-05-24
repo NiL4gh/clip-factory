@@ -125,8 +125,9 @@ EXTRACTION RULES:
 
 - Extract EVERY moment that has a clear Entry Point, Build, and Landing.
   If a topic section has 5 such moments, extract all 5.
-- Each clip's ideal_transcript must be 50 to 150 words of continuous
-  spoken text. This represents approximately 30-60 seconds of speech.
+- Each clip's ideal_transcript must be 50 to 220 words of continuous
+  spoken text. This represents approximately 30-90 seconds of speech. This expanded length ensures you have ample room to capture the complete payoff or answer.
+- THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcript—in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
 - Always extend the ideal_transcript forward until the thought fully
   closes. Never end on a sentence that is still building toward something.
 - Never cut in the middle of a sentence, story, or argument.
@@ -746,7 +747,7 @@ def get_highlights(
         '    "shareability_score": 20, // integer 0-25 — would someone actively share this\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
-        '    "ideal_transcript": "The exact word-for-word transcript of the perfect 30-60 second clip. It MUST be a detailed, long paragraph of at least 5 to 10 consecutive sentences (typically 50-100 words) to ensure sufficient duration. Do not include timestamps, just copy the raw spoken words exactly.",\n'
+        '    "ideal_transcript": "The exact word-for-word transcript of the perfect 30-90 second clip. It MUST be a detailed, long paragraph of at least 5 to 12 consecutive sentences (typically 50-180 words) to ensure sufficient duration and fully capture the payoff. Do not include timestamps, just copy the raw spoken words exactly.",\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
