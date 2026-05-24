@@ -297,7 +297,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{font_name},64,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,2,8,40,40,40,1"
+        f"Style: Header,{font_name},64,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,2,8,40,40,180,1"
     ]
     
     if kwargs.get("magic_hook_text"):
@@ -306,7 +306,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             hook_align = 2
         else:
             hook_align = 8
-        hook_margin = 80
+        hook_margin = 60
         lines.append(f"Style: MagicHook,{font_name},52,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,3,4,3,{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
@@ -365,7 +365,19 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         if current_line:
             wrapped_lines.append(current_line)
         wrapped_header = "\\N".join(wrapped_lines)
-        lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
+        
+        # Avoid overlapping: delay header start if 3s magic hook is active, or omit if full duration
+        if kwargs.get("magic_hook_text"):
+            hook_display = kwargs.get("hook_display", "full")
+            if hook_display == "3s":
+                header_start = 3.5
+                if seg_duration > header_start:
+                    lines.append(f"Dialogue: 0,{fmt_time(header_start)},{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
+            elif hook_display == "off":
+                lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
+            # If hook_display == "full", we completely hide the Header so it never competes for the same top space
+        else:
+            lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
 
     chunks = []
     curr = []
