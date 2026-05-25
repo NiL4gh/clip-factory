@@ -1,6 +1,7 @@
 import subprocess
 import os
 import glob
+import typing
 from .logger import ui_logger
 
 def download_video(url, work_dir, cookie_path=None):
@@ -42,7 +43,7 @@ def download_video(url, work_dir, cookie_path=None):
     ui_logger.log("Download complete.")
     return output_mp4
 
-def download_srt(video_url: str, output_dir: str, video_id: str) -> str | None:
+def download_srt(video_url: str, output_dir: str, video_id: str) -> typing.Optional[str]:
     try:
         from shorts_generator.config import BASE_DIR
         cookie_path = os.path.join(BASE_DIR, "cookies.txt")
