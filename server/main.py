@@ -219,6 +219,7 @@ class RenderRequest(BaseModel):
     hook_position: str = "top"
     hook_display: str = "full"  # "full" | "3s" | "off"
     show_outro: bool = False
+    title_style: str = "Impact"
 
 class BulkRenderRequest(BaseModel):
     face_center: bool = True
@@ -234,6 +235,7 @@ class BulkRenderRequest(BaseModel):
     hook_position: str = "top"
     hook_display: str = "full"  # "full" | "3s" | "off"
     show_outro: bool = False
+    title_style: str = "Impact"
 
 class SessionRequest(BaseModel):
     url: str
@@ -699,7 +701,8 @@ def _run_render(req: RenderRequest, task_id: str):
             bg_style=req.bg_style,
             hook_position=req.hook_position,
             hook_display=req.hook_display,
-            show_outro=req.show_outro
+            show_outro=req.show_outro,
+            title_style=req.title_style
         )
         
         # ── BGM mixing via enhance_clip ──
@@ -807,7 +810,8 @@ def _run_bulk_render(req: BulkRenderRequest):
                     bg_style=req.bg_style,
                     hook_position=req.hook_position,
                     hook_display=req.hook_display,
-                    show_outro=req.show_outro
+                    show_outro=req.show_outro,
+                    title_style=req.title_style
                 )
                 
                 # BGM mixing

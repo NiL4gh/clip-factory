@@ -128,6 +128,19 @@ EXTRACTION RULES:
 - Each clip's ideal_transcript must be 50 to 220 words of continuous
   spoken text. This represents approximately 30-90 seconds of speech. This expanded length ensures you have ample room to capture the complete payoff or answer.
 - THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcript—in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
+- ENDING RULES — NON-NEGOTIABLE:
+  The final sentence of ideal_transcript MUST be one of these:
+    - The speaker's conclusion or answer to the question they raised
+    - A punchline or surprising reversal that pays off the setup
+    - A strong declarative statement that closes the argument
+    - A specific result, number, or outcome that proves the point
+  The final sentence of ideal_transcript must NEVER be:
+    - A question (unless it is purely rhetorical with no answer needed)
+    - A transitional phrase ("so anyway", "but yeah", "moving on")
+    - A filler or acknowledgment ("right", "exactly", "I mean")
+    - Mid-argument ("and the reason for that is", "so what happens is")
+    - An incomplete thought that sets up something outside the clip
+  If you reach the word limit before the payoff arrives, extend ideal_transcript past the limit to capture the closing sentence. A clip that runs 5 seconds long but ends properly is always better than a clip that ends on time but cuts the landing.
 - VALUABLE INSIGHT FALLBACK: While structured story arcs are preferred, if a section contains highly engaging, funny, contrarian, or educational discussion but lacks a formal question/resolution payoff, you MUST still extract it! Simply ensure it ends on a completed, coherent thought so the viewer gets clear value. Never be too conservative or return zero clips; prioritize extracting the most entertaining, informative, or high-energy blocks available in the text.
 - Always extend the ideal_transcript forward until the thought fully
   closes. Never end on a sentence that is still building toward something.
@@ -424,7 +437,7 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
         best_extended_et = et
         for next_idx in range(end_idx + 1, len(raw_words)):
             next_w = raw_words[next_idx]
-            if next_w["start"] - et > 3.0:
+            if next_w["start"] - et > 6.0:
                 break
             best_extended_et = next_w["end"]
             has_punc = any(p in next_w["word"] for p in [".", "!", "?", "।", "|"])
@@ -630,9 +643,33 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
     for idx, chunk in enumerate(chunks):
         ui_logger.log(f"Topic indexing chunk {idx + 1}/{len(chunks)}...")
         prompt = (
-            "Analyze this transcript section and identify ALL distinct discussion topics.\n"
-            "A 'topic' is any coherent section where the speaker(s) discuss a single subject.\n"
-            "Even short tangents (30+ seconds) count as separate topics.\n\n"
+            "Analyze this transcript section and identify distinct moments.\n\n"
+            "You are hunting for MOMENTS, not topics. A moment is a short passage\n"
+            "where something genuinely interesting happens. Ignore filler, logistics,\n"
+            "introductions, and transitions entirely.\n\n"
+            "Hunt specifically for these moment types, in priority order:\n\n"
+            "1. REVELATION — The speaker says something surprising, counterintuitive,\n"
+            "   or that contradicts a commonly held belief. Signal phrases: \"most\n"
+            "   people think\", \"what nobody tells you\", \"the truth is\", \"I found out\".\n\n"
+            "2. TENSION OR DISAGREEMENT — The speaker pushes back on an idea, admits\n"
+            "   a mistake, or challenges the audience. Signal phrases: \"but here's the\n"
+            "   problem\", \"I was wrong about\", \"this is where people get it wrong\".\n\n"
+            "3. SPECIFIC NUMBERS OR PROOF — The speaker cites a concrete number,\n"
+            "   statistic, personal result, or named example. Signal: any dollar\n"
+            "   amount, percentage, timeframe, or named person/company as evidence.\n\n"
+            "4. STRONG PERSONAL OPINION — The speaker makes a declarative claim they\n"
+            "   clearly believe strongly. Signal phrases: \"I genuinely believe\",\n"
+            "   \"most people will never\", \"the reason X fails is\", \"nobody wants to\n"
+            "   hear this but\".\n\n"
+            "5. STORY WITH STAKES — A personal anecdote or scenario where something\n"
+            "   is at risk (money, reputation, relationship, health). Must have a\n"
+            "   clear beginning setup and an implied outcome.\n\n"
+            "SKIP any passage that is:\n"
+            "- Explaining who the guest or host is\n"
+            "- Discussing the show, episode, or sponsor\n"
+            "- Transitioning between subjects with no clear point\n"
+            "- Generic advice with no specific example or proof\n"
+            "- A question without an answer in the same passage\n\n"
             "Rules:\n"
             "- Each topic must have accurate start_time and end_time from the transcript timestamps\n"
             "- Topics should NOT overlap\n"

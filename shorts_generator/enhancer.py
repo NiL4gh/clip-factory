@@ -33,7 +33,7 @@ def add_smart_background_music(video_path: str, music_path: str, output_path: st
         "-filter_complex", f"[0:a]volume=0.56[a0];[1:a]volume='{vol_expr}':eval=frame[a1];[a1][a0]sidechaincompress=threshold=0.15:ratio=4:attack=50:release=300[a1d];[a0][a1d]amix=inputs=2:duration=first:dropout_transition=2,asetpts=PTS-STARTPTS[a]",
         "-map", "0:v", 
         "-map", "[a]", 
-        "-c:v", "copy", 
+        "-c:v", "copy", # Switch BGM mix pass to stream copy to eliminate quality loss
         "-c:a", "aac", 
         "-shortest", 
         output_path

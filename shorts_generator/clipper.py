@@ -1,5 +1,6 @@
 import os
 import subprocess
+import textwrap
 import uuid
 import shutil
 import cv2
@@ -266,7 +267,50 @@ _CAPTION_STYLES = {
     "Fire":    {"font_size": 90,  "primary": "&H0000FFFF&", "highlight": "&H000080FF&", "outline": 4, "shadow": 2, "bold": 1},
 }
 
-def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Classic", position="Center", **kwargs):
+TITLE_STYLE_PRESETS = {
+    "Impact": {
+        "PrimaryColour":  "&H00FFFFFF",   # white
+        "OutlineColour":  "&H00000000",   # black
+        "BackColour":     "&H00000000",
+        "BorderStyle":    1,
+        "Outline":        6,
+        "Shadow":         0,
+    },
+    "Box": {
+        "PrimaryColour":  "&H00FFFFFF",   # white
+        "OutlineColour":  "&H00000000",
+        "BackColour":     "&HAA000000",   # semi-transparent black box
+        "BorderStyle":    3,
+        "Outline":        0,
+        "Shadow":         0,
+    },
+    "Yellow": {
+        "PrimaryColour":  "&H0000FFFF",   # yellow (ASS BGR)
+        "OutlineColour":  "&H00000000",   # black
+        "BackColour":     "&H00000000",
+        "BorderStyle":    1,
+        "Outline":        5,
+        "Shadow":         2,
+    },
+    "Neon": {
+        "PrimaryColour":  "&H00FFFFFF",   # white
+        "OutlineColour":  "&H00FF00FF",   # magenta glow
+        "BackColour":     "&H00000000",
+        "BorderStyle":    1,
+        "Outline":        2,
+        "Shadow":         12,
+    },
+    "Orange": {
+        "PrimaryColour":  "&H000066FF",   # orange (ASS BGR)
+        "OutlineColour":  "&H00000000",   # black
+        "BackColour":     "&H00000000",
+        "BorderStyle":    1,
+        "Outline":        5,
+        "Shadow":         2,
+    },
+}
+
+def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Classic", position="Center", title_style: str = "Impact", **kwargs):
     # Resolve style preset — fall back to Classic if unknown
     # Resolve style preset — returns a dict with all style attributes
     style = _CAPTION_STYLES.get(style_mode, _CAPTION_STYLES["Classic"])
@@ -287,6 +331,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         align = 2
         margin_v = 560
 
+    ts = TITLE_STYLE_PRESETS.get(title_style, TITLE_STYLE_PRESETS["Impact"])
+
     lines = [
         "[Script Info]",
         "ScriptType: v4.00+",
@@ -297,7 +343,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{font_name},64,&H00FFFFFF&,&H000000FF&,&H00000000&,&H80000000&,1,0,0,0,100,100,0,0,1,5,2,8,40,40,180,1"
+        f"Style: Header,{font_name},64,{ts['PrimaryColour']}&,&H000000FF&,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,180,1"
     ]
     
     if kwargs.get("magic_hook_text"):
@@ -347,7 +393,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
                 lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(hook_end_time + 0.5)},MagicHook,,0,0,0,,{wrapped_text_tagged}")
             else:  # "full"
                 lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},MagicHook,,0,0,0,,{wrapped_text}")
-    if kwargs.get("header_text") and seg_duration > 0:
+    if title_style != "None" and kwargs.get("header_text") and seg_duration > 0:
         header_text = kwargs["header_text"].strip().upper()
         # Wrap header text to 2 lines if it is too long (e.g. > 20 characters)
         words_list = header_text.split()
@@ -422,11 +468,12 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
 
 
 def _generate_text_card(output_path, text, duration, font_file, font_size=64):
+    text = '\n'.join(textwrap.wrap(text, width=22))
     safe_text = text.replace("'", "").replace(":", "")
-    vf_filter = f"drawtext=text='{safe_text}':fontcolor=white:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2"
+    vf_filter = f"drawtext=text='{safe_text}':fontcolor=white:fontsize={font_size}:line_spacing=12:x=(w-text_w)/2:y=(h-text_h)/2"
     if font_file and os.path.exists(font_file):
         safe_font = font_file.replace("\\", "/").replace(":", "\\:")
-        vf_filter = f"drawtext=fontfile='{safe_font}':text='{safe_text}':fontcolor=white:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2"
+        vf_filter = f"drawtext=fontfile='{safe_font}':text='{safe_text}':fontcolor=white:fontsize={font_size}:line_spacing=12:x=(w-text_w)/2:y=(h-text_h)/2"
     
     cmd = [
         "ffmpeg", "-y",
@@ -448,7 +495,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  caption_style="Classic", caption_pos="Bottom",
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
-                 all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False):
+                 all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False, title_style: str = "Impact"):
 
     ui_logger.log("Initializing render pipeline...")
     cap_fps = cv2.VideoCapture(input_video)
@@ -643,7 +690,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             _generate_ass(seg_words, ass_path, target_w, target_h, time_offset=seg_st,
                           theme=theme, style_mode=caption_style, position=caption_pos,
                           magic_hook_text=mh_text, header_text=clip_data.get("title", ""),
-                          hook_position=hook_position, hook_display=hook_display)
+                          hook_position=hook_position, hook_display=hook_display,
+                          title_style=title_style)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
             safe_fonts_dir = _FONT_DIR.replace("\\", "/").replace(":", "\\:")
@@ -781,24 +829,15 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             + f"concat=n={n_segs}:v=1:a=1[v_concat_raw][a_concat_raw];[v_concat_raw]setpts=PTS-STARTPTS[v_concat];[a_concat_raw]asetpts=PTS-STARTPTS[a_concat]"
         )
 
-        encoder = _get_best_encoder()
-        if encoder == "h264_nvenc":
-            enc_args = ["-c:v", "h264_nvenc", "-preset", "fast", "-rc", "vbr", "-cq", "16", "-b:v", "0"]
-        elif encoder == "h264_amf":
-            enc_args = ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "16", "-qp_p", "16"]
-        elif encoder == "h264_qsv":
-            enc_args = ["-c:v", "h264_qsv", "-preset", "fast", "-global_quality", "16"]
-        else:
-            enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
+        concat_enc_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "0"]
 
         concat_cmd = ["ffmpeg", "-y"] + fc_inputs + [
             "-filter_complex", fc_str,
             "-map", "[v_concat]", "-map", "[a_concat]",
-        ] + enc_args + [
+        ] + concat_enc_args + [
             "-profile:v", "high", "-pix_fmt", "yuv420p",
+            "-x264opts", "keyint=30"
         ]
-        if encoder == "libx264":
-            concat_cmd.extend(["-x264opts", "keyint=30"])
 
         concat_cmd.extend([
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",

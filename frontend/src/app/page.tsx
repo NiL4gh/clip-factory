@@ -105,6 +105,7 @@ export default function Dashboard() {
   const [editingTitleIdx, setEditingTitleIdx] = useState<number | null>(null);
   const [tempTitle, setTempTitle] = useState("");
   const [galleryFilter, setGalleryFilter] = useState<"all" | "today" | "over30" | "under30">("all");
+  const [titleStyle, setTitleStyle] = useState("Impact");
 
   const addLog = (message: string) => {
     const timestampRegex = /^\[\d{2}:\d{2}:\d{2}\]/;
@@ -360,7 +361,8 @@ export default function Dashboard() {
         clip_id: index,
         ...settings,
         excluded_sentences: exSentences,
-        title: editedTitles[index] || undefined
+        title: editedTitles[index] || undefined,
+        title_style: titleStyle
       });
       
       const taskId = res.data.task_id;
@@ -399,7 +401,8 @@ export default function Dashboard() {
       await axios.post(`${API_BASE}/render_all`, {
         ...globalSettings,
         clip_ids: selectedIds.length > 0 ? selectedIds : undefined,
-        titles: editedTitles
+        titles: editedTitles,
+        title_style: titleStyle
       });
       const poll = setInterval(async () => {
         const statusRes = await axios.get(`${API_BASE}/status`);
@@ -978,6 +981,16 @@ export default function Dashboard() {
                 </select>
               </div>
               <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-500">TITLE STYLE</span>
+                <select
+                  value={titleStyle}
+                  onChange={(e) => setTitleStyle(e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["Impact", "Box", "Yellow", "Neon", "Orange", "None"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
                 <span className="text-xs font-bold text-slate-500">Music</span>
                 <select 
                   value={getSettings(selectedClip).bg_music_genre}
@@ -1124,6 +1137,16 @@ export default function Dashboard() {
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
                   {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-500">TITLE STYLE</span>
+                <select
+                  value={titleStyle}
+                  onChange={(e) => setTitleStyle(e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  {["Impact", "Box", "Yellow", "Neon", "Orange", "None"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
