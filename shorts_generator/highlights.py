@@ -148,6 +148,7 @@ EXTRACTION RULES:
 - Only the exact spoken words from the transcript. No invented content.
 - Do not stitch unrelated thoughts together. One continuous passage only.
 - Do not extract intros, outros, sponsor reads, or off-topic transitions.
+- HOOK NON-REPETITION MANDATE: For `hook_sentence` and `hook_text`, write completely clean, non-repetitive, grammatically correct sentences. NEVER repeat any words, clauses, or phrases inside the sentence (avoid loops like 'mostly reasonable works better than mostly reasonable works better than'). Make sure it is highly punchy, clear, and natural.
 
 NEVER EXTRACT any of the following regardless of how interesting the
 words sound:

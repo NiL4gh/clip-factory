@@ -155,6 +155,29 @@ export default function Dashboard() {
     }
   };
 
+  const clearCurrentRenders = async () => {
+    if (!confirm("Are you sure you want to clear rendered clips for the CURRENT active video? This cannot be undone.")) return;
+    try {
+      await axios.post(`${API_BASE}/clear_gallery?project_only=true`);
+      addLog("🗑️ Current video renders cleared.");
+      
+      // Update state locally so the UI updates immediately
+      if (results?.clips) {
+        const updatedClips = results.clips.map((c: any) => {
+          const { rendered_filename, ...rest } = c;
+          return rest;
+        });
+        setResults({ ...results, clips: updatedClips });
+      }
+      
+      fetchGallery();
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || "Unknown error";
+      addLog(`❌ Failed to clear current renders: ${msg}`);
+    }
+  };
+
+
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
@@ -666,11 +689,18 @@ export default function Dashboard() {
                 return (
                   <div key={clipIdx} onClick={() => setSelectedClip(clipIdx)} className={`cursor-pointer group flex flex-col border transition-all duration-300 shadow-sm overflow-hidden rounded-2xl ${selectedClip === clipIdx ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/30' : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md'}`}>
                     <div className="flex h-40">
-                      <div className="bg-slate-900 w-28 shrink-0 relative overflow-hidden flex flex-col items-center justify-center text-center p-2">
-                        {clip.thumbnail_url && <img src={clip.thumbnail_url || ""} alt="" className="absolute inset-0 w-full h-full object-cover opacity-50" />}
+                      {/* Left Thumbnail Column */}
+                      <div className="bg-slate-900 w-28 shrink-0 relative overflow-hidden flex items-center justify-center">
+                        {clip.thumbnail_url && (
+                          <img 
+                            src={clip.thumbnail_url || ""} 
+                            alt="" 
+                            className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" 
+                          />
+                        )}
                         
-                        {/* CHECKBOX FOR BULK SELECTION */}
-                        <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
+                        {/* CHECKBOX FOR BULK SELECTION (Top-Left of Thumbnail) */}
+                        <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={!!selectedForRender[clipIdx]}
@@ -681,78 +711,10 @@ export default function Dashboard() {
                           />
                         </div>
 
-                        {/* INLINE EDITABLE CLIP TITLES */}
-                        <div className="relative z-10 w-full px-1">
-                          {editingTitleIdx === clipIdx ? (
-                            <input
-                              type="text"
-                              value={tempTitle}
-                              onChange={(e) => setTempTitle(e.target.value)}
-                              onBlur={() => {
-                                if (tempTitle.trim()) {
-                                  setEditedTitles(prev => ({ ...prev, [clipIdx]: tempTitle.trim() }));
-                                }
-                                setEditingTitleIdx(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  if (tempTitle.trim()) {
-                                    setEditedTitles(prev => ({ ...prev, [clipIdx]: tempTitle.trim() }));
-                                  }
-                                  setEditingTitleIdx(null);
-                                } else if (e.key === 'Escape') {
-                                  setEditingTitleIdx(null);
-                                }
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              autoFocus
-                              className="bg-black/85 text-white text-[10px] font-bold p-1 rounded border border-indigo-500 w-full text-center outline-none"
-                            />
-                          ) : (
-                            <div 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingTitleIdx(clipIdx);
-                                setTempTitle(editedTitles[clipIdx] || clip.title || "Untitled Clip");
-                              }}
-                              className="text-white font-bold text-[10px] mb-1 leading-tight drop-shadow-md line-clamp-3 hover:underline cursor-text hover:text-indigo-200 transition-colors"
-                              title="Click to edit title"
-                            >
-                              {editedTitles[clipIdx] || clip.title || "Untitled Clip"}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="text-white/80 text-[9px] uppercase tracking-widest font-bold flex items-center justify-center gap-1 mt-2 relative z-10">
-                          <Clock className="w-3 h-3" />
+                        {/* CLEAN FLOATING DURATION BADGE (Bottom-Right of Thumbnail) */}
+                        <div className="absolute bottom-2 right-2 bg-black/75 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm z-10">
+                          <Clock className="w-2.5 h-2.5" />
                           {formatTime(clip.duration || (parseFloat(clip.end_time || 0) - parseFloat(clip.start_time || 0)))}
-                        </div>
-                        
-                        {/* SURFACES VIRALITY & ENERGY SCORES SIDE-BY-SIDE */}
-                        <div className="absolute bottom-2 left-2 flex flex-col gap-1 z-10">
-                          <div className="bg-white/90 text-[8px] font-bold text-slate-800 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
-                            <TrendingUp className="w-2 h-2 text-emerald-500" /> V: {Math.round(clip.virality_score || clip.score || 0)}
-                          </div>
-                          <div className="bg-white/90 text-[8px] font-bold text-slate-800 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1">
-                            <Zap className="w-2 h-2 text-indigo-500" /> E: {Math.round(clip.energy_score || 0)}
-                          </div>
-                          {(clip.hook_score || clip.engagement_score || clip.value_score ||
-                            clip.shareability_score) ? (
-                            <div className="flex gap-1 flex-wrap mt-1">
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
-                                H{clip.hook_score ?? 0}
-                              </span>
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
-                                En{clip.engagement_score ?? 0}
-                              </span>
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
-                                Va{clip.value_score ?? 0}
-                              </span>
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
-                                Sh{clip.shareability_score ?? 0}
-                              </span>
-                            </div>
-                          ) : null}
                         </div>
 
                         {/* PER-CARD RENDERING STATUS OVERLAY WITH ESTIMATES */}
@@ -788,10 +750,54 @@ export default function Dashboard() {
                         )}
                       </div>
 
-                      <div className="p-4 flex-1 flex flex-col justify-between">
-                        <div className="space-y-2">
+                      {/* Right-Hand Content Column */}
+                      <div className="p-4 flex-1 flex flex-col justify-between overflow-hidden">
+                        <div className="space-y-1.5">
+                          {/* INLINE EDITABLE CLIP TITLE */}
+                          <div className="flex items-center justify-between gap-2">
+                            {editingTitleIdx === clipIdx ? (
+                              <input
+                                type="text"
+                                value={tempTitle}
+                                onChange={(e) => setTempTitle(e.target.value)}
+                                onBlur={() => {
+                                  if (tempTitle.trim()) {
+                                    setEditedTitles(prev => ({ ...prev, [clipIdx]: tempTitle.trim() }));
+                                  }
+                                  setEditingTitleIdx(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    if (tempTitle.trim()) {
+                                      setEditedTitles(prev => ({ ...prev, [clipIdx]: tempTitle.trim() }));
+                                    }
+                                    setEditingTitleIdx(null);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingTitleIdx(null);
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                autoFocus
+                                className="bg-slate-100 text-slate-900 text-xs font-bold px-2 py-0.5 rounded border border-indigo-500 w-full outline-none"
+                              />
+                            ) : (
+                              <div 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingTitleIdx(clipIdx);
+                                  setTempTitle(editedTitles[clipIdx] || clip.title || "Untitled Clip");
+                                }}
+                                className="text-slate-800 font-bold text-xs hover:underline cursor-text hover:text-indigo-600 transition-colors truncate"
+                                title="Click to edit title"
+                              >
+                                {editedTitles[clipIdx] || clip.title || "Untitled Clip"}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* HOOK DESCRIPTION */}
                           <div className="flex items-start justify-between gap-2">
-                            <p className="text-[11px] text-slate-700 border-l-2 border-indigo-200 pl-2 italic line-clamp-3">
+                            <p className="text-[11px] text-slate-600 border-l-2 border-indigo-200 pl-2 italic line-clamp-3 leading-snug">
                               <span className="font-bold text-indigo-500 mr-1 not-italic">Hook:</span> 
                               "{clip.hook_sentence || clip.description}"
                             </p>
@@ -808,11 +814,44 @@ export default function Dashboard() {
                             </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 mt-3">
+
+                        {/* BOTTOM ACTIONS AND SCORES ROW */}
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                          {/* Scores & Subscore Badges */}
+                          <div className="flex flex-col gap-1 min-w-0">
+                            {/* Main Scores */}
+                            <div className="flex items-center gap-1.5">
+                              <div className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200/50 flex items-center gap-0.5 shadow-sm shrink-0">
+                                <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> V: {Math.round(clip.virality_score || clip.score || 0)}
+                              </div>
+                              <div className="bg-indigo-50 text-indigo-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-indigo-200/50 flex items-center gap-0.5 shadow-sm shrink-0">
+                                <Zap className="w-2.5 h-2.5 text-indigo-500" /> E: {Math.round(clip.energy_score || 0)}
+                              </div>
+                            </div>
+                            {/* Sub-Badges (H, En, Va, Sh) */}
+                            {(clip.hook_score || clip.engagement_score || clip.value_score || clip.shareability_score) ? (
+                              <div className="flex gap-1 flex-wrap shrink-0">
+                                <span className="text-[8px] font-semibold text-slate-500 bg-slate-100 rounded px-1 py-0.2" title="Hook Score">
+                                  H:{clip.hook_score ?? 0}
+                                </span>
+                                <span className="text-[8px] font-semibold text-slate-500 bg-slate-100 rounded px-1 py-0.2" title="Energy/Engagement Score">
+                                  E:{clip.engagement_score ?? 0}
+                                </span>
+                                <span className="text-[8px] font-semibold text-slate-500 bg-slate-100 rounded px-1 py-0.2" title="Value Score">
+                                  V:{clip.value_score ?? 0}
+                                </span>
+                                <span className="text-[8px] font-semibold text-slate-500 bg-slate-100 rounded px-1 py-0.2" title="Shareability Score">
+                                  S:{clip.shareability_score ?? 0}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {/* RENDER BUTTON */}
                           <button
                             onClick={(e) => { e.stopPropagation(); renderClip(clipIdx); }}
                             disabled={status === "rendering"}
-                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white text-[10px] font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                            className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1 shadow-sm shrink-0"
                           >
                             <Zap className="w-3 h-3" />
                             Render
@@ -823,6 +862,7 @@ export default function Dashboard() {
                   </div>
                 );
               })}
+
             </div>
           </div>
         ) : (
@@ -865,6 +905,17 @@ export default function Dashboard() {
                 </a>
               )}
 
+              {/* DOWNLOAD CURRENT (ZIP) BUTTON */}
+              {gallery.length > 0 && results?.clips?.some((c: any) => c.rendered_filename) && (
+                <a
+                  href={`${API_BASE}/download_all?project_only=true`}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Current (ZIP)
+                </a>
+              )}
+
               {/* DOWNLOAD ALL (ZIP) BUTTON */}
               {gallery.length > 0 && (
                 <a
@@ -874,6 +925,17 @@ export default function Dashboard() {
                   <Download className="w-3.5 h-3.5" />
                   Download All (ZIP)
                 </a>
+              )}
+
+              {/* CLEAR CURRENT RENDERS BUTTON */}
+              {gallery.length > 0 && results?.clips?.some((c: any) => c.rendered_filename) && (
+                <button
+                  onClick={clearCurrentRenders}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear Current
+                </button>
               )}
 
               {/* CLEAR GALLERY BUTTON */}

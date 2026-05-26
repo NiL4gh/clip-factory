@@ -872,12 +872,17 @@ async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
     return {"message": "Bulk render started."}
 
 @app.get("/api/download_all")
-async def download_all(background_tasks: BackgroundTasks):
+async def download_all(background_tasks: BackgroundTasks, project_only: bool = False):
     import glob
     import zipfile
-    files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+    if project_only:
+        current_filenames = {clip.get("rendered_filename") for clip in _state.get("clips", []) if clip.get("rendered_filename")}
+        files = [os.path.join(OUTPUT_DIR, fn) for fn in current_filenames if os.path.exists(os.path.join(OUTPUT_DIR, fn))]
+    else:
+        files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+        
     if not files:
-        raise HTTPException(status_code=404, detail="No rendered clips found to download.")
+        raise HTTPException(status_code=404, detail="No matching rendered clips found to download.")
         
     zip_path = os.path.join(WORK_DIR, f"all_clips_{int(time.time())}.zip")
     
@@ -896,11 +901,13 @@ async def download_all(background_tasks: BackgroundTasks):
             
     background_tasks.add_task(remove_file, zip_path)
     
+    filename = "clipfactory_project_clips.zip" if project_only else "clipfactory_all_clips.zip"
     return FileResponse(
         zip_path,
         media_type="application/zip",
-        filename="clipfactory_all_clips.zip"
+        filename=filename
     )
+
 
 @app.post("/api/check_session")
 async def check_session(req: SessionRequest):
@@ -1015,9 +1022,21 @@ async def export_csv():
     )
 
 @app.post("/api/clear_gallery")
-async def clear_gallery():
+async def clear_gallery(project_only: bool = False):
     import glob
-    files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+    if project_only:
+        current_filenames = {clip.get("rendered_filename") for clip in _state.get("clips", []) if clip.get("rendered_filename")}
+        files = [os.path.join(OUTPUT_DIR, fn) for fn in current_filenames if os.path.exists(os.path.join(OUTPUT_DIR, fn))]
+        
+        # Clear rendered_filename inside the _state so they are no longer marked as rendered
+        for clip in _state.get("clips", []):
+            if "rendered_filename" in clip:
+                del clip["rendered_filename"]
+        if _state.get("current_url"):
+            _save_session(_state["current_url"])
+    else:
+        files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+        
     deleted_count = 0
     for f in files:
         try:
@@ -1025,7 +1044,8 @@ async def clear_gallery():
             deleted_count += 1
         except OSError:
             continue
-    return {"status": "success", "message": f"Deleted {deleted_count} rendered clips from gallery."}
+    return {"status": "success", "message": f"Deleted {deleted_count} rendered clips."}
+
 
 # ── Serve Next.js static build (Catch-all for SPA) ──────────
 FRONTEND_DIR = os.path.join(REPO_DIR, "frontend", "out")
