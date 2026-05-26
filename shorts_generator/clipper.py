@@ -495,12 +495,24 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         if chunk_et <= chunk_st: continue
 
         for i, w in enumerate(chunk):
-            w_st = max(0, w["start"] - time_offset)
-            w_et = max(0, w["end"] - time_offset)
-            if w_et <= w_st: continue
+            # Calculate continuous display times to prevent flashing/blank gaps
+            if i == 0:
+                w_st = chunk_st
+            else:
+                w_st = max(0, w["start"] - time_offset)
+                
+            if i < len(chunk) - 1:
+                w_et = max(0, chunk[i+1]["start"] - time_offset)
+            else:
+                w_et = chunk_et
+
+            if w_et <= w_st:
+                # Fallback to avoid overlapping/negative duration
+                w_st = max(0, w["start"] - time_offset)
+                w_et = max(0, w["end"] - time_offset)
+                if w_et <= w_st: continue
 
             fade_tag = "" # Snappy, instant pop-up transitions to prevent visual lag with fast speakers
-
 
             styled = fade_tag
             hl_color = style["highlight"]
