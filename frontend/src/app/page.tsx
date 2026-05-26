@@ -1027,6 +1027,7 @@ export default function Dashboard() {
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
                   <option value="black">Black</option>
+                  <option value="white">White</option>
                   <option value="blur">Blur</option>
                   <option value="gradient">Gradient</option>
                   <option value="brand">Brand</option>
@@ -1039,7 +1040,7 @@ export default function Dashboard() {
                   onChange={(e) => updateSetting(selectedClip, "caption_style", e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
-                  {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire"].map(s => <option key={s} value={s}>{s}</option>)}
+                  {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire", "PodcastPop", "CinematicSlate", "NeonGlow"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
@@ -1049,7 +1050,7 @@ export default function Dashboard() {
                   onChange={(e) => setTitleStyle(e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
-                  {["Impact", "Box", "Yellow", "Neon", "Orange", "None"].map(s => <option key={s} value={s}>{s}</option>)}
+                  {["Impact", "Box", "Yellow", "Neon", "Orange", "Suits", "Meme", "None"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
@@ -1186,6 +1187,7 @@ export default function Dashboard() {
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
                   <option value="black">Black</option>
+                  <option value="white">White</option>
                   <option value="blur">Blur</option>
                   <option value="gradient">Gradient</option>
                   <option value="brand">Brand</option>
@@ -1198,7 +1200,7 @@ export default function Dashboard() {
                   onChange={(e) => updateGlobalSetting("caption_style", e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
-                  {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire"].map(s => <option key={s} value={s}>{s}</option>)}
+                  {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire", "PodcastPop", "CinematicSlate", "NeonGlow"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
@@ -1208,7 +1210,7 @@ export default function Dashboard() {
                   onChange={(e) => setTitleStyle(e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
-                  {["Impact", "Box", "Yellow", "Neon", "Orange", "None"].map(s => <option key={s} value={s}>{s}</option>)}
+                  {["Impact", "Box", "Yellow", "Neon", "Orange", "Suits", "Meme", "None"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="space-y-1">

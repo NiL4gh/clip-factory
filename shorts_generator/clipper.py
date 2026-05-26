@@ -36,16 +36,17 @@ def _extract_bg_frame(input_path: str, timestamp: float, output_path: str) -> bo
 def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: float, clip_duration: float):
     # VIDEO LAYER
     video_layer = (
-        "[0:v]crop=ih:ih,scale=1080:1080,setsar=1,"
-        "eq=saturation=1.25:gamma=0.95:contrast=1.15:"
-        "brightness=0.02,vignette[video_graded]"
+        "[0:v]crop=ih:ih,scale=1080:1080:flags=lanczos,setsar=1[video_graded]"
     )
 
-    # BACKGROUND LAYER — four branches on bg_style
+    # BACKGROUND LAYER — five branches on bg_style
     bg_style_lower = bg_style.lower() if bg_style else "black"
     if bg_style_lower == "black":
         extra_input_args = []
         bg_layer = f"color=c=black:s=1080x1920:r={fps}[bg]"
+    elif bg_style_lower == "white":
+        extra_input_args = []
+        bg_layer = f"color=c=white:s=1080x1920:r={fps}[bg]"
     elif bg_style_lower == "brand":
         extra_input_args = []
         bg_layer = f"color=c=0x0f172a:s=1080x1920:r={fps}[bg]"
@@ -259,12 +260,16 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
 
 # ── CapCut-Style Presets ─────────────────────────────────────────────────────
 _CAPTION_STYLES = {
-    "Classic": {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H0000FFFF&", "outline": 4, "shadow": 2, "bold": 1},
-    "Pop":     {"font_size": 95,  "primary": "&H00FFFFFF&", "highlight": "&H00FF00FF&", "outline": 4, "shadow": 2, "bold": 1},
-    "Glow":    {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H00FF00FF&", "outline": 2, "shadow": 8, "bold": 1},
-    "Outline": {"font_size": 92,  "primary": "&H00FFFFFF&", "highlight": "&H0000FF00&", "outline": 5, "shadow": 0, "bold": 1},
-    "Minimal": {"font_size": 72,  "primary": "&H00FFFFFF&", "highlight": "&H00FFFFFF&", "outline": 1, "shadow": 0, "bold": 0},
-    "Fire":    {"font_size": 90,  "primary": "&H0000FFFF&", "highlight": "&H000080FF&", "outline": 4, "shadow": 2, "bold": 1},
+    "Classic":        {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H0000FFFF&", "outline": 4, "shadow": 2, "bold": 1, "border_style": 1, "back_color": "&H80000000&", "casing": "upper"},
+    "Pop":            {"font_size": 95,  "primary": "&H00FFFFFF&", "highlight": "&H00FF00FF&", "outline": 4, "shadow": 2, "bold": 1, "border_style": 1, "back_color": "&H80000000&", "casing": "upper"},
+    "Glow":           {"font_size": 88,  "primary": "&H00FFFFFF&", "highlight": "&H00FF00FF&", "outline": 2, "shadow": 8, "bold": 1, "border_style": 1, "back_color": "&H80000000&", "casing": "upper"},
+    "Outline":        {"font_size": 92,  "primary": "&H00FFFFFF&", "highlight": "&H0000FF00&", "outline": 5, "shadow": 0, "bold": 1, "border_style": 1, "back_color": "&H80000000&", "casing": "upper"},
+    "Minimal":        {"font_size": 72,  "primary": "&H00FFFFFF&", "highlight": "&H00FFFFFF&", "outline": 1, "shadow": 0, "bold": 0, "border_style": 1, "back_color": "&H80000000&", "casing": "upper"},
+    "Fire":           {"font_size": 90,  "primary": "&H0000FFFF&", "highlight": "&H000080FF&", "outline": 4, "shadow": 2, "bold": 1, "border_style": 1, "back_color": "&H80000000&", "casing": "upper"},
+    # New Premium Styles
+    "PodcastPop":     {"font_size": 90,  "primary": "&H00FFFFFF&", "highlight": "&H00C500C5&", "outline": 5, "shadow": 0, "bold": 1, "border_style": 1, "back_color": "&H00000000&", "casing": "upper"},
+    "CinematicSlate": {"font_size": 76,  "primary": "&H00FFFFFF&", "highlight": "&H0033FF33&", "outline": 3, "shadow": 0, "bold": 0, "border_style": 3, "back_color": "&H99000000&", "casing": "original"},
+    "NeonGlow":       {"font_size": 80,  "primary": "&H00FFFFFF&", "highlight": "&H0000FFFF&", "outline": 1.5, "shadow": 8, "bold": 1, "border_style": 1, "back_color": "&H99000000&", "casing": "lower"},
 }
 
 TITLE_STYLE_PRESETS = {
@@ -275,6 +280,7 @@ TITLE_STYLE_PRESETS = {
         "BorderStyle":    1,
         "Outline":        6,
         "Shadow":         0,
+        "casing":         "upper"
     },
     "Box": {
         "PrimaryColour":  "&H00FFFFFF",   # white
@@ -283,6 +289,7 @@ TITLE_STYLE_PRESETS = {
         "BorderStyle":    3,
         "Outline":        0,
         "Shadow":         0,
+        "casing":         "upper"
     },
     "Yellow": {
         "PrimaryColour":  "&H0000FFFF",   # yellow (ASS BGR)
@@ -291,6 +298,7 @@ TITLE_STYLE_PRESETS = {
         "BorderStyle":    1,
         "Outline":        5,
         "Shadow":         2,
+        "casing":         "upper"
     },
     "Neon": {
         "PrimaryColour":  "&H00FFFFFF",   # white
@@ -299,6 +307,7 @@ TITLE_STYLE_PRESETS = {
         "BorderStyle":    1,
         "Outline":        2,
         "Shadow":         12,
+        "casing":         "upper"
     },
     "Orange": {
         "PrimaryColour":  "&H000066FF",   # orange (ASS BGR)
@@ -307,6 +316,25 @@ TITLE_STYLE_PRESETS = {
         "BorderStyle":    1,
         "Outline":        5,
         "Shadow":         2,
+        "casing":         "upper"
+    },
+    "Suits": {
+        "PrimaryColour":  "&H00FFFFFF",   # white base
+        "OutlineColour":  "&H00000000",   # black outline
+        "BackColour":     "&H00000000",
+        "BorderStyle":    1,
+        "Outline":        5,
+        "Shadow":         2,
+        "casing":         "title"
+    },
+    "Meme": {
+        "PrimaryColour":  "&H00000000",   # solid black
+        "OutlineColour":  "&H00FFFFFF",   # white outline
+        "BackColour":     "&H00000000",
+        "BorderStyle":    1,
+        "Outline":        0,
+        "Shadow":         0,
+        "casing":         "upper"
     },
 }
 
@@ -320,6 +348,9 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     outline = style["outline"]
     shadow = style["shadow"]
     bold = style["bold"]
+    border_style = style.get("border_style", 1)
+    back_color = style.get("back_color", "&H80000000&")
+    casing = style.get("casing", "upper")
     font_name = "Montserrat"
     p = {"main": main_color, "high": high_color}
 
@@ -341,8 +372,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,&H80000000,{bold},0,0,0,100,100,1,0,1,{outline},{shadow},{align},40,40,{margin_v},1",
+        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
+        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Header,{font_name},64,{ts['PrimaryColour']}&,&H000000FF&,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,180,1"
     ]
     
@@ -394,22 +425,44 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             else:  # "full"
                 lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},MagicHook,,0,0,0,,{wrapped_text}")
     if title_style != "None" and kwargs.get("header_text") and seg_duration > 0:
-        header_text = kwargs["header_text"].strip().upper()
+        if ts.get("casing", "upper") == "title":
+            header_text = kwargs["header_text"].strip().title()
+        else:
+            header_text = kwargs["header_text"].strip().upper()
         # Wrap header text to 2 lines if it is too long (e.g. > 20 characters)
         words_list = header_text.split()
-        current_line = ""
-        wrapped_lines = []
+        current_line = []
+        current_len = 0
+        wrapped_lines_words = []
         for word in words_list:
-            if len(current_line) + len(word) + (1 if current_line else 0) > 20:
-                wrapped_lines.append(current_line)
-                current_line = word
+            if current_len + len(word) + (1 if current_line else 0) > 20:
+                wrapped_lines_words.append(current_line)
+                current_line = [word]
+                current_len = len(word)
             else:
-                if current_line:
-                    current_line += " " + word
-                else:
-                    current_line = word
+                current_line.append(word)
+                current_len += len(word) + (1 if len(current_line) > 1 else 0)
         if current_line:
-            wrapped_lines.append(current_line)
+            wrapped_lines_words.append(current_line)
+            
+        wrapped_lines = []
+        global_idx = 0
+        for line_words in wrapped_lines_words:
+            line_colorized = []
+            for word in line_words:
+                if title_style == "Suits":
+                    if global_idx in [0, 1]:
+                        line_colorized.append(f"{{\\c&HFFFFFF&}}{word}")
+                    elif global_idx in [2, 3]:
+                        line_colorized.append(f"{{\\c&H33FF33&}}{word}")
+                    elif global_idx == 4:
+                        line_colorized.append(f"{{\\c&HFFFFFF&}}{word}")
+                    else:
+                        line_colorized.append(f"{{\\c&H00FFFF&}}{word}")
+                else:
+                    line_colorized.append(word)
+                global_idx += 1
+            wrapped_lines.append(" ".join(line_colorized))
         wrapped_header = "\\N".join(wrapped_lines)
         
         # Avoid overlapping: delay header start if 3s magic hook is active, or omit if full duration
@@ -454,7 +507,11 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             main_color = style["primary"]
             for x in chunk:
                 txt = x['word'].strip()
-                txt = txt.upper()
+                if casing == "upper":
+                    txt = txt.upper()
+                elif casing == "lower":
+                    txt = txt.lower()
+                
                 if x == w:
                     styled += f"{{\\c{hl_color}\\fscx120\\fscy120}}{txt}{{\\c{main_color}\\fscx100\\fscy100}} "
                 else:
