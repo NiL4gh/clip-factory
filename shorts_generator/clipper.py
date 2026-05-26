@@ -446,9 +446,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             w_et = max(0, w["end"] - time_offset)
             if w_et <= w_st: continue
 
-            fade_in = 150 if i == 0 else 0
-            fade_out = 150 if i == len(chunk) - 1 else 0
-            fade_tag = f"{{\fad({fade_in},{fade_out})}}"
+            fade_tag = "" # Snappy, instant pop-up transitions to prevent visual lag with fast speakers
+
 
             styled = fade_tag
             hl_color = style["highlight"]
