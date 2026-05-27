@@ -36,7 +36,7 @@ def _extract_bg_frame(input_path: str, timestamp: float, output_path: str) -> bo
 def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: float, clip_duration: float):
     # VIDEO LAYER
     video_layer = (
-        "[0:v]crop=ih:ih,scale=1080:1080:flags=lanczos,setsar=1[video_graded]"
+        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
     )
 
     # BACKGROUND LAYER — five branches on bg_style
@@ -79,7 +79,7 @@ def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: fl
 
     # COMPOSITE
     composite = (
-        f"[bg][video_graded]overlay=0:{LAYOUT_VIDEO_Y},"
+        "[bg][video_graded]overlay=0:0,"
         "setpts=PTS-STARTPTS[vout]"
     )
 
@@ -481,8 +481,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     chunks = []
     curr = []
     for w in words:
-        # Enforce strict word wrapping of max 3 words per line
-        if len(curr) >= 3:
+        # Enforce strict word wrapping of max 5 words per line
+        if len(curr) >= 5:
             chunks.append(curr)
             curr = []
         curr.append(w)
