@@ -384,7 +384,9 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         else:
             hook_align = 8
         hook_margin = 60
-        lines.append(f"Style: MagicHook,{font_name},52,&H0044FFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,3,4,3,{hook_align},40,40,{hook_margin},1")
+        # Changed BorderStyle from 3 (opaque box) to 1 (outline + drop shadow)
+        # Primary color: White (&H00FFFFFF) with thick black outline
+        lines.append(f"Style: MagicHook,{font_name},60,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,6,3,{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
         "",
@@ -406,7 +408,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             current_line = ""
             wrapped_lines = []
             for word in words_list:
-                if len(current_line) + len(word) + (1 if current_line else 0) > 18:
+                if len(current_line) + len(word) + (1 if current_line else 0) > 26:
                     wrapped_lines.append(current_line)
                     current_line = word
                 else:
