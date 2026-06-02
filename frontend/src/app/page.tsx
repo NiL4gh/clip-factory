@@ -64,7 +64,7 @@ function formatEta(seconds: number | undefined | null): string {
 /* ------------------------------------------------------------------ */
 const DEFAULT_SETTINGS = {
   face_center: true,
-  magic_hook: true,
+  magic_hook: false,
   remove_silence: true,
   caption_style: "Classic",
   caption_pos: "bottom",

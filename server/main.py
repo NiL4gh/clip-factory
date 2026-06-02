@@ -207,7 +207,7 @@ _render_status = {} # { task_id: { status: "running"|"done"|"error", filename: s
 class RenderRequest(BaseModel):
     clip_id: int # index in _state["clips"]
     face_center: bool = True
-    magic_hook: bool = True
+    magic_hook: bool = False
     remove_silence: bool = True
     caption_style: str = "Classic"
     caption_pos: str = "Bottom"
@@ -223,7 +223,7 @@ class RenderRequest(BaseModel):
 
 class BulkRenderRequest(BaseModel):
     face_center: bool = True
-    magic_hook: bool = True
+    magic_hook: bool = False
     remove_silence: bool = True
     caption_style: str = "Classic"
     caption_pos: str = "Bottom"
