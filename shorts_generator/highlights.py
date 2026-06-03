@@ -146,7 +146,7 @@ EXTRACTION RULES:
   closes. Never end on a sentence that is still building toward something.
 - Never cut in the middle of a sentence, story, or argument.
 - Only the exact spoken words from the transcript. No invented content.
-- Do not stitch unrelated thoughts together. One continuous passage only.
+- You may edit out boring filler, long pauses, tangents, or secondary details. Simply omit them from the ideal_transcript, and the stitching engine will automatically concatenate the remaining high-energy segments under 60 seconds.
 - Do not extract intros, outros, sponsor reads, or off-topic transitions.
 - HOOK NON-REPETITION MANDATE: For `hook_sentence` and `hook_text`, write completely clean, non-repetitive, grammatically correct sentences. NEVER repeat any words, clauses, or phrases inside the sentence (avoid loops like 'mostly reasonable works better than mostly reasonable works better than'). Make sure it is highly punchy, clear, and natural.
 
@@ -554,7 +554,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
                 clip["end_time"] = segments[-1]["end_time"]
 
         # Final duration check
-        if total_dur < 12 or total_dur > 120:
+        if total_dur < 10 or total_dur > 120:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
             continue
 
@@ -875,7 +875,7 @@ fix. Simply return the corrected JSON.
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                 f"Extract ALL viral moments from this section. Target {clips_per_topic} to {clips_per_topic * 2} clips — more is fine if content supports it.\n"
-                f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.{energy_hint}\n\n"
+                f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
@@ -938,7 +938,7 @@ fix. Simply return the corrected JSON.
             prompt = (
                 f"{virality_prompt}\n\n"
                 f"Extract ALL natural viral clips from this transcript.\n"
-                f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.\n\n"
+                f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
                 f"Transcript:\n{text[:CHUNK_CHARS]}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
             )

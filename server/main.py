@@ -220,6 +220,7 @@ class RenderRequest(BaseModel):
     hook_display: str = "full"  # "full" | "3s" | "off"
     show_outro: bool = False
     title_style: str = "Impact"
+    layout_mode: str = "box"
 
 class BulkRenderRequest(BaseModel):
     face_center: bool = True
@@ -231,11 +232,13 @@ class BulkRenderRequest(BaseModel):
     broll_intensity: str = "None"
     clip_ids: Optional[List[int]] = None
     titles: Optional[dict] = None
+    clip_settings: Optional[dict] = None
     bg_style: str = "black"
     hook_position: str = "top"
     hook_display: str = "full"  # "full" | "3s" | "off"
     show_outro: bool = False
     title_style: str = "Impact"
+    layout_mode: str = "box"
 
 class SessionRequest(BaseModel):
     url: str
@@ -702,7 +705,8 @@ def _run_render(req: RenderRequest, task_id: str):
             hook_position=req.hook_position,
             hook_display=req.hook_display,
             show_outro=req.show_outro,
-            title_style=req.title_style
+            title_style=req.title_style,
+            layout_mode=req.layout_mode
         )
         
         # ── BGM mixing via enhance_clip ──
@@ -795,30 +799,49 @@ def _run_bulk_render(req: BulkRenderRequest):
             theme = clip.get("theme", "Storytime")
             
             try:
+                # Resolve per-clip settings
+                settings = req.dict()
+                idx_str = str(idx)
+                if req.clip_settings and idx_str in req.clip_settings:
+                    per_clip = req.clip_settings[idx_str]
+                    if per_clip:
+                        for k, v in per_clip.items():
+                            if v is not None:
+                                settings[k] = v
+
+                c_pos = settings.get("caption_pos", "Bottom")
+                if isinstance(c_pos, str):
+                    c_pos = c_pos.capitalize()
+
                 out = render_short(
                     input_video=input_mp4, clip_data=clip,
                     word_timestamps=_state["word_timestamps"],
                     output_dir=clips_dir, work_dir=WORK_DIR,
-                    face_center=req.face_center, add_subs=(req.caption_style != "None"),
-                    theme=theme, caption_style=req.caption_style, caption_pos=req.caption_pos,
+                    face_center=settings.get("face_center", True),
+                    add_subs=(settings.get("caption_style", "Classic") != "None"),
+                    theme=theme,
+                    caption_style=settings.get("caption_style", "Classic"),
+                    caption_pos=c_pos,
                     override_start=None, override_end=None,
                     excluded_sentences=[],
-                    magic_hook=req.magic_hook,
-                    remove_silence=req.remove_silence,
-                    broll_intensity=req.broll_intensity,
+                    magic_hook=settings.get("magic_hook", True),
+                    remove_silence=settings.get("remove_silence", True),
+                    broll_intensity=settings.get("broll_intensity", "None"),
                     all_sentences=[],
-                    bg_style=req.bg_style,
-                    hook_position=req.hook_position,
-                    hook_display=req.hook_display,
-                    show_outro=req.show_outro,
-                    title_style=req.title_style
+                    bg_style=settings.get("bg_style", "black"),
+                    hook_position=settings.get("hook_position", "top"),
+                    hook_display=settings.get("hook_display", "full"),
+                    show_outro=settings.get("show_outro", False),
+                    title_style=settings.get("title_style", "Impact"),
+                    layout_mode=settings.get("layout_mode", "box")
                 )
-                
+
                 # BGM mixing
-                if req.bg_music_genre and req.bg_music_genre != "None":
-                    music_path = _get_bgm(req.bg_music_genre)
+                bg_music_genre = settings.get("bg_music_genre", "None")
+                if bg_music_genre and bg_music_genre != "None":
+                    music_path = _get_bgm(bg_music_genre)
                     if music_path:
-                        ui_logger.log(f"Mixing BGM ({req.bg_music_genre}) with dynamic peak swell for clip {idx}...")
+                        ui_logger.log(f"Mixing BGM ({bg_music_genre}) with dynamic peak swell for clip {idx}...")
                         try:
                             enhance_clip(out, clip, music_path=music_path)
                         except Exception as bgm_err:

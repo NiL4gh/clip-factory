@@ -73,6 +73,8 @@ const DEFAULT_SETTINGS = {
   hook_position: "top",
   hook_display: "full",
   show_outro: false,
+  title_style: "Impact",
+  layout_mode: "box",
 };
 
 export default function Dashboard() {
@@ -105,7 +107,6 @@ export default function Dashboard() {
   const [editingTitleIdx, setEditingTitleIdx] = useState<number | null>(null);
   const [tempTitle, setTempTitle] = useState("");
   const [galleryFilter, setGalleryFilter] = useState<"all" | "today" | "over30" | "under30">("all");
-  const [titleStyle, setTitleStyle] = useState("Impact");
 
   const addLog = (message: string) => {
     const timestampRegex = /^\[\d{2}:\d{2}:\d{2}\]/;
@@ -384,8 +385,7 @@ export default function Dashboard() {
         clip_id: index,
         ...settings,
         excluded_sentences: exSentences,
-        title: editedTitles[index] || undefined,
-        title_style: titleStyle
+        title: editedTitles[index] || undefined
       });
       
       const taskId = res.data.task_id;
@@ -420,12 +420,18 @@ export default function Dashboard() {
       .filter(([_, checked]) => checked)
       .map(([idxStr]) => parseInt(idxStr));
 
+    const clipSettingsMap: Record<number, any> = {};
+    const targetIds = selectedIds.length > 0 ? selectedIds : (results?.clips || []).map((_: any, i: number) => i);
+    targetIds.forEach((id: number) => {
+      clipSettingsMap[id] = getSettings(id);
+    });
+
     try {
       await axios.post(`${API_BASE}/render_all`, {
         ...globalSettings,
         clip_ids: selectedIds.length > 0 ? selectedIds : undefined,
         titles: editedTitles,
-        title_style: titleStyle
+        clip_settings: clipSettingsMap
       });
       const poll = setInterval(async () => {
         const statusRes = await axios.get(`${API_BASE}/status`);
@@ -451,29 +457,48 @@ export default function Dashboard() {
     if (!results?.clips?.[clipIdx] || !results?.word_timestamps) return [];
     const clip = results.clips[clipIdx];
     const words = results.word_timestamps;
-    
+
     // Find words in clip range
     const clipSt = parseFloat(clip.start_time || 0);
     const clipEt = parseFloat(clip.end_time || 0);
     const clipWords = words.map((w: any, i: number) => ({ ...w, idx: i }))
       .filter((w: any) => {
         if (clip.is_stitched && clip.segments && clip.segments.length > 0) {
-          return clip.segments.some((seg: any) => 
-            w.start >= parseFloat(seg.start_time) - 0.5 && 
+          return clip.segments.some((seg: any) =>
+            w.start >= parseFloat(seg.start_time) - 0.5 &&
             w.end <= parseFloat(seg.end_time) + 0.5
           );
         }
         return w.start >= clipSt - 0.5 && w.end <= clipEt + 0.5;
       });
 
-    // Group into "sentences" (~12 words each)
+    // Group into sentences by punctuation and pauses
     const sentences = [];
-    for (let i = 0; i < clipWords.length; i += 12) {
-      const chunk = clipWords.slice(i, i + 12);
+    let currentSentence: any[] = [];
+
+    for (let i = 0; i < clipWords.length; i++) {
+      const w = clipWords[i];
+      currentSentence.push(w);
+      const endsSentence = /[.!?।|]/.test(w.word);
+      let pauseAfter = false;
+      if (i + 1 < clipWords.length) {
+        pauseAfter = (clipWords[i+1].start - w.end) > 0.5;
+      }
+
+      if (endsSentence || pauseAfter || currentSentence.length >= 20) {
+        sentences.push({
+          text: currentSentence.map((cw: any) => cw.word).join(" "),
+          start_idx: currentSentence[0].idx,
+          end_idx: currentSentence[currentSentence.length - 1].idx
+        });
+        currentSentence = [];
+      }
+    }
+    if (currentSentence.length > 0) {
       sentences.push({
-        text: chunk.map((w: any) => w.word).join(" "),
-        start_idx: chunk[0].idx,
-        end_idx: chunk[chunk.length - 1].idx
+        text: currentSentence.map((cw: any) => cw.word).join(" "),
+        start_idx: currentSentence[0].idx,
+        end_idx: currentSentence[currentSentence.length - 1].idx
       });
     }
     return sentences;
@@ -1046,11 +1071,22 @@ export default function Dashboard() {
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-slate-500">TITLE STYLE</span>
                 <select
-                  value={titleStyle}
-                  onChange={(e) => setTitleStyle(e.target.value)}
+                  value={getSettings(selectedClip).title_style}
+                  onChange={(e) => updateSetting(selectedClip, "title_style", e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
                   {["Impact", "Box", "Yellow", "Neon", "Orange", "Suits", "Meme", "None"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Layout Mode</span>
+                <select
+                  value={getSettings(selectedClip).layout_mode}
+                  onChange={(e) => updateSetting(selectedClip, "layout_mode", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  <option value="box">1:1 Centered Box</option>
+                  <option value="portrait">9:16 Portrait</option>
                 </select>
               </div>
               <div className="space-y-1">
@@ -1206,11 +1242,22 @@ export default function Dashboard() {
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-slate-500">TITLE STYLE</span>
                 <select
-                  value={titleStyle}
-                  onChange={(e) => setTitleStyle(e.target.value)}
+                  value={globalSettings.title_style}
+                  onChange={(e) => updateGlobalSetting("title_style", e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
                 >
                   {["Impact", "Box", "Yellow", "Neon", "Orange", "Suits", "Meme", "None"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Layout Mode</span>
+                <select
+                  value={globalSettings.layout_mode}
+                  onChange={(e) => updateGlobalSetting("layout_mode", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                >
+                  <option value="box">1:1 Centered Box</option>
+                  <option value="portrait">9:16 Portrait</option>
                 </select>
               </div>
               <div className="space-y-1">

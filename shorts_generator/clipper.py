@@ -33,11 +33,16 @@ def _extract_bg_frame(input_path: str, timestamp: float, output_path: str) -> bo
         ui_logger.log(f"Warning: _extract_bg_frame failed: {e}")
         return False
 
-def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: float, clip_duration: float):
+def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: float, clip_duration: float, layout_mode: str = "box"):
     # VIDEO LAYER
-    video_layer = (
-        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
-    )
+    if layout_mode == "box":
+        video_layer = (
+            "[0:v]scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1[video_graded]"
+        )
+    else:
+        video_layer = (
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
+        )
 
     # BACKGROUND LAYER — five branches on bg_style
     bg_style_lower = bg_style.lower() if bg_style else "black"
@@ -78,10 +83,16 @@ def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: fl
         bg_layer = f"color=c=black:s=1080x1920:r={fps}[bg]"
 
     # COMPOSITE
-    composite = (
-        "[bg][video_graded]overlay=0:0,"
-        "setpts=PTS-STARTPTS[vout]"
-    )
+    if layout_mode == "box":
+        composite = (
+            "[bg][video_graded]overlay=0:320,"
+            "setpts=PTS-STARTPTS[vout]"
+        )
+    else:
+        composite = (
+            "[bg][video_graded]overlay=0:0,"
+            "setpts=PTS-STARTPTS[vout]"
+        )
 
     filter_complex = f"{bg_layer};{video_layer};{composite}"
     output_map = "[vout]"
@@ -338,6 +349,23 @@ TITLE_STYLE_PRESETS = {
     },
 }
 
+def _is_header_highlight_target(word: str) -> bool:
+    """
+    Cleans word and checks if it contains numbers or matches high-impact trigger words.
+    """
+    clean_word = "".join(c for c in word if c.isalnum() or c in "$%").upper()
+    is_number = any(char.isdigit() for char in clean_word)
+
+    # Custom viral highlight trigger words
+    trigger_words = {
+        "SECRET", "SECRETS", "MISTAKE", "MISTAKES", "FAILED", "FAIL", "FAILS",
+        "SHOCKING", "SHOCKED", "RULE", "RULES", "REVENUE", "TRUTH", "VIRAL",
+        "MONEY", "EARN", "RICHEST", "RICH", "POOR", "WHOP", "REWARDS",
+        "SUCCESS", "SUCCESSFUL", "ONLY", "PRO", "TINY", "HUGE", "FAST", "SLOW"
+    }
+    is_trigger = clean_word in trigger_words
+    return is_number or is_trigger
+
 def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Classic", position="Center", title_style: str = "Impact", **kwargs):
     # Resolve style preset — fall back to Classic if unknown
     # Resolve style preset — returns a dict with all style attributes
@@ -374,7 +402,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{font_name},64,{ts['PrimaryColour']}&,&H000000FF&,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,180,1"
+        f"Style: Header,{font_name},80,{ts['PrimaryColour']}&,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,180,1"
     ]
     
     if kwargs.get("magic_hook_text"):
@@ -447,20 +475,33 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         if current_line:
             wrapped_lines_words.append(current_line)
             
+        default_color = ts['PrimaryColour'].replace("&", "")
+        if default_color.endswith(";"):  # safety cleanup
+            default_color = default_color.rstrip(";")
+
         wrapped_lines = []
         global_idx = 0
+        active_color = default_color
         for line_words in wrapped_lines_words:
             line_colorized = []
             for word in line_words:
                 if title_style == "Suits":
                     if global_idx in [0, 1]:
-                        line_colorized.append(f"{{\\c&HFFFFFF&}}{word}")
+                        target_color = "&HFFFFFF"
                     elif global_idx in [2, 3]:
-                        line_colorized.append(f"{{\\c&H33FF33&}}{word}")
+                        target_color = "&H33FF33"
                     elif global_idx == 4:
-                        line_colorized.append(f"{{\\c&HFFFFFF&}}{word}")
+                        target_color = "&HFFFFFF"
                     else:
-                        line_colorized.append(f"{{\\c&H00FFFF&}}{word}")
+                        target_color = "&H00FFFF"
+                elif _is_header_highlight_target(word):
+                    target_color = "&H00FFFF"  # gold/yellow
+                else:
+                    target_color = default_color
+
+                if target_color != active_color:
+                    line_colorized.append(f"{{\\c{target_color}&}}{word}")
+                    active_color = target_color
                 else:
                     line_colorized.append(word)
                 global_idx += 1
@@ -482,12 +523,17 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
 
     chunks = []
     curr = []
-    for w in words:
-        # Enforce strict word wrapping of max 5 words per line
-        if len(curr) >= 5:
+    for i, w in enumerate(words):
+        curr.append(w)
+        word_text = w["word"].strip()
+        ends_sentence = any(p in word_text for p in [".", "!", "?", "।", "|"])
+        pause_after = False
+        if i + 1 < len(words):
+            pause_after = (words[i+1]["start"] - w["end"]) > 0.5
+
+        if ends_sentence or pause_after or len(curr) >= 3:
             chunks.append(curr)
             curr = []
-        curr.append(w)
     if curr:
         chunks.append(curr)
 
@@ -502,7 +548,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
                 w_st = chunk_st
             else:
                 w_st = max(0, w["start"] - time_offset)
-                
+
             if i < len(chunk) - 1:
                 w_et = max(0, chunk[i+1]["start"] - time_offset)
             else:
@@ -525,9 +571,9 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
                     txt = txt.upper()
                 elif casing == "lower":
                     txt = txt.lower()
-                
+
                 if x == w:
-                    styled += f"{{\\c{hl_color}\\fscx120\\fscy120}}{txt}{{\\c{main_color}\\fscx100\\fscy100}} "
+                    styled += f"{{\\c{hl_color}}}{txt}{{\\c{main_color}}} "
                 else:
                     styled += f"{txt} "
 
@@ -561,11 +607,12 @@ def _generate_text_card(output_path, text, duration, font_file, font_size=64):
     subprocess.run(cmd, check=True, capture_output=True)
 
 def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
-                 face_center=True, add_subs=True, theme="Storytime", 
+                 face_center=True, add_subs=True, theme="Storytime",
                  caption_style="Classic", caption_pos="Bottom",
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
-                 all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False, title_style: str = "Impact"):
+                 all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False, title_style: str = "Impact",
+                 layout_mode: str = "box"):
 
     ui_logger.log("Initializing render pipeline...")
     cap_fps = cv2.VideoCapture(input_video)
@@ -682,7 +729,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         clip_duration = seg_et - seg_st
         extra_input_args, layout_fc, layout_out = _build_layout_filtergraph(
-            bg_style, bg_frame_path, fps, clip_duration
+            bg_style, bg_frame_path, fps, clip_duration, layout_mode=layout_mode
         )
 
         if extra_input_args:
@@ -692,7 +739,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             inputs = ["-ss", str(seg_st), "-to", str(seg_et), "-i", input_video]
             input_idx = 1
         audio_source = "0:a"
-        
+
         filter_complex = layout_fc + ";"
         current_v = "vout"
         sfx_delays = []
@@ -706,13 +753,19 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     inputs.extend(["-loop", "1", "-t", "2.0", "-i", b_img_path])
                     sfx_delays.append(b_st - seg_st)
 
-                    filter_complex += f"[{input_idx}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h}[broll{input_idx}];"
+                    if layout_mode == "box":
+                        filter_complex += f"[{input_idx}:v]scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080[broll{input_idx}];"
+                    else:
+                        filter_complex += f"[{input_idx}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h}[broll{input_idx}];"
 
                     rel_st = b_st - seg_st
                     rel_et = rel_st + 2.0
                     next_v = f"v{input_idx}"
 
-                    filter_complex += f"[{current_v}][broll{input_idx}]overlay=0:0:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
+                    if layout_mode == "box":
+                        filter_complex += f"[{current_v}][broll{input_idx}]overlay=0:320:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
+                    else:
+                        filter_complex += f"[{current_v}][broll{input_idx}]overlay=0:0:enable='between(t,{rel_st},{rel_et})'[{next_v}];"
                     current_v = next_v
                     input_idx += 1
         for i_e, e in enumerate(emoji_moms):
