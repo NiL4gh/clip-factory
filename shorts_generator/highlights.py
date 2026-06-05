@@ -994,23 +994,23 @@ fix. Simply return the corrected JSON.
             start_ts = h.get("start_timestamp")
             end_ts = h.get("end_timestamp")
             
-            if start_ts is not None and end_ts is not None:
-                try:
-                    start_ts = float(start_ts)
-                    end_ts = float(end_ts)
-                    if raw_words:
-                        # Snap to exact word boundaries to prevent jarring mid-word cuts
-                        start_word = min(raw_words, key=lambda w: abs(w["start"] - start_ts))
-                        if abs(start_word["start"] - start_ts) < 5.0:
-                            start_ts = start_word["start"]
-                        end_word = min(raw_words, key=lambda w: abs(w["end"] - end_ts))
-                        if abs(end_word["end"] - end_ts) < 5.0:
-                            end_ts = end_word["end"]
-                    segments = [{"start_time": start_ts, "end_time": end_ts}]
-                except (ValueError, TypeError):
-                    segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
-            else:
+            # Always use exact text mapping if raw_words are available, as LLMs hallucinate timestamps
+            if raw_words and ideal_transcript:
                 segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
+                # Fallback to LLM timestamps ONLY if mapping totally failed
+                if not segments and start_ts is not None and end_ts is not None:
+                    try:
+                        segments = [{"start_time": float(start_ts), "end_time": float(end_ts)}]
+                    except (ValueError, TypeError):
+                        pass
+            else:
+                if start_ts is not None and end_ts is not None:
+                    try:
+                        segments = [{"start_time": float(start_ts), "end_time": float(end_ts)}]
+                    except (ValueError, TypeError):
+                        segments = []
+                else:
+                    segments = []
                 
             if not segments:
                 continue
