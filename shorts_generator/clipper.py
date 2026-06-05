@@ -531,7 +531,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         if i + 1 < len(words):
             pause_after = (words[i+1]["start"] - w["end"]) > 0.5
 
-        if ends_sentence or pause_after or len(curr) >= 3:
+        if ends_sentence or pause_after or len(curr) >= 7:
             chunks.append(curr)
             curr = []
     if curr:
@@ -777,7 +777,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         seg_words = [w for w in block_words if w["start"] >= seg_st - 0.2 and w["end"] <= seg_et + 0.2]
         if add_subs and seg_words:
-            mh_text = clip_data.get("hook_sentence") if (magic_hook and idx == 0) else None
+            mh_text = clip_data.get("hook_text") if (magic_hook and idx == 0) else None
             safe_font = os.path.join(_FONT_DIR, _FONT_FILE).replace("\\", "/").replace(":", "\\:")
 
             ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
@@ -978,3 +978,4 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
     ui_logger.log(f"Render complete: {os.path.basename(final_output)}")
     return final_output
+

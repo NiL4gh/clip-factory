@@ -1,9 +1,9 @@
-"""
+﻿"""
 Local LLM highlight detection using llama-cpp-python.
 Professional 3-pass architecture:
   Pass 0: Persona Detection (fast model)
-  Pass 1: Topic Indexing — map the entire transcript into distinct topics
-  Pass 2: Per-Topic Clip Extraction — extract clips with multi-segment stitching
+  Pass 1: Topic Indexing â€” map the entire transcript into distinct topics
+  Pass 2: Per-Topic Clip Extraction â€” extract clips with multi-segment stitching
 """
 import json
 import re
@@ -13,22 +13,22 @@ _llm_cache = {}
 CHUNK_CHARS = 3000  # More granular chunks to ensure we identify 5-10+ topics for 15-20 clips
 
 
-# ── Opus-Style Viral Director Prompt ─────────────────────────────────────────
+# â”€â”€ Opus-Style Viral Director Prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _VIRALITY_BASE = """You are an expert short-form video editor who has studied thousands of viral TikTok, Instagram Reels, and YouTube Shorts clips. Your job is to hunt through this transcript and identify every moment that has the natural shape of a viral clip. A 2-hour podcast typically contains 15-30 of these moments. Your job is to find all of them.
 
 TOTAL VIDEO DURATION: {video_duration_str}
 
-═══════════════════════════════════════════════════════
-THE SHAPE OF A VIRAL CLIP — LEARN THIS PATTERN:
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+THE SHAPE OF A VIRAL CLIP â€” LEARN THIS PATTERN:
 
 Every viral clip from a podcast or interview has the same three-part shape.
 Your job is to find moments in the transcript where this shape already exists
-naturally in what the speaker said. You are not creating structure — you are
+naturally in what the speaker said. You are not creating structure â€” you are
 recognizing it.
 
-PART 1 — THE ENTRY POINT (the first thing the viewer hears):
+PART 1 â€” THE ENTRY POINT (the first thing the viewer hears):
 This is a line that makes a scrolling viewer stop and watch. It works because
-it creates an open question in their mind — something feels unresolved, surprising,
+it creates an open question in their mind â€” something feels unresolved, surprising,
 or counterintuitive. They have to keep watching to understand it.
 
 What it sounds like in real transcripts:
@@ -47,11 +47,11 @@ What it does NOT sound like:
 - Transitions: "So moving on to the next point..."
 - Agreements: "Yeah, exactly, that's a great point..."
 
-PART 2 — THE BUILD (the middle of the clip):
+PART 2 â€” THE BUILD (the middle of the clip):
 This is where the speaker explains, proves, or tells the story behind the
 entry point. The viewer stays because they want the answer to the question
 the entry point created. The build is what separates a viral clip from a
-viral quote — it earns the payoff through substance.
+viral quote â€” it earns the payoff through substance.
 
 What it sounds like:
 - The speaker walks through the logic behind their claim step by step
@@ -59,12 +59,12 @@ What it sounds like:
 - The speaker challenges the conventional wisdom and explains why it's wrong
 - The speaker reveals what they discovered, learned, or experienced
 
-The build must be substantial — at least 3-5 sentences of development.
+The build must be substantial â€” at least 3-5 sentences of development.
 A clip with a great entry point and no build feels hollow and gets skipped.
 
-PART 3 — THE LANDING (the last thing the viewer hears):
+PART 3 â€” THE LANDING (the last thing the viewer hears):
 This is the line that closes the loop. The viewer was holding a question
-in their mind since the entry point — the landing answers it in a way that
+in their mind since the entry point â€” the landing answers it in a way that
 feels satisfying, surprising, or memorable. This is the line people screenshot,
 share, or quote. It is the reason the clip was worth watching.
 
@@ -76,59 +76,59 @@ What it sounds like:
    because they're optimizing for the wrong thing."
 - A specific actionable conclusion:
   "Stop setting outcome goals. Set process goals. Track the behavior, not the result."
-- An emotional release — a moment of genuine humor, vulnerability, or relief
+- An emotional release â€” a moment of genuine humor, vulnerability, or relief
 
 The landing MUST be the actual conclusion of the thought. If the speaker
-is still mid-explanation, mid-story, or mid-argument when you cut — the
+is still mid-explanation, mid-story, or mid-argument when you cut â€” the
 clip has no landing. Keep reading the transcript forward until the thought
 closes naturally. That closing line is your landing.
 
-═══════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 HOW TO HUNT FOR THESE MOMENTS:
 
 Read through the transcript and look for these trigger patterns that signal
 a complete viral clip is nearby:
 
-TRIGGER 1 — CONTRAST STATEMENTS:
+TRIGGER 1 â€” CONTRAST STATEMENTS:
 Any time the speaker says "but", "however", "the problem is", "here's the
 thing", "what most people don't realize", "the truth is", "what nobody
-tells you" — a clip is likely starting. Read forward from that point and
+tells you" â€” a clip is likely starting. Read forward from that point and
 find where the thought fully closes.
 
-TRIGGER 2 — SPECIFIC NUMBERS OR DETAILS:
+TRIGGER 2 â€” SPECIFIC NUMBERS OR DETAILS:
 Any time the speaker uses a specific number, statistic, or concrete detail
-("10 years", "40%", "every single time", "$50,000") — these signal a real
+("10 years", "40%", "every single time", "$50,000") â€” these signal a real
 story or real evidence is coming. These clips have high credibility and
 shareability.
 
-TRIGGER 3 — PERSONAL STORIES WITH A LESSON:
+TRIGGER 3 â€” PERSONAL STORIES WITH A LESSON:
 Any time the speaker says "I remember when", "there was this moment",
-"I used to think", "I made this mistake" — a story arc is beginning.
+"I used to think", "I made this mistake" â€” a story arc is beginning.
 Read forward until the speaker explicitly draws the lesson from the story.
 That lesson is your landing.
 
-TRIGGER 4 — DIRECT AUDIENCE ADDRESS:
+TRIGGER 4 â€” DIRECT AUDIENCE ADDRESS:
 Any time the speaker shifts from talking about themselves or others to
-talking directly to the listener — "if you're struggling with", "here's
-what I want you to understand", "stop doing this" — these clips feel
+talking directly to the listener â€” "if you're struggling with", "here's
+what I want you to understand", "stop doing this" â€” these clips feel
 personal and convert well because the viewer feels spoken to directly.
 
-TRIGGER 5 — OPINION BOMBS:
+TRIGGER 5 â€” OPINION BOMBS:
 Any time the speaker says something that a significant portion of the
-audience would disagree with or find surprising — these clips generate
+audience would disagree with or find surprising â€” these clips generate
 comments and shares because they provoke a reaction. Find where the
 speaker defends or explains the opinion. That explanation is the build.
 The original statement is the entry point.
 
-═══════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 EXTRACTION RULES:
 
 - Extract EVERY moment that has a clear Entry Point, Build, and Landing.
   If a topic section has 5 such moments, extract all 5.
 - Each clip's ideal_transcript must be 50 to 220 words of continuous
   spoken text. This represents approximately 30-90 seconds of speech. This expanded length ensures you have ample room to capture the complete payoff or answer.
-- THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcript—in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
-- ENDING RULES — NON-NEGOTIABLE:
+- THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcriptâ€”in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
+- ENDING RULES â€” NON-NEGOTIABLE:
   The final sentence of ideal_transcript MUST be one of these:
     - The speaker's conclusion or answer to the question they raised
     - A punchline or surprising reversal that pays off the setup
@@ -146,7 +146,7 @@ EXTRACTION RULES:
   closes. Never end on a sentence that is still building toward something.
 - Never cut in the middle of a sentence, story, or argument.
 - Only the exact spoken words from the transcript. No invented content.
-- You may edit out boring filler, long pauses, tangents, or secondary details. Simply omit them from the ideal_transcript, and the stitching engine will automatically concatenate the remaining high-energy segments under 60 seconds.
+- STRICT EDITING MANDATE: You MUST actively edit out all boring filler, long pauses, tangents, secondary details, or host interruptions. Skip them entirely. The stitching engine will automatically concatenate your selected high-energy segments into a punchy, jump-cut video. Do not be lazy - extract ONLY the absolute best sentences that drive the point home fast.
 - Do not extract intros, outros, sponsor reads, or off-topic transitions.
 - HOOK NON-REPETITION MANDATE: For `hook_sentence` and `hook_text`, write completely clean, non-repetitive, grammatically correct sentences. NEVER repeat any words, clauses, or phrases inside the sentence (avoid loops like 'mostly reasonable works better than mostly reasonable works better than'). Make sure it is highly punchy, clear, and natural.
 
@@ -161,7 +161,7 @@ words sound:
   "brought to you by", "use code", "link in the bio", "check out",
   "discount", "promo code"
 - Segments where the speaker is only describing what they are ABOUT TO
-  say rather than actually saying it — framing and setup language is
+  say rather than actually saying it â€” framing and setup language is
   not a clip
 - Any segment whose primary function is to introduce, frame, or close
   the content rather than deliver the core insight or story
@@ -183,21 +183,21 @@ VIRAL TRIGGER WORD REFERENCE (use these to sharpen hook_text):
 """
 
 _HOOK_TYPES = """
-PSYCHOLOGICAL HOOK TYPE — you must classify each clip's hook into exactly
+PSYCHOLOGICAL HOOK TYPE â€” you must classify each clip's hook into exactly
 one of these five types and set the hook_type field accordingly:
 
-1. "curiosity_gap" — Information asymmetry. Imply knowledge the viewer
+1. "curiosity_gap" â€” Information asymmetry. Imply knowledge the viewer
    lacks. Example hook: "Nobody talks about this, but it explains
    everything."
-2. "loss_aversion" — Trigger fear of losing something or missing out.
+2. "loss_aversion" â€” Trigger fear of losing something or missing out.
    Example hook: "Stop wasting time on X before it's too late."
-3. "self_identification" — Directly address a specific identity or
+3. "self_identification" â€” Directly address a specific identity or
    struggle so the viewer feels seen. Example hook: "If you've ever
    struggled with X, this is for you."
-4. "pattern_interrupt" — A contrarian statement that breaks the viewer's
+4. "pattern_interrupt" â€” A contrarian statement that breaks the viewer's
    expected narrative. Example hook: "I quit X after 10 years. Here's
    what changed."
-5. "open_loop" — Create an unresolved tension that demands completion.
+5. "open_loop" â€” Create an unresolved tension that demands completion.
    Example hook: "The third point is the one that actually matters."
 
 Choose the type that best fits the clip's actual content and tone.
@@ -207,7 +207,7 @@ psychological trigger, use "curiosity_gap" as default.
 
 
 
-# ── LLM Management ───────────────────────────────────────────────────────────
+# â”€â”€ LLM Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _get_llm(llm_path: str, gpu_layers: int = 35):
     if isinstance(llm_path, str) and llm_path.startswith("gemini-"):
@@ -327,7 +327,7 @@ def _query_llm(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
     return []
 
 
-# ── Transcript Formatting ────────────────────────────────────────────────────
+# â”€â”€ Transcript Formatting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _build_text(transcript_data) -> tuple:
     """Returns (text_for_llm, raw_word_list)."""
@@ -370,7 +370,7 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
     if not ideal_transcript or not raw_words:
         return []
 
-    sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
+    sentences = re.split(r'(?<=[.!?à¥¤|])\s+', ideal_transcript.strip())
     sentences = [s.strip() for s in sentences if s.strip()]
 
     segments = []
@@ -441,7 +441,7 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
             if next_w["start"] - et > 6.0:
                 break
             best_extended_et = next_w["end"]
-            has_punc = any(p in next_w["word"] for p in [".", "!", "?", "।", "|"])
+            has_punc = any(p in next_w["word"] for p in [".", "!", "?", "à¥¤", "|"])
             pause_after = False
             if next_idx + 1 < len(raw_words):
                 pause_after = (raw_words[next_idx + 1]["start"] - next_w["end"]) > 0.4
@@ -501,7 +501,7 @@ def _format_duration(seconds: float) -> str:
     return f"{h}h {m}m"
 
 
-# ── Estimated Clip Density ───────────────────────────────────────────────────
+# â”€â”€ Estimated Clip Density â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def estimate_clip_potential(word_timestamps: list) -> int:
     """Estimate how many clips a video could produce based on its duration."""
@@ -513,7 +513,7 @@ def estimate_clip_potential(word_timestamps: list) -> int:
     return max(3, int(duration_mins / 6))
 
 
-# ── Post-LLM Validation ─────────────────────────────────────────────────────
+# â”€â”€ Post-LLM Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _validate_clips(clips: list, raw_words: list) -> list:
     """
@@ -533,7 +533,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
         # Duration check: >90s -> slice transcript and remap
         if total_dur > 90:
-            sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
+            sentences = re.split(r'(?<=[.!?à¥¤|])\s+', ideal_transcript.strip())
             sliced_transcript = ""
             for s in sentences:
                 test_transcript = (sliced_transcript + " " + s).strip()
@@ -565,7 +565,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
     return valid
 
 
-# ── Pass 0: Persona Detection ───────────────────────────────────────────────
+# â”€â”€ Pass 0: Persona Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -> dict:
     """Run a fast pass to detect video genre, tone, target audience, and suggested styles."""
@@ -607,7 +607,7 @@ def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -
     }
 
 
-# ── Pass 1: Topic Indexing ───────────────────────────────────────────────────
+# â”€â”€ Pass 1: Topic Indexing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, language: str = "") -> list:
     """
@@ -668,20 +668,20 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             "where something genuinely interesting happens. Ignore filler, logistics,\n"
             "introductions, and transitions entirely.\n\n"
             "Hunt specifically for these moment types, in priority order:\n\n"
-            "1. REVELATION — The speaker says something surprising, counterintuitive,\n"
+            "1. REVELATION â€” The speaker says something surprising, counterintuitive,\n"
             "   or that contradicts a commonly held belief. Signal phrases: \"most\n"
             "   people think\", \"what nobody tells you\", \"the truth is\", \"I found out\".\n\n"
-            "2. TENSION OR DISAGREEMENT — The speaker pushes back on an idea, admits\n"
+            "2. TENSION OR DISAGREEMENT â€” The speaker pushes back on an idea, admits\n"
             "   a mistake, or challenges the audience. Signal phrases: \"but here's the\n"
             "   problem\", \"I was wrong about\", \"this is where people get it wrong\".\n\n"
-            "3. SPECIFIC NUMBERS OR PROOF — The speaker cites a concrete number,\n"
+            "3. SPECIFIC NUMBERS OR PROOF â€” The speaker cites a concrete number,\n"
             "   statistic, personal result, or named example. Signal: any dollar\n"
             "   amount, percentage, timeframe, or named person/company as evidence.\n\n"
-            "4. STRONG PERSONAL OPINION — The speaker makes a declarative claim they\n"
+            "4. STRONG PERSONAL OPINION â€” The speaker makes a declarative claim they\n"
             "   clearly believe strongly. Signal phrases: \"I genuinely believe\",\n"
             "   \"most people will never\", \"the reason X fails is\", \"nobody wants to\n"
             "   hear this but\".\n\n"
-            "5. STORY WITH STAKES — A personal anecdote or scenario where something\n"
+            "5. STORY WITH STAKES â€” A personal anecdote or scenario where something\n"
             "   is at risk (money, reputation, relationship, health). Must have a\n"
             "   clear beginning setup and an implied outcome.\n\n"
             "SKIP any passage that is:\n"
@@ -693,7 +693,7 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             "Rules:\n"
             "- Each topic must have accurate start_time and end_time from the transcript timestamps\n"
             "- Topics should NOT overlap\n"
-            "- Include ALL sections — do not skip any part of the transcript\n"
+            "- Include ALL sections â€” do not skip any part of the transcript\n"
             "- A 3-minute section typically has 1-3 topics\n"
             "- Identify at least 2 distinct topics for this section if possible to ensure we don't group everything together\n\n"
             f"Transcript:\n{chunk}\n\n"
@@ -704,7 +704,7 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             if isinstance(results, list):
                 all_topics.extend(results)
         except Exception as e:
-            ui_logger.log(f"Warning: Topic indexing chunk {idx + 1} failed — {e}")
+            ui_logger.log(f"Warning: Topic indexing chunk {idx + 1} failed â€” {e}")
 
     # Validate and deduplicate topics
     valid_topics = []
@@ -729,7 +729,7 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
     return valid_topics
 
 
-# ── Pass 2: Per-Topic Clip Extraction ────────────────────────────────────────
+# â”€â”€ Pass 2: Per-Topic Clip Extraction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 # 5 one-shot viral hook examples labeled by persona type (L1)
 _VIRAL_HOOKS_EXAMPLES = """
@@ -799,19 +799,19 @@ def get_highlights(
         '  {\n'
         '    "title": "ULTRA-SHORT TOPIC HOOK (2-5 words max). MUST be punchy, curiosity-inducing, and extremely short to fit on screen (e.g. \\"THE TRUTH ABOUT X\\", \\"STOP DOING THIS\\"). NO long sentences.",\n'
         '    "virality_score": 85,\n'
-        '    "hook_score": 20, // integer 0-25 — how scroll-stopping is the opening moment\n'
-        '    "engagement_score": 20, // integer 0-25 — how compelling is the middle content\n'
-        '    "value_score": 20, // integer 0-25 — educational or entertainment value\n'
-        '    "shareability_score": 20, // integer 0-25 — would someone actively share this\n'
+        '    "hook_score": 20, // integer 0-25 â€” how scroll-stopping is the opening moment\n'
+        '    "engagement_score": 20, // integer 0-25 â€” how compelling is the middle content\n'
+        '    "value_score": 20, // integer 0-25 â€” educational or entertainment value\n'
+        '    "shareability_score": 20, // integer 0-25 â€” would someone actively share this\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
         '    "ideal_transcript": "The exact word-for-word transcript of the perfect 30-90 second clip. It MUST be a detailed, long paragraph of at least 5 to 12 consecutive sentences (typically 50-180 words) to ensure sufficient duration and fully capture the payoff. Do not include timestamps, just copy the raw spoken words exactly.",\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
-        '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
-        '    "hook_text": "Max 8 words. The punchline of this clip — the single most surprising or counterintuitive conclusion it delivers. NOT a summary. NOT copied from the transcript. A bold declarative statement that creates a curiosity gap: the viewer reads it and thinks wait, how is that possible? Use plain conversational language. No hashtags, no emojis, no colons, no filler phrases like Here is why or The truth about. Reflect the PAYOFF, not the topic. Examples: Your goals are making you fail. / Busy people get less done. / Most advice is just fear in disguise.",\n'
-        '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12–18 words) authored for social media — NOT copied from the transcript. Write it as if a top creator is teasing this clip to make someone stop scrolling. Use one of these proven patterns: Contrast (Nobody tells you this about [topic], but it changed everything for me.), Number (This one rule about [topic] is worth more than 10 years of advice.), Direct address (If you\'re struggling with [topic], you need to hear this right now.), Opinion bomb (The thing everyone gets wrong about [topic] is embarrassing.), or Story tease (He made $52k a year and was wealthier than people earning millions.). The hook must be specific to THIS clip\'s content — no generic lines. Maximum 18 words. Do not copy any phrase verbatim from the transcript.",\n'
+        '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., ðŸ”¥, ðŸ’¡, ðŸ˜‚"],\n'
+        '    "hook_text": "Max 8 words. The punchline of this clip â€” the single most surprising or counterintuitive conclusion it delivers. NOT a summary. NOT copied from the transcript. A bold declarative statement that creates a curiosity gap: the viewer reads it and thinks wait, how is that possible? Use plain conversational language. No hashtags, no emojis, no colons, no filler phrases like Here is why or The truth about. Reflect the PAYOFF, not the topic. Examples: Your goals are making you fail. / Busy people get less done. / Most advice is just fear in disguise.",\n'
+        '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12â€“18 words) authored for social media â€” NOT copied from the transcript. Write it as if a top creator is teasing this clip to make someone stop scrolling. Use one of these proven patterns: Contrast (Nobody tells you this about [topic], but it changed everything for me.), Number (This one rule about [topic] is worth more than 10 years of advice.), Direct address (If you\'re struggling with [topic], you need to hear this right now.), Opinion bomb (The thing everyone gets wrong about [topic] is embarrassing.), or Story tease (He made $52k a year and was wealthier than people earning millions.). The hook must be specific to THIS clip\'s content â€” no generic lines. Maximum 18 words. Do not copy any phrase verbatim from the transcript.",\n'
         '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\""\n'
         '  }\n'
         ']'
@@ -831,7 +831,7 @@ def get_highlights(
     virality_prompt = f"{_VIRALITY_BASE}\n\n{_VIRAL_HOOKS_EXAMPLES}\n\n{persona_addition}".format(video_duration_str=video_duration_str)
     virality_prompt += f"\n\n{_TRIGGER_WORDS}\n\n{_HOOK_TYPES}"
     virality_prompt += (
-        "\n\n═══════════════════════════════════════════════════════\n"
+        "\n\nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n"
         "TIMESTAMP EXTRACTION RULES:\n"
         "- The 'start_timestamp' and 'end_timestamp' fields must be floating point numbers (in seconds).\n"
         "- They must correspond precisely to the bracketed timestamps (e.g., [12.5s]) inside the transcript.\n"
@@ -839,33 +839,33 @@ def get_highlights(
     )
     virality_prompt += """
 ---
-SELF-VALIDATION — MANDATORY BEFORE RETURNING OUTPUT
+SELF-VALIDATION â€” MANDATORY BEFORE RETURNING OUTPUT
 Before returning the JSON array, silently verify every item in this list.
 If any check fails, fix the output before returning. Do not explain the
 fix. Simply return the corrected JSON.
 
-□ Every clip has all required fields: title, ideal_transcript, segments,
+â–¡ Every clip has all required fields: title, ideal_transcript, segments,
   score, virality_score, energy_score, hook_sentence, hook_text, hook_type,
   virality_reason, theme, music_query, broll_keywords, emoji_moments,
   source_topic
-□ hook_type is exactly one of: curiosity_gap | loss_aversion |
+â–¡ hook_type is exactly one of: curiosity_gap | loss_aversion |
   self_identification | pattern_interrupt | open_loop
-□ hook_text is 8 words or fewer — if longer, trim it
-□ virality_score is an integer between 0 and 100 — not a string, not a float
-□ hook_score, engagement_score, value_score, shareability_score are each integers between 0 and 25
-□ score is an integer between 0 and 100
-□ broll_keywords is a list of strings, not a single string
-□ emoji_moments is a list of strings
-□ segments is a list of objects each with start_time and end_time as floats
-□ No field has a null value — use empty string "" or empty list [] as fallback
-□ Output is a valid JSON array only — no markdown, no commentary, no
+â–¡ hook_text is 8 words or fewer â€” if longer, trim it
+â–¡ virality_score is an integer between 0 and 100 â€” not a string, not a float
+â–¡ hook_score, engagement_score, value_score, shareability_score are each integers between 0 and 25
+â–¡ score is an integer between 0 and 100
+â–¡ broll_keywords is a list of strings, not a single string
+â–¡ emoji_moments is a list of strings
+â–¡ segments is a list of objects each with start_time and end_time as floats
+â–¡ No field has a null value â€” use empty string "" or empty list [] as fallback
+â–¡ Output is a valid JSON array only â€” no markdown, no commentary, no
   explanation outside the array
 
 ---
 """
 
     if topics and len(topics) > 0:
-        # ── Topic-Aware Extraction ──
+        # â”€â”€ Topic-Aware Extraction â”€â”€
         clips_per_topic = max(2, min(4, -(-num_clips // max(1, len(topics)))))
         
         for tidx, topic in enumerate(topics):
@@ -905,10 +905,10 @@ fix. Simply return the corrected JSON.
                     clip["source_topic_idx"] = tidx
                 all_highlights.extend(results)
             except Exception as e:
-                ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed — {e}")
+                ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed â€” {e}")
     else:
-        # ── Fallback: Run topic indexing first, then extract per-topic ──
-        ui_logger.log("No topics provided — running automatic topic indexing (Pass 1)...")
+        # â”€â”€ Fallback: Run topic indexing first, then extract per-topic â”€â”€
+        ui_logger.log("No topics provided â€” running automatic topic indexing (Pass 1)...")
         auto_topics = get_topic_index(transcript_data, llm_path, gpu_layers, language)
 
         if auto_topics:
@@ -951,7 +951,7 @@ fix. Simply return the corrected JSON.
                         clip["source_topic_idx"] = tidx
                     all_highlights.extend(results)
                 except Exception as e:
-                    ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed — {e}")
+                    ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed â€” {e}")
         else:
             ui_logger.log("WARNING: Topic indexing returned no topics. Extracting from chunks as last resort.")
             
@@ -981,11 +981,11 @@ fix. Simply return the corrected JSON.
                     results = _query_llm(llm, system, prompt)
                     all_highlights.extend(results)
                 except Exception as e:
-                    ui_logger.log(f"Warning: Chunk {idx+1} fallback extraction failed — {e}")
+                    ui_logger.log(f"Warning: Chunk {idx+1} fallback extraction failed â€” {e}")
 
     ui_logger.log(f"LLM extracted {len(all_highlights)} raw candidates. Validating and scoring...")
 
-    # ── Normalize LLM output into consistent format ──
+    # â”€â”€ Normalize LLM output into consistent format â”€â”€
     normalized = []
     for h in all_highlights:
         try:
@@ -999,10 +999,13 @@ fix. Simply return the corrected JSON.
                     start_ts = float(start_ts)
                     end_ts = float(end_ts)
                     if raw_words:
-                        matching_words = [w for w in raw_words if start_ts <= w["start"] <= end_ts]
-                        if matching_words:
-                            start_ts = matching_words[0]["start"]
-                            end_ts = matching_words[-1]["end"]
+                        # Snap to exact word boundaries to prevent jarring mid-word cuts
+                        start_word = min(raw_words, key=lambda w: abs(w["start"] - start_ts))
+                        if abs(start_word["start"] - start_ts) < 5.0:
+                            start_ts = start_word["start"]
+                        end_word = min(raw_words, key=lambda w: abs(w["end"] - end_ts))
+                        if abs(end_word["end"] - end_ts) < 5.0:
+                            end_ts = end_word["end"]
                     segments = [{"start_time": start_ts, "end_time": end_ts}]
                 except (ValueError, TypeError):
                     segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
@@ -1033,7 +1036,7 @@ fix. Simply return the corrected JSON.
             energy_score = int(energy_val * 100)
             composite_score = int((score * 0.6) + (energy_score * 0.4))
 
-            sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
+            sentences = re.split(r'(?<=[.!?à¥¤|])\s+', ideal_transcript.strip())
             # Read from LLM output, fallback to first sentence if empty/missing
             hook_sentence = h.get("hook_sentence", "").strip()
             if not hook_sentence:
@@ -1070,7 +1073,7 @@ fix. Simply return the corrected JSON.
         except Exception:
             continue
 
-    # ── Post-LLM Validation ──
+    # â”€â”€ Post-LLM Validation â”€â”€
     ui_logger.log(f"Running post-LLM validation on {len(normalized)} candidates...")
     validated = _validate_clips(normalized, raw_words)
     
