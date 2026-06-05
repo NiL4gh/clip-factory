@@ -531,7 +531,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         if i + 1 < len(words):
             pause_after = (words[i+1]["start"] - w["end"]) > 0.5
 
-        if ends_sentence or pause_after or len(curr) >= 7:
+        if ends_sentence or pause_after or len(curr) >= 3:
             chunks.append(curr)
             curr = []
     if curr:
