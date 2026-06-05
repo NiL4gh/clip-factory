@@ -638,7 +638,26 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
     )
 
     # Process transcript in large chunks to identify topics across the full video
-    chunks = [text[i:i + CHUNK_CHARS] for i in range(0, max(len(text), 1), CHUNK_CHARS)]
+    
+    # Smart Sliding Window Chunking
+    # Overlap by 1000 characters to prevent splitting context/stories across boundaries
+    overlap = 1000
+    step = max(500, CHUNK_CHARS - overlap)
+    chunks = []
+    
+    # Split by lines to ensure we don't cut words or timestamps in half
+    lines = text.split('\n')
+    current_chunk = ""
+    for line in lines:
+        if len(current_chunk) + len(line) > CHUNK_CHARS and len(current_chunk) > overlap:
+            chunks.append(current_chunk)
+            current_chunk = current_chunk[-overlap:] + '\n' + line
+        else:
+            current_chunk += line + '\n'
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    all_topics = []
     all_topics = []
 
     for idx, chunk in enumerate(chunks):
@@ -778,7 +797,7 @@ def get_highlights(
     schema = (
         '[\n'
         '  {\n'
-        '    "title": "Strictly max 8 words, present tense, high impact, no filler (e.g., Build X in 30 seconds)",\n'
+        '    "title": "ULTRA-SHORT TOPIC HOOK (2-5 words max). MUST be punchy, curiosity-inducing, and extremely short to fit on screen (e.g. \\"THE TRUTH ABOUT X\\", \\"STOP DOING THIS\\"). NO long sentences.",\n'
         '    "virality_score": 85,\n'
         '    "hook_score": 20, // integer 0-25 — how scroll-stopping is the opening moment\n'
         '    "engagement_score": 20, // integer 0-25 — how compelling is the middle content\n'
@@ -874,7 +893,7 @@ fix. Simply return the corrected JSON.
                 f"{virality_prompt}\n\n"
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                f"Extract ALL viral moments from this section. Target {clips_per_topic} to {clips_per_topic * 2} clips — more is fine if content supports it.\n"
+                f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
                 f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -920,7 +939,7 @@ fix. Simply return the corrected JSON.
                     f"{virality_prompt}\n\n"
                     f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                     f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                    f"Extract ALL viral moments from this section. Target {clips_per_topic} to {clips_per_topic * 2} clips — more is fine if content supports it.\n"
+                    f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
                     f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.{energy_hint}\n\n"
                     f"Transcript:\n{topic_text}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -934,19 +953,35 @@ fix. Simply return the corrected JSON.
                 except Exception as e:
                     ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed — {e}")
         else:
-            ui_logger.log("WARNING: Topic indexing returned no topics. Extracting from full transcript as last resort.")
-            prompt = (
-                f"{virality_prompt}\n\n"
-                f"Extract ALL natural viral clips from this transcript.\n"
-                f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
-                f"Transcript:\n{text[:CHUNK_CHARS]}\n\n"
-                f"Respond ONLY with a JSON array of clips:\n{schema}"
-            )
-            try:
-                results = _query_llm(llm, system, prompt)
-                all_highlights.extend(results)
-            except Exception as e:
-                ui_logger.log(f"Warning: Full transcript extraction failed — {e}")
+            ui_logger.log("WARNING: Topic indexing returned no topics. Extracting from chunks as last resort.")
+            
+            # Use the same sliding window logic
+            overlap = 1000
+            step = max(500, CHUNK_CHARS - overlap)
+            fallback_chunks = []
+            current_chunk = ""
+            for line in text.split('\n'):
+                if len(current_chunk) + len(line) > CHUNK_CHARS and len(current_chunk) > overlap:
+                    fallback_chunks.append(current_chunk)
+                    current_chunk = current_chunk[-overlap:] + '\n' + line
+                else:
+                    current_chunk += line + '\n'
+            if current_chunk:
+                fallback_chunks.append(current_chunk)
+                
+            for idx, f_chunk in enumerate(fallback_chunks):
+                prompt = (
+                    f"{virality_prompt}\n\n"
+                    f"Extract ONLY the absolute best viral moments.\n"
+                    f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
+                    f"Transcript (Part {idx+1}/{len(fallback_chunks)}):\n{f_chunk}\n\n"
+                    f"Respond ONLY with a JSON array of clips:\n{schema}"
+                )
+                try:
+                    results = _query_llm(llm, system, prompt)
+                    all_highlights.extend(results)
+                except Exception as e:
+                    ui_logger.log(f"Warning: Chunk {idx+1} fallback extraction failed — {e}")
 
     ui_logger.log(f"LLM extracted {len(all_highlights)} raw candidates. Validating and scoring...")
 

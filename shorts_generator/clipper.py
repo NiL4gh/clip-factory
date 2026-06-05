@@ -542,42 +542,13 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         chunk_et = max(0, chunk[-1]['end'] - time_offset)
         if chunk_et <= chunk_st: continue
 
-        for i, w in enumerate(chunk):
-            # Calculate continuous display times to prevent flashing/blank gaps
-            if i == 0:
-                w_st = chunk_st
-            else:
-                w_st = max(0, w["start"] - time_offset)
-
-            if i < len(chunk) - 1:
-                w_et = max(0, chunk[i+1]["start"] - time_offset)
-            else:
-                w_et = chunk_et
-
-            if w_et <= w_st:
-                # Fallback to avoid overlapping/negative duration
-                w_st = max(0, w["start"] - time_offset)
-                w_et = max(0, w["end"] - time_offset)
-                if w_et <= w_st: continue
-
-            fade_tag = "" # Snappy, instant pop-up transitions to prevent visual lag with fast speakers
-
-            styled = fade_tag
-            hl_color = style["highlight"]
-            main_color = style["primary"]
-            for x in chunk:
-                txt = x['word'].strip()
-                if casing == "upper":
-                    txt = txt.upper()
-                elif casing == "lower":
-                    txt = txt.lower()
-
-                if x == w:
-                    styled += f"{{\\c{hl_color}}}{txt}{{\\c{main_color}}} "
-                else:
-                    styled += f"{txt} "
-
-            lines.append(f"Dialogue: 0,{fmt_time(w_st)},{fmt_time(w_et)},Main,,0,0,0,,{styled.strip()}")
+        styled = ""
+        for x in chunk:
+            txt = x['word'].strip()
+            if casing == "upper": txt = txt.upper()
+            elif casing == "lower": txt = txt.lower()
+            styled += f"{txt} "
+        lines.append(f"Dialogue: 0,{fmt_time(chunk_st)},{fmt_time(chunk_et)},Main,,0,0,0,,{styled.strip()}")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
