@@ -449,31 +449,14 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
 
             if _state["is_cancelled"]: return
             log = ui_logger.log
-            def _extract_video_id(url: str) -> str:
-                import re
-                match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
-                return match.group(1) if match else "video"
 
-            # SRT fast-path: attempt YouTube subtitle download before running Whisper
-            srt_path = download_srt(
-                video_url=_state["current_url"],
-                output_dir=str(WORK_DIR),
-                video_id=_extract_video_id(_state["current_url"])
-            )
+            # SRT fast-path disabled due to rolling subtitle duplicates and mojibake.
+            # We strictly use Faster-Whisper to guarantee clean word-level timestamps.
             word_timestamps = []
-            if srt_path:
-                log("⚡ SRT subtitle found — skipping Whisper transcription")
-                word_timestamps = parse_srt_to_word_timestamps(srt_path)
-                if not word_timestamps:
-                    log("⚠ SRT parse returned empty — falling back to Whisper")
-                    srt_path = None
-                else:
-                    full_text = " ".join(w["word"] for w in word_timestamps)
-                    cache.save_transcript(url.strip(), full_text, word_timestamps)
-            if not srt_path:
-                log("🎙 Running Faster-Whisper transcription...")
-                full_text, word_timestamps = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
-                cache.save_transcript(url.strip(), full_text, word_timestamps)
+            log("🎙 Running Faster-Whisper transcription...")
+            full_text, word_timestamps = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
+            cache.save_transcript(url.strip(), full_text, word_timestamps)
+
             _state["word_timestamps"] = word_timestamps
         else:
             log_progress(25, "Transcript loaded from cache.")

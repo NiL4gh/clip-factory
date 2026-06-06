@@ -414,7 +414,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         hook_margin = 60
         # Changed BorderStyle from 3 (opaque box) to 1 (outline + drop shadow)
         # Primary color: White (&H00FFFFFF) with thick black outline
-        lines.append(f"Style: MagicHook,{font_name},60,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,6,3,{hook_align},40,40,{hook_margin},1")
+        lines.append(f"Style: MagicHook,{font_name},60,{ts['PrimaryColour']}&,&H000000FF,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
         "",

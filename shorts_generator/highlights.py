@@ -846,6 +846,7 @@ fix. Simply return the corrected JSON.
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                 f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
+                f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                 f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -892,6 +893,7 @@ fix. Simply return the corrected JSON.
                     f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                     f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                     f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
+                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                     f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.{energy_hint}\n\n"
                     f"Transcript:\n{topic_text}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -925,6 +927,7 @@ fix. Simply return the corrected JSON.
                 prompt = (
                     f"{virality_prompt}\n\n"
                     f"Extract ONLY the absolute best viral moments.\n"
+                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                     f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
                     f"Transcript (Part {idx+1}/{len(fallback_chunks)}):\n{f_chunk}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -1031,22 +1034,28 @@ fix. Simply return the corrected JSON.
     # Sort by score
     validated.sort(key=lambda x: x["score"], reverse=True)
 
-    # Dedup using content Jaccard similarity (>60% word overlap) (B5)
-    def get_words_set(t_str):
-        return set(re.findall(r'\w+', t_str.lower()))
-
+    # Dedup using timestamp overlap (>50% of the shorter clip)
     deduped = []
     for h in validated:
-        h_words = get_words_set(h["ideal_transcript"])
+        h_st = h["start_time"]
+        h_et = h["end_time"]
+        h_dur = h_et - h_st
+
         is_duplicate = False
         for existing in deduped:
-            e_words = get_words_set(existing["ideal_transcript"])
-            intersection = h_words.intersection(e_words)
-            union = h_words.union(e_words)
-            jaccard = len(intersection) / len(union) if union else 0.0
-            if jaccard > 0.60:
-                is_duplicate = True
-                break
+            e_st = existing["start_time"]
+            e_et = existing["end_time"]
+            e_dur = e_et - e_st
+
+            overlap_start = max(h_st, e_st)
+            overlap_end = min(h_et, e_et)
+            overlap_dur = max(0, overlap_end - overlap_start)
+
+            if h_dur > 0 and e_dur > 0:
+                min_dur = min(h_dur, e_dur)
+                if overlap_dur / min_dur > 0.50:
+                    is_duplicate = True
+                    break
         if not is_duplicate:
             deduped.append(h)
 
