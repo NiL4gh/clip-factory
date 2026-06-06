@@ -125,24 +125,23 @@ EXTRACTION RULES:
 
 - Extract EVERY moment that has a clear Entry Point, Build, and Landing.
   If a topic section has 5 such moments, extract all 5.
-- Each clip's ideal_transcript must be 50 to 220 words of continuous
-  spoken text. This represents approximately 30-90 seconds of speech. This expanded length ensures you have ample room to capture the complete payoff or answer.
+- Each clip MUST contain one or more segments that total 30-90 seconds. This represents approximately 30-90 seconds of speech. This expanded length ensures you have ample room to capture the complete payoff or answer.
 - THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcript—in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
 - ENDING RULES — NON-NEGOTIABLE:
-  The final sentence of ideal_transcript MUST be one of these:
+  The final segment's end_quote MUST be one of these:
     - The speaker's conclusion or answer to the question they raised
     - A punchline or surprising reversal that pays off the setup
     - A strong declarative statement that closes the argument
     - A specific result, number, or outcome that proves the point
-  The final sentence of ideal_transcript must NEVER be:
+  The final segment's end_quote must NEVER be:
     - A question (unless it is purely rhetorical with no answer needed)
     - A transitional phrase ("so anyway", "but yeah", "moving on")
     - A filler or acknowledgment ("right", "exactly", "I mean")
     - Mid-argument ("and the reason for that is", "so what happens is")
     - An incomplete thought that sets up something outside the clip
-  If you reach the word limit before the payoff arrives, extend ideal_transcript past the limit to capture the closing sentence. A clip that runs 5 seconds long but ends properly is always better than a clip that ends on time but cuts the landing.
+  Ensure the final segment captures the closing sentence perfectly. A clip that runs 5 seconds long but ends properly is always better than a clip that ends on time but cuts the landing.
 - VALUABLE INSIGHT FALLBACK: While structured story arcs are preferred, if a section contains highly engaging, funny, contrarian, or educational discussion but lacks a formal question/resolution payoff, you MUST still extract it! Simply ensure it ends on a completed, coherent thought so the viewer gets clear value. Never be too conservative or return zero clips; prioritize extracting the most entertaining, informative, or high-energy blocks available in the text.
-- Always extend the ideal_transcript forward until the thought fully
+- Always extend the final segment forward until the thought fully
   closes. Never end on a sentence that is still building toward something.
 - Never cut in the middle of a sentence, story, or argument.
 - Only the exact spoken words from the transcript. No invented content.
@@ -366,12 +365,9 @@ def _get_text_slice(full_text: str, start_time: float, end_time: float) -> str:
                 result.append(line)
     return "\n".join(result) if result else full_text[:CHUNK_CHARS]
 
-def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> list:
-    if not ideal_transcript or not raw_words:
+def _map_quotes_to_segments(llm_segments: list, raw_words: list) -> list:
+    if not llm_segments or not raw_words:
         return []
-
-    sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
-    sentences = [s.strip() for s in sentences if s.strip()]
 
     segments = []
     current_segment = None
@@ -390,8 +386,7 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
         if not anchor_words:
             return -1
         anchor_len = len(anchor_words)
-        
-        # Try exact match with anchor_len
+
         for i in range(start_search_idx, len(raw_normalized) - anchor_len + 1):
             match = True
             for j in range(anchor_len):
@@ -400,40 +395,44 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
                     break
             if match:
                 return i
-                
-        # If 3 words fail, try 2 words if possible
+
         if anchor_len > 2:
             for i in range(start_search_idx, len(raw_normalized) - 1):
                 if raw_normalized[i] == anchor_words[0] and raw_normalized[i+1] == anchor_words[1]:
                     return i
-                    
         return -1
 
-    for sentence in sentences:
-        words = [normalize_word(w) for w in sentence.split()]
-        words = [w for w in words if w]
-        if not words:
+    for seg_data in llm_segments:
+        start_q = seg_data.get("start_quote", "")
+        end_q = seg_data.get("end_quote", "")
+
+        start_words = [normalize_word(w) for w in start_q.split()]
+        start_words = [w for w in start_words if w][:5]
+
+        end_words = [normalize_word(w) for w in end_q.split()]
+        end_words = [w for w in end_words if w][-5:]
+
+        if not start_words:
             continue
-            
-        start_anchor = words[:3]
-        end_anchor = words[-3:] if len(words) >= 3 else words
-        
-        # Find start
-        start_idx = find_anchor(start_anchor, search_idx)
+
+        start_idx = find_anchor(start_words, search_idx)
         if start_idx == -1:
             continue
-            
-        # Find end
-        end_idx = find_anchor(end_anchor, start_idx)
-        if end_idx == -1:
-            end_idx = start_idx + len(words) - 1
-            end_idx = min(end_idx, len(raw_words) - 1)
+
+        if end_words:
+            end_idx = find_anchor(end_words, start_idx)
+            if end_idx == -1:
+                end_idx = start_idx + len(start_words) - 1
+            else:
+                end_idx = end_idx + len(end_words) - 1
         else:
-            end_idx = end_idx + len(end_anchor) - 1
-            
+            end_idx = start_idx + len(start_words) - 1
+
+        end_idx = min(end_idx, len(raw_words) - 1)
+
         st = raw_words[start_idx]["start"]
         et = raw_words[end_idx]["end"]
-        
+
         # B4: Walk-forward sentence-boundary cuts
         best_extended_et = et
         for next_idx in range(end_idx + 1, len(raw_words)):
@@ -449,37 +448,22 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
                 break
         et = best_extended_et
 
-        # Diagnostic logging (P4)
-        ui_logger.log(f"  [DIAGNOSTIC] Matching sentence: '{sentence[:50]}...' | start_anchor: {start_anchor} | end_anchor: {end_anchor} | Mapped range: {st:.1f}s - {et:.1f}s")
-        
         search_idx = end_idx + 1
-        
+
         if current_segment is None:
             current_segment = {"start_time": st, "end_time": et}
         else:
             gap = st - current_segment["end_time"]
             if gap < 1.5:
-                # Merge
                 current_segment["end_time"] = max(current_segment["end_time"], et)
             else:
-                # New segment
                 segments.append(current_segment)
                 current_segment = {"start_time": st, "end_time": et}
-                
+
     if current_segment:
         segments.append(current_segment)
-        
-    if not segments and raw_words and ideal_transcript:
-        # Fallback: finding the first word of the ideal_transcript in the raw words
-        first_word = normalize_word(ideal_transcript.split()[0]) if ideal_transcript.split() else ""
-        for i, w in enumerate(raw_words):
-            if normalize_word(w["word"]) == first_word:
-                st = w["start"]
-                et = min(st + 45.0, raw_words[-1]["end"])
-                return [{"start_time": st, "end_time": et}]
-        
-    return segments
 
+    return segments
 
 def _get_video_duration(word_timestamps: list) -> float:
     """Get total video duration in seconds from word timestamps."""
@@ -516,45 +500,15 @@ def estimate_clip_potential(word_timestamps: list) -> int:
 # â”€â”€ Post-LLM Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _validate_clips(clips: list, raw_words: list) -> list:
-    """
-    Post-LLM validation. Discard clips that:
-    1. Are under 20s or over 120s after stitch estimation
-    (Clips over 90s are sliced down sentence by sentence)
-    """
     valid = []
     for clip in clips:
         segments = clip.get("segments", [])
-        ideal_transcript = clip.get("ideal_transcript", "")
-        if not segments or not ideal_transcript:
+        if not segments:
             continue
 
-        # Calculate total stitched duration
         total_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in segments)
 
-        # Duration check: >90s -> slice transcript and remap
-        if total_dur > 90:
-            sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
-            sliced_transcript = ""
-            for s in sentences:
-                test_transcript = (sliced_transcript + " " + s).strip()
-                test_segments = _map_text_to_stitched_segments(test_transcript, raw_words)
-                test_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in test_segments) if test_segments else 0
-                if test_dur > 90 and sliced_transcript:
-                    break
-                sliced_transcript = test_transcript
-            
-            if sliced_transcript:
-                segments = _map_text_to_stitched_segments(sliced_transcript, raw_words)
-                if not segments:
-                    continue
-                total_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in segments)
-                clip["ideal_transcript"] = sliced_transcript
-                clip["segments"] = segments
-                clip["start_time"] = segments[0]["start_time"]
-                clip["end_time"] = segments[-1]["end_time"]
-
-        # Final duration check
-        if total_dur < 10 or total_dur > 120:
+        if total_dur < 10 or total_dur > 180:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
             continue
 
@@ -564,9 +518,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
     return valid
 
-
 # â”€â”€ Pass 0: Persona Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -> dict:
     """Run a fast pass to detect video genre, tone, target audience, and suggested styles."""
     if not llm_path:
@@ -805,7 +757,7 @@ def get_highlights(
         '    "shareability_score": 20, // integer 0-25 — would someone actively share this\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
-        '    "ideal_transcript": "The exact word-for-word transcript of the perfect 30-90 second clip. It MUST be a detailed, long paragraph of at least 5 to 12 consecutive sentences (typically 50-180 words) to ensure sufficient duration and fully capture the payoff. Do not include timestamps, just copy the raw spoken words exactly.",\n'
+        '    "segments": [\n''      {\n''        "start_quote": "The exact first 3-5 words of the segment. No timestamps.",\n''        "end_quote": "The exact last 3-5 words of the segment. No timestamps."\n''      }\n''    ],\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
@@ -894,7 +846,7 @@ fix. Simply return the corrected JSON.
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                 f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
-                f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
+                f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
@@ -973,7 +925,7 @@ fix. Simply return the corrected JSON.
                 prompt = (
                     f"{virality_prompt}\n\n"
                     f"Extract ONLY the absolute best viral moments.\n"
-                    f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
+                    f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
                     f"Transcript (Part {idx+1}/{len(fallback_chunks)}):\n{f_chunk}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
                 )
@@ -1015,12 +967,11 @@ fix. Simply return the corrected JSON.
             if not segments:
                 continue
 
-            if not ideal_transcript:
-                if raw_words:
-                    matching_words = [w for w in raw_words if segments[0]["start_time"] <= w["start"] <= segments[-1]["end_time"]]
-                    ideal_transcript = " ".join(w["word"] for w in matching_words)
-                else:
-                    ideal_transcript = "No transcript text available."
+            if raw_words and segments:
+                matching_words = [w for w in raw_words if segments[0]["start_time"] <= w["start"] <= segments[-1]["end_time"]]
+                ideal_transcript = " ".join(w["word"] for w in matching_words)
+            else:
+                ideal_transcript = "No transcript text available."
 
             score = max(0, min(100, int(h.get("virality_score", h.get("score", 50)))))
             theme = h.get("theme", "Storytime")

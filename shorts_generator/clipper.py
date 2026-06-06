@@ -542,13 +542,34 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         chunk_et = max(0, chunk[-1]['end'] - time_offset)
         if chunk_et <= chunk_st: continue
 
-        styled = ""
-        for x in chunk:
-            txt = x['word'].strip()
-            if casing == "upper": txt = txt.upper()
-            elif casing == "lower": txt = txt.lower()
-            styled += f"{txt} "
-        lines.append(f"Dialogue: 0,{fmt_time(chunk_st)},{fmt_time(chunk_et)},Main,,0,0,0,,{styled.strip()}")
+        for active_idx, active_word in enumerate(chunk):
+            active_st = max(0, active_word['start'] - time_offset)
+            active_et = max(0, active_word['end'] - time_offset)
+            if active_et <= active_st: continue
+
+            # Fill small gaps between words in the same chunk
+            if active_idx == 0:
+                event_st = chunk_st
+            else:
+                event_st = active_st
+
+            if active_idx == len(chunk) - 1:
+                event_et = chunk_et
+            else:
+                event_et = max(active_et, chunk[active_idx+1]['start'] - time_offset)
+
+            styled = ""
+            for x_idx, x in enumerate(chunk):
+                txt = x['word'].strip()
+                if casing == "upper": txt = txt.upper()
+                elif casing == "lower": txt = txt.lower()
+
+                if x_idx == active_idx:
+                    styled += f"{{\\c{p['high']}}}{txt}{{\\c{p['main']}}} "
+                else:
+                    styled += f"{txt} "
+
+            lines.append(f"Dialogue: 0,{fmt_time(event_st)},{fmt_time(event_et)},Main,,0,0,0,,{styled.strip()}")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))

@@ -304,12 +304,20 @@ async def get_status():
 @app.websocket("/api/logs")
 async def websocket_logs(websocket: WebSocket):
     await websocket.accept()
+    last_idx = 0
     try:
         while True:
-            new_entries = ui_logger.get_new_entries()
-            for entry in new_entries:
+            entries = ui_logger._entries
+            # Handle clear() scenario where _entries shrinks
+            if last_idx > len(entries):
+                last_idx = 0
+            
+            if last_idx < len(entries):
+                new_entries = entries[last_idx:]
+                last_idx = len(entries)
                 import json as _json
-                await websocket.send_text(_json.dumps(entry))
+                for entry in new_entries:
+                    await websocket.send_text(_json.dumps(entry))
             await asyncio.sleep(0.4)
     except Exception:
         pass
