@@ -1,4 +1,4 @@
-﻿"""
+"""
 Local LLM highlight detection using llama-cpp-python.
 Professional 3-pass architecture:
   Pass 0: Persona Detection (fast model)
@@ -125,7 +125,8 @@ EXTRACTION RULES:
 
 - Extract EVERY moment that has a clear Entry Point, Build, and Landing.
   If a topic section has 5 such moments, extract all 5.
-- Each clip MUST contain one or more segments that total 30-90 seconds. This represents approximately 30-90 seconds of speech. This expanded length ensures you have ample room to capture the complete payoff or answer.
+- THE STITCHING MANDATE (OPUS CLIP LOGIC): You have the power to extract a clip that consists of multiple, non-contiguous segments! Use the `segments` array to jump-cut past boring filler, long pauses, tangents, or host interruptions. If the core subject (e.g., "pizza") was mentioned 2 minutes ago, but the funniest/best part is them talking about "it" right now, you MUST extract the segment where the subject is introduced and STITCH it to the current discussion.
+- THE CONTEXT MANDATE (SUBJECT RESOLUTION): Do not waste time over-explaining universally known people or concepts (e.g., Michael Jackson). However, you MUST resolve the local conversational subject. If the speakers are talking about how much they hate "it" or loved "that", the viewer MUST find out what "it" is before the clip ends! A clip that talks about a crazy experience but never reveals what the experience actually was is a completely useless clip. If the subject revelation happens earlier or later in the video, use stitching to include it.
 - THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcript—in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
 - ENDING RULES — NON-NEGOTIABLE:
   The final segment's end_quote MUST be one of these:
@@ -147,7 +148,7 @@ EXTRACTION RULES:
 - Only the exact spoken words from the transcript. No invented content.
 - STRICT EDITING MANDATE: You MUST actively edit out all boring filler, long pauses, tangents, secondary details, or host interruptions. Skip them entirely. The stitching engine will automatically concatenate your selected high-energy segments into a punchy, jump-cut video. Do not be lazy - extract ONLY the absolute best sentences that drive the point home fast.
 - Do not extract intros, outros, sponsor reads, or off-topic transitions.
-- HOOK NON-REPETITION MANDATE: For `hook_sentence` and `hook_text`, write completely clean, non-repetitive, grammatically correct sentences. NEVER repeat any words, clauses, or phrases inside the sentence (avoid loops like 'mostly reasonable works better than mostly reasonable works better than'). Make sure it is highly punchy, clear, and natural.
+- HOOK NON-REPETITION MANDATE: For `hook_sentence` and `hook_text`, write completely clean, non-repetitive, grammatically correct sentences. YOU ARE STRICTLY FORBIDDEN from using lazy templates like "Discover the secret to", "Meet the", "Learn how to", or "Here is why". Write aggressive, punchy, statement-based hooks (e.g. "WHY SMALL SCHOOLS ALWAYS WIN" instead of "Discover the secret to small schools"). NEVER repeat any words, clauses, or phrases inside the sentence. Make sure it is highly punchy, clear, and natural.
 
 NEVER EXTRACT any of the following regardless of how interesting the
 words sound:
