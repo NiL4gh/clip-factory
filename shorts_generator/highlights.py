@@ -141,7 +141,7 @@ EXTRACTION RULES:
     - Mid-argument ("and the reason for that is", "so what happens is").
     - An incomplete thought that sets up something outside the clip.
   EXTREMELY IMPORTANT: A clip that runs 5 seconds long but ends cleanly is infinitely better than a clip that ends abruptly mid-thought.
-- SELF-CONTAINMENT MANDATE: The viewer MUST NOT need external context to understand the clip. If the speaker says "When he did that...", the viewer must know who "he" is and what "that" is. If they don't, you must stitch in the earlier segment where the context was established. If you cannot establish context, DO NOT EXTRACT THE CLIP.
+- SELF-CONTAINMENT GUIDELINE: Try to include the context if the speaker says "he" or "that". Use stitching to grab the earlier sentence where the subject was introduced. If you cannot easily find the context, EXTRACT THE CLIP ANYWAY as long as the insight, humor, or lesson is highly valuable. Do not discard a great 60-second argument just because the initial subject reference is missing.
 - Always extend the final segment forward until the thought fully
   closes. Never end on a sentence that is still building toward something.
 - Never cut in the middle of a sentence, story, or argument.

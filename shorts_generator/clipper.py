@@ -395,7 +395,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{font_name},140,&H00000000,&H000000FF,&H00000000,&H0000FFFF,-1,0,0,0,100,100,0,0,3,15,0,8,40,40,240,1"
+        f"Style: Header,{font_name},140,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,12,5,8,40,40,240,1"
     ]
     
     if kwargs.get("magic_hook_text"):
@@ -406,8 +406,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         else:
             hook_align = 8
             hook_margin = 120
-        # Primary color: Black inside a solid yellow box (viral aesthetic)
-        lines.append(f"Style: MagicHook,{font_name},110,&H00000000,&H000000FF,&H00000000,&H0000FFFF,-1,0,0,0,100,100,0,0,3,12,0,{hook_align},40,40,{hook_margin},1")
+        # Opus/CapCut iconic style: Very thick black stroke with drop shadow
+        lines.append(f"Style: MagicHook,{font_name},120,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,10,4,{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
         "",
@@ -429,7 +429,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             current_line = ""
             wrapped_lines = []
             for word in words_list:
-                if len(current_line) + len(word) + (1 if current_line else 0) > 16:
+                if len(current_line) + len(word) + (1 if current_line else 0) > 32:
                     wrapped_lines.append(current_line)
                     current_line = word
                 else:
@@ -458,7 +458,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         current_len = 0
         wrapped_lines_words = []
         for word in words_list:
-            if current_len + len(word) + (1 if current_line else 0) > 14:
+            if current_len + len(word) + (1 if current_line else 0) > 32:
                 wrapped_lines_words.append(current_line)
                 current_line = [word]
                 current_len = len(word)
