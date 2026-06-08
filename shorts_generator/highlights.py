@@ -466,6 +466,30 @@ def _map_quotes_to_segments(llm_segments: list, raw_words: list) -> list:
 
     return segments
 
+
+def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> list:
+    """Bridge between ideal_transcript (free text) and _map_quotes_to_segments.
+
+    The LLM returns ideal_transcript as a block of text. This function
+    extracts the first and last words to build synthetic start_quote/end_quote
+    pairs, then delegates to the existing anchor-based mapper.
+    """
+    if not ideal_transcript or not raw_words:
+        return []
+
+    words = ideal_transcript.split()
+    if len(words) < 2:
+        return []
+
+    # Build a single segment request from the full ideal_transcript
+    synth_segments = [{
+        "start_quote": " ".join(words[:5]),
+        "end_quote": " ".join(words[-5:])
+    }]
+
+    return _map_quotes_to_segments(synth_segments, raw_words)
+
+
 def _get_video_duration(word_timestamps: list) -> float:
     """Get total video duration in seconds from word timestamps."""
     if not word_timestamps:
@@ -498,7 +522,31 @@ def estimate_clip_potential(word_timestamps: list) -> int:
     return max(3, int(duration_mins / 6))
 
 
-# â”€â”€ Post-LLM Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Post-LLM Validation ─────────────────────────────────────────────────────
+
+# Phrases that indicate the LLM copied schema instructions instead of generating content
+_HOOK_TEXT_POISON_PHRASES = [
+    "exact first", "bold, original", "prompt instructions", "curiosity gap. not a summary",
+    "do not copy", "do not use generic", "specific payload", "declarative statement",
+    "scroll-stopping", "3-5 words of the segment",
+]
+
+
+def _sanitize_hook_text(raw_hook_text: str, fallback_hook_sentence: str) -> str:
+    """Return clean hook_text, falling back to hook_sentence if the LLM
+    output prompt instructions instead of actual content."""
+    text = (raw_hook_text or "").strip()
+
+    if not text:
+        return fallback_hook_sentence
+
+    # Detect prompt instruction leakage
+    text_lower = text.lower()
+    if any(phrase in text_lower for phrase in _HOOK_TEXT_POISON_PHRASES):
+        return fallback_hook_sentence
+
+    return text
+
 
 def _validate_clips(clips: list, raw_words: list) -> list:
     valid = []
@@ -510,7 +558,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
         total_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in segments)
 
-        if total_dur < 10 or total_dur > 180:
+        if total_dur < 15 or total_dur > 180:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
             continue
 
@@ -693,7 +741,7 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
     return valid_topics
 
 
-# â”€â”€ Pass 2: Per-Topic Clip Extraction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ——— Pass 2: Per-Topic Clip Extraction ————————————————————————————————————————————
 
 # 5 one-shot viral hook examples labeled by persona type (L1)
 _VIRAL_HOOKS_EXAMPLES = """
@@ -762,6 +810,7 @@ def get_highlights(
         '[\n'
         '  {\n'
         '    "title": "ULTRA-SHORT TOPIC HOOK (2-5 words max). MUST be punchy, curiosity-inducing, and extremely short to fit on screen (e.g. \\"THE TRUTH ABOUT X\\", \\"STOP DOING THIS\\"). NO long sentences.",\n'
+        '    "ideal_transcript": "Copy the exact spoken words from the transcript that make up this clip. Include the full text from start to end.",\n'
         '    "virality_score": 85,\n'
         '    "hook_score": 20, // integer 0-25 — how scroll-stopping is the opening moment\n'
         '    "engagement_score": 20, // integer 0-25 — how compelling is the middle content\n'
@@ -769,12 +818,19 @@ def get_highlights(
         '    "shareability_score": 20, // integer 0-25 — would someone actively share this\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
-        '    "segments": [\n''      {\n''        "start_quote": "The exact first 3-5 words of the segment. No timestamps.",\n''        "end_quote": "The exact last 3-5 words of the segment. No timestamps."\n''      }\n''    ],\n'
+        '    "segments": [\n'
+        '      {\n'
+        '        "start_quote": "The exact first 3-5 spoken words of this segment, copied verbatim from the transcript. No timestamps.",\n'
+        '        "end_quote": "The exact last 3-5 spoken words of this segment, copied verbatim from the transcript. No timestamps."\n'
+        '      }\n'
+        '    ],\n'
+        '    "virality_reason": "1-2 sentences explaining WHY this clip would go viral — what psychological trigger or content quality makes it shareable.",\n'
+        '    "source_topic": "The topic name this clip was extracted from.",\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
         '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
-        '    "hook_text": "Max 8 words. A bold, original declarative statement that creates a curiosity gap. NOT a summary. DO NOT copy the prompt instructions verbatim. DO NOT use generic phrases. It must reflect the specific payload of the clip.",\n'
+        '    "hook_text": "Write 3-8 words: a punchy headline about THIS clip. Example for a clip about first jobs: YOUR FIRST JOB WAS A LIE. Example for a friendship clip: MEN NEED BETTER FRIENDS. Must be specific to the clip content.",\n'
         '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12-18 words) authored for social media — NOT copied from the transcript. Write an original hook tailored to the specific content of the clip. DO NOT copy the template examples from the prompt. It must be highly specific, punchy, and original. Max 18 words.",\n'
         '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\""\n'
         '  }\n'
@@ -820,7 +876,7 @@ fix. Simply return the corrected JSON.
 □ score is an integer between 0 and 100
 □ broll_keywords is a list of strings, not a single string
 □ emoji_moments is a list of strings
-□ segments is a list of objects each with start_time and end_time as floats
+□ segments is a list of objects each with start_quote (string) and end_quote (string) — exact words from the transcript
 □ No field has a null value — use empty string "" or empty list [] as fallback
 □ Output is a valid JSON array only — no markdown, no commentary, no
   explanation outside the array
@@ -962,21 +1018,25 @@ fix. Simply return the corrected JSON.
             end_ts = h.get("end_timestamp")
             
             # Always use exact text mapping if raw_words are available, as LLMs hallucinate timestamps
-            if raw_words and ideal_transcript:
-                segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
-                # Fallback to LLM timestamps ONLY if mapping totally failed
-                if not segments and start_ts is not None and end_ts is not None:
-                    try:
-                        segments = [{"start_time": float(start_ts), "end_time": float(end_ts)}]
-                    except (ValueError, TypeError):
-                        pass
-            else:
-                if start_ts is not None and end_ts is not None:
-                    try:
-                        segments = [{"start_time": float(start_ts), "end_time": float(end_ts)}]
-                    except (ValueError, TypeError):
-                        segments = []
-                else:
+            segments = []
+            if raw_words:
+                # Primary: use LLM's segments array (start_quote/end_quote pairs)
+                llm_segments = h.get("segments", [])
+                if llm_segments and isinstance(llm_segments, list) and all(
+                    isinstance(s, dict) and ("start_quote" in s or "end_quote" in s)
+                    for s in llm_segments
+                ):
+                    segments = _map_quotes_to_segments(llm_segments, raw_words)
+
+                # Fallback: use ideal_transcript text for anchor-based mapping
+                if not segments and ideal_transcript:
+                    segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
+
+            # Last resort: LLM timestamps (known to be unreliable)
+            if not segments and start_ts is not None and end_ts is not None:
+                try:
+                    segments = [{"start_time": float(start_ts), "end_time": float(end_ts)}]
+                except (ValueError, TypeError):
                     segments = []
                 
             if not segments:
@@ -997,7 +1057,7 @@ fix. Simply return the corrected JSON.
             overall_et = segments[-1]["end_time"]
 
             # Composite Scoring (P3)
-            clip_peaks = [p["energy"] for p in (energy_peaks or []) if overall_st <= p["time"] <= overall_et]
+            clip_peaks = [p["energy"] for p in (energy_peaks or []) if overall_st - 2 <= p["time"] <= overall_et + 2]
             energy_val = max(clip_peaks) if clip_peaks else 0.0
             energy_score = int(energy_val * 100)
             composite_score = int((score * 0.6) + (energy_score * 0.4))
@@ -1027,7 +1087,7 @@ fix. Simply return the corrected JSON.
                 "value_score": value_score,
                 "shareability_score": shareability_score,
                 "hook_sentence": hook_sentence,
-                "hook_text": h.get("hook_text", hook_sentence),
+                "hook_text": _sanitize_hook_text(h.get("hook_text", ""), hook_sentence),
                 "hook_type": hook_type,
                 "virality_reason": h.get("virality_reason", ""),
                 "theme": theme,
@@ -1039,7 +1099,7 @@ fix. Simply return the corrected JSON.
         except Exception:
             continue
 
-    # â”€â”€ Post-LLM Validation â”€â”€
+    # ── Post-LLM Validation ──
     ui_logger.log(f"Running post-LLM validation on {len(normalized)} candidates...")
     validated = _validate_clips(normalized, raw_words)
     

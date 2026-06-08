@@ -77,7 +77,7 @@ clipper._DETECTED_ENCODER = _GPU_ENCODER
 
 app = FastAPI(title="ClipFactory AI Director API")
 
-VERSION = "2.0.0-PRO-STRATEGY"
+VERSION = "2.4.0-PRO-STRATEGY"
 print(f"🚀 ClipFactory AI Director Backend {VERSION} starting...")
 
 app.add_middleware(

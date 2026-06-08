@@ -58,7 +58,7 @@ if not os.path.exists(COOKIE_PATH):
 
 
 # ── Font Configuration ───────────────────────────────────────────
-FONT_PATH = "/content/work/Montserrat-Bold.ttf"
+FONT_PATH = os.path.join(WORK_DIR, "Montserrat-Bold.ttf")
 
 # ── Local & API LLM catalog ───────────────────────────────────────
 LLM_CATALOG = [
