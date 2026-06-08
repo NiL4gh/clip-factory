@@ -77,7 +77,7 @@ clipper._DETECTED_ENCODER = _GPU_ENCODER
 
 app = FastAPI(title="ClipFactory AI Director API")
 
-VERSION = "2.0.0-PRO-STRATEGY"
+VERSION = "2.4.0-PRO-STRATEGY"
 print(f"🚀 ClipFactory AI Director Backend {VERSION} starting...")
 
 app.add_middleware(
@@ -304,12 +304,20 @@ async def get_status():
 @app.websocket("/api/logs")
 async def websocket_logs(websocket: WebSocket):
     await websocket.accept()
+    last_idx = 0
     try:
         while True:
-            new_entries = ui_logger.get_new_entries()
-            for entry in new_entries:
+            entries = ui_logger._entries
+            # Handle clear() scenario where _entries shrinks
+            if last_idx > len(entries):
+                last_idx = 0
+            
+            if last_idx < len(entries):
+                new_entries = entries[last_idx:]
+                last_idx = len(entries)
                 import json as _json
-                await websocket.send_text(_json.dumps(entry))
+                for entry in new_entries:
+                    await websocket.send_text(_json.dumps(entry))
             await asyncio.sleep(0.4)
     except Exception:
         pass
@@ -441,31 +449,14 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
 
             if _state["is_cancelled"]: return
             log = ui_logger.log
-            def _extract_video_id(url: str) -> str:
-                import re
-                match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
-                return match.group(1) if match else "video"
 
-            # SRT fast-path: attempt YouTube subtitle download before running Whisper
-            srt_path = download_srt(
-                video_url=_state["current_url"],
-                output_dir=str(WORK_DIR),
-                video_id=_extract_video_id(_state["current_url"])
-            )
+            # SRT fast-path disabled due to rolling subtitle duplicates and mojibake.
+            # We strictly use Faster-Whisper to guarantee clean word-level timestamps.
             word_timestamps = []
-            if srt_path:
-                log("⚡ SRT subtitle found — skipping Whisper transcription")
-                word_timestamps = parse_srt_to_word_timestamps(srt_path)
-                if not word_timestamps:
-                    log("⚠ SRT parse returned empty — falling back to Whisper")
-                    srt_path = None
-                else:
-                    full_text = " ".join(w["word"] for w in word_timestamps)
-                    cache.save_transcript(url.strip(), full_text, word_timestamps)
-            if not srt_path:
-                log("🎙 Running Faster-Whisper transcription...")
-                full_text, word_timestamps = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
-                cache.save_transcript(url.strip(), full_text, word_timestamps)
+            log("🎙 Running Faster-Whisper transcription...")
+            full_text, word_timestamps = transcribe_audio(source_mp4, model_size=wsp_size, whisper_dir=WHISPER_DIR)
+            cache.save_transcript(url.strip(), full_text, word_timestamps)
+
             _state["word_timestamps"] = word_timestamps
         else:
             log_progress(25, "Transcript loaded from cache.")
@@ -898,11 +889,13 @@ async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
 async def download_all(background_tasks: BackgroundTasks, project_only: bool = False):
     import glob
     import zipfile
+    import json
     if project_only:
-        current_filenames = {clip.get("rendered_filename") for clip in _state.get("clips", []) if clip.get("rendered_filename")}
-        files = [os.path.join(OUTPUT_DIR, fn) for fn in current_filenames if os.path.exists(os.path.join(OUTPUT_DIR, fn))]
+        clips_to_download = [clip for clip in _state.get("clips", []) if clip.get("rendered_filename")]
+        files = [os.path.join(OUTPUT_DIR, clip.get("rendered_filename")) for clip in clips_to_download if os.path.exists(os.path.join(OUTPUT_DIR, clip.get("rendered_filename")))]
     else:
         files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+        clips_to_download = []
         
     if not files:
         raise HTTPException(status_code=404, detail="No matching rendered clips found to download.")
@@ -913,6 +906,20 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file in files:
                 zipf.write(file, os.path.basename(file))
+            if project_only:
+                for idx, clip in enumerate(clips_to_download):
+                    filename = clip.get("rendered_filename")
+                    if filename:
+                        metadata = {
+                            "title": clip.get("title", f"Clip {idx+1}"),
+                            "rationale": clip.get("rationale", ""),
+                            "transcript": clip.get("transcript", ""),
+                            "score": clip.get("score", 0),
+                            "duration": clip.get("duration", 0),
+                            "persona": clip.get("persona", ""),
+                        }
+                        meta_filename = f"{os.path.splitext(filename)[0]}_metadata.json"
+                        zipf.writestr(meta_filename, json.dumps(metadata, indent=4))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
         

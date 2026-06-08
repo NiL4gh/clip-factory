@@ -38,14 +38,14 @@ def save_metadata(url: str, title: str = "", duration: float = 0, language: str 
         "language": language,
         "processed_at": datetime.now().isoformat(),
     }
-    with open(os.path.join(d, "metadata.json"), "w") as f:
+    with open(os.path.join(d, "metadata.json"), "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     return data
 
 
 def save_transcript(url: str, full_text: str, word_timestamps: list):
     d = project_dir(url)
-    with open(os.path.join(d, "transcript.json"), "w") as f:
+    with open(os.path.join(d, "transcript.json"), "w", encoding="utf-8") as f:
         json.dump({"text": full_text, "words": word_timestamps}, f)
 
 
@@ -53,14 +53,14 @@ def load_transcript(url: str):
     p = os.path.join(project_dir(url), "transcript.json")
     if not os.path.exists(p):
         return None
-    with open(p) as f:
+    with open(p, "r", encoding="utf-8") as f:
         data = json.load(f)
     return data["text"], data["words"]
 
 
 def save_highlights(url: str, highlights: list):
     d = project_dir(url)
-    with open(os.path.join(d, "highlights.json"), "w") as f:
+    with open(os.path.join(d, "highlights.json"), "w", encoding="utf-8") as f:
         json.dump({"highlights": highlights, "saved_at": datetime.now().isoformat()}, f, indent=2)
 
 
@@ -68,7 +68,7 @@ def load_highlights(url: str):
     p = os.path.join(project_dir(url), "highlights.json")
     if not os.path.exists(p):
         return None
-    with open(p) as f:
+    with open(p, "r", encoding="utf-8") as f:
         return json.load(f).get("highlights", [])
 
 
@@ -80,7 +80,7 @@ def list_projects() -> list:
     for vid in sorted(os.listdir(PROJECTS_DIR), reverse=True):
         meta_path = os.path.join(PROJECTS_DIR, vid, "metadata.json")
         if os.path.exists(meta_path):
-            with open(meta_path) as f:
+            with open(meta_path, "r", encoding="utf-8") as f:
                 projects.append(json.load(f))
     return projects
 

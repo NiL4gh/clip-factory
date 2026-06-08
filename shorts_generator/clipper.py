@@ -37,11 +37,11 @@ def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: fl
     # VIDEO LAYER
     if layout_mode == "box":
         video_layer = (
-            "[0:v]scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1[video_graded]"
+            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,unsharp=5:5:1.0:5:5:0.0,setsar=1[video_graded]"
         )
     else:
         video_layer = (
-            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
+            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,unsharp=5:5:1.0:5:5:0.0,setsar=1[video_graded]"
         )
 
     # BACKGROUND LAYER — five branches on bg_style
@@ -124,17 +124,10 @@ def _get_best_encoder():
 
     return _DETECTED_ENCODER
 
-# Ensure we have our premium font (Montserrat-Bold) available on Colab
-_FONT_DIR  = "/content/work"
-_FONT_FILE = "Montserrat-Bold.ttf"
-_FONT_URL  = "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf"
-os.makedirs(_FONT_DIR, exist_ok=True)
-if not os.path.exists(os.path.join(_FONT_DIR, _FONT_FILE)):
-    try:
-        urllib.request.urlretrieve(_FONT_URL, os.path.join(_FONT_DIR, _FONT_FILE))
-        subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except:
-        pass
+# Ensure we have our premium font (Bebas Neue) available locally
+_FONT_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+_FONT_FILE = "BebasNeue-Regular.ttf"
+
 
 
 # ── Silence Detection & Removal ──────────────────────────────────────────────
@@ -239,13 +232,13 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
     
     encoder = _get_best_encoder()
     if encoder == "h264_nvenc":
-        enc_args = ["-c:v", "h264_nvenc", "-preset", "fast", "-rc", "vbr", "-cq", "16", "-b:v", "0"]
+        enc_args = ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", "14", "-b:v", "8M", "-maxrate", "10M", "-bufsize", "20M"]
     elif encoder == "h264_amf":
-        enc_args = ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "16", "-qp_p", "16"]
+        enc_args = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "14", "-qp_p", "14"]
     elif encoder == "h264_qsv":
-        enc_args = ["-c:v", "h264_qsv", "-preset", "fast", "-global_quality", "16"]
+        enc_args = ["-c:v", "h264_qsv", "-preset", "slower", "-global_quality", "14"]
     else:
-        enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
+        enc_args = ["-c:v", "libx264", "-preset", "slow", "-crf", "14"]
 
 
     trim_cmd = [
@@ -379,7 +372,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     border_style = style.get("border_style", 1)
     back_color = style.get("back_color", "&H80000000&")
     casing = style.get("casing", "upper")
-    font_name = "Montserrat"
+    font_name = "Bebas Neue"
     p = {"main": main_color, "high": high_color}
 
     caption_pos = position.lower() if position else "bottom"
@@ -402,19 +395,19 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{font_name},80,{ts['PrimaryColour']}&,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,180,1"
+        f"Style: Header,{font_name},140,&H00000000,&H000000FF,&H00000000,&H0000FFFF,-1,0,0,0,100,100,0,0,3,15,0,8,40,40,240,1"
     ]
     
     if kwargs.get("magic_hook_text"):
         hook_pos = kwargs.get("hook_position", "top").lower()
         if hook_pos == "bottom":
             hook_align = 2
+            hook_margin = 60
         else:
             hook_align = 8
-        hook_margin = 60
-        # Changed BorderStyle from 3 (opaque box) to 1 (outline + drop shadow)
-        # Primary color: White (&H00FFFFFF) with thick black outline
-        lines.append(f"Style: MagicHook,{font_name},60,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,6,3,{hook_align},40,40,{hook_margin},1")
+            hook_margin = 120
+        # Primary color: Black inside a solid yellow box (viral aesthetic)
+        lines.append(f"Style: MagicHook,{font_name},110,&H00000000,&H000000FF,&H00000000,&H0000FFFF,-1,0,0,0,100,100,0,0,3,12,0,{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
         "",
@@ -436,7 +429,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             current_line = ""
             wrapped_lines = []
             for word in words_list:
-                if len(current_line) + len(word) + (1 if current_line else 0) > 26:
+                if len(current_line) + len(word) + (1 if current_line else 0) > 16:
                     wrapped_lines.append(current_line)
                     current_line = word
                 else:
@@ -459,13 +452,13 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             header_text = kwargs["header_text"].strip().title()
         else:
             header_text = kwargs["header_text"].strip().upper()
-        # Wrap header text to 2 lines if it is too long (e.g. > 20 characters)
+        # Wrap header text to 2 lines if it is too long (e.g. > 14 characters)
         words_list = header_text.split()
         current_line = []
         current_len = 0
         wrapped_lines_words = []
         for word in words_list:
-            if current_len + len(word) + (1 if current_line else 0) > 20:
+            if current_len + len(word) + (1 if current_line else 0) > 14:
                 wrapped_lines_words.append(current_line)
                 current_line = [word]
                 current_len = len(word)
@@ -542,13 +535,34 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         chunk_et = max(0, chunk[-1]['end'] - time_offset)
         if chunk_et <= chunk_st: continue
 
-        styled = ""
-        for x in chunk:
-            txt = x['word'].strip()
-            if casing == "upper": txt = txt.upper()
-            elif casing == "lower": txt = txt.lower()
-            styled += f"{txt} "
-        lines.append(f"Dialogue: 0,{fmt_time(chunk_st)},{fmt_time(chunk_et)},Main,,0,0,0,,{styled.strip()}")
+        for active_idx, active_word in enumerate(chunk):
+            active_st = max(0, active_word['start'] - time_offset)
+            active_et = max(0, active_word['end'] - time_offset)
+            if active_et <= active_st: continue
+
+            # Fill small gaps between words in the same chunk
+            if active_idx == 0:
+                event_st = chunk_st
+            else:
+                event_st = active_st
+
+            if active_idx == len(chunk) - 1:
+                event_et = chunk_et
+            else:
+                event_et = max(active_et, chunk[active_idx+1]['start'] - time_offset)
+
+            styled = ""
+            for x_idx, x in enumerate(chunk):
+                txt = x['word'].strip()
+                if casing == "upper": txt = txt.upper()
+                elif casing == "lower": txt = txt.lower()
+
+                if x_idx == active_idx:
+                    styled += f"{{\\c{p['high']}}}{txt}{{\\c{p['main']}}} "
+                else:
+                    styled += f"{txt} "
+
+            lines.append(f"Dialogue: 0,{fmt_time(event_st)},{fmt_time(event_et)},Main,,0,0,0,,{styled.strip()}")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
@@ -592,20 +606,17 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(work_dir, exist_ok=True)
 
-    # ── Guarantee Montserrat-Bold font exists in /content/work ──
+    # ── Guarantee Bebas Neue font exists locally ──
     _colab_font = os.path.join(_FONT_DIR, _FONT_FILE)
-    if not os.path.exists(_colab_font):
-        try:
-            urllib.request.urlretrieve(_FONT_URL, _colab_font)
-            subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ui_logger.log(f"Downloaded Montserrat-Bold to {_colab_font}")
-        except Exception as _fe:
-            ui_logger.log(f"Font download failed: {_fe}")
     if os.path.exists(_colab_font):
-        ui_logger.log(f"Montserrat-Bold font ready at {_colab_font}")
         # Refresh fontconfig cache so libass finds the font at render time
-        subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=10)
+        if os.name != 'nt':
+            try:
+                subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            except Exception:
+                pass
+    else:
+        ui_logger.log(f"Warning: bundled font missing at {_colab_font}")
     out_id = uuid.uuid4().hex[:8]
     import datetime
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -621,10 +632,20 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         # Multi-segment clip (from Opus-style LLM output)
         ui_logger.log(f"Multi-segment clip: rendering {len(raw_segments)} segments...")
         block_words = []
-        for seg in raw_segments:
+        for idx, seg in enumerate(raw_segments):
             seg_st = float(seg["start_time"])
             seg_et = float(seg["end_time"])
+            
+            # Smart Padding for Context & Payoff
+            if idx == 0:
+                seg_st = max(0, seg_st - 0.8) # Allow hook to breathe
+            if idx == len(raw_segments) - 1:
+                seg_et = seg_et + 1.5 # Let the payoff linger
+                
             block_words.extend([w for w in word_timestamps if seg_st - 0.5 <= w["start"] <= seg_et + 0.5])
+            raw_segments[idx]["start_time"] = seg_st
+            raw_segments[idx]["end_time"] = seg_et
+            
         segments = [{"start_time": float(s["start_time"]), "end_time": float(s["end_time"])}
                     for s in raw_segments]
     else:
@@ -725,9 +746,9 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     sfx_delays.append(b_st - seg_st)
 
                     if layout_mode == "box":
-                        filter_complex += f"[{input_idx}:v]scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080[broll{input_idx}];"
+                        filter_complex += f"[{input_idx}:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080[broll{input_idx}];"
                     else:
-                        filter_complex += f"[{input_idx}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h}[broll{input_idx}];"
+                        filter_complex += f"[{input_idx}:v]scale={target_w}:{target_h}:flags=lanczos:force_original_aspect_ratio=increase,crop={target_w}:{target_h}[broll{input_idx}];"
 
                     rel_st = b_st - seg_st
                     rel_et = rel_st + 2.0
@@ -777,7 +798,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         seg_words = [w for w in block_words if w["start"] >= seg_st - 0.2 and w["end"] <= seg_et + 0.2]
         if add_subs and seg_words:
-            mh_text = clip_data.get("hook_sentence") if (magic_hook and idx == 0) else None
+            mh_text = clip_data.get("hook_text") if (magic_hook and idx == 0) else None
             safe_font = os.path.join(_FONT_DIR, _FONT_FILE).replace("\\", "/").replace(":", "\\:")
 
             ass_path = os.path.join(work_dir, f"subs_{out_id}_{idx}.ass")
@@ -833,13 +854,13 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         
         encoder = _get_best_encoder()
         if encoder == "h264_nvenc":
-            enc_args = ["-c:v", "h264_nvenc", "-preset", "fast", "-rc", "vbr", "-cq", "16", "-b:v", "0"]
+            enc_args = ["-c:v", "h264_nvenc", "-preset", "p7", "-rc", "vbr", "-cq", "12", "-b:v", "15M", "-maxrate", "20M", "-bufsize", "40M"]
         elif encoder == "h264_amf":
-            enc_args = ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "16", "-qp_p", "16"]
+            enc_args = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "12", "-qp_p", "12"]
         elif encoder == "h264_qsv":
-            enc_args = ["-c:v", "h264_qsv", "-preset", "fast", "-global_quality", "16"]
+            enc_args = ["-c:v", "h264_qsv", "-preset", "veryslow", "-global_quality", "12"]
         else:
-            enc_args = ["-c:v", "libx264", "-preset", "fast", "-crf", "16"]
+            enc_args = ["-c:v", "libx264", "-preset", "slower", "-crf", "12"]
 
         # High quality encoding parameters, enforcing a hard end to prevent infinitely hanging processes
         cmd.extend([
@@ -978,3 +999,4 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
     ui_logger.log(f"Render complete: {os.path.basename(final_output)}")
     return final_output
+

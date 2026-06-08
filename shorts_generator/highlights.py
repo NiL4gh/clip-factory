@@ -13,12 +13,12 @@ _llm_cache = {}
 CHUNK_CHARS = 3000  # More granular chunks to ensure we identify 5-10+ topics for 15-20 clips
 
 
-# ── Opus-Style Viral Director Prompt ─────────────────────────────────────────
+# â”€â”€ Opus-Style Viral Director Prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _VIRALITY_BASE = """You are an expert short-form video editor who has studied thousands of viral TikTok, Instagram Reels, and YouTube Shorts clips. Your job is to hunt through this transcript and identify every moment that has the natural shape of a viral clip. A 2-hour podcast typically contains 15-30 of these moments. Your job is to find all of them.
 
 TOTAL VIDEO DURATION: {video_duration_str}
 
-═══════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 THE SHAPE OF A VIRAL CLIP — LEARN THIS PATTERN:
 
 Every viral clip from a podcast or interview has the same three-part shape.
@@ -83,7 +83,7 @@ is still mid-explanation, mid-story, or mid-argument when you cut — the
 clip has no landing. Keep reading the transcript forward until the thought
 closes naturally. That closing line is your landing.
 
-═══════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 HOW TO HUNT FOR THESE MOMENTS:
 
 Read through the transcript and look for these trigger patterns that signal
@@ -120,35 +120,35 @@ comments and shares because they provoke a reaction. Find where the
 speaker defends or explains the opinion. That explanation is the build.
 The original statement is the entry point.
 
-═══════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 EXTRACTION RULES:
 
 - Extract EVERY moment that has a clear Entry Point, Build, and Landing.
   If a topic section has 5 such moments, extract all 5.
-- Each clip's ideal_transcript must be 50 to 220 words of continuous
-  spoken text. This represents approximately 30-90 seconds of speech. This expanded length ensures you have ample room to capture the complete payoff or answer.
+- THE STITCHING MANDATE (OPUS CLIP LOGIC): You have the power to extract a clip that consists of multiple, non-contiguous segments! Use the `segments` array to jump-cut past boring filler, long pauses, tangents, or host interruptions. If the core subject (e.g., "pizza") was mentioned 2 minutes ago, but the funniest/best part is them talking about "it" right now, you MUST extract the segment where the subject is introduced and STITCH it to the current discussion.
+- THE CONTEXT MANDATE (SUBJECT RESOLUTION): Do not waste time over-explaining universally known people or concepts (e.g., Michael Jackson). However, you MUST resolve the local conversational subject. If the speakers are talking about how much they hate "it" or loved "that", the viewer MUST find out what "it" is before the clip ends! A clip that talks about a crazy experience but never reveals what the experience actually was is a completely useless clip. If the subject revelation happens earlier or later in the video, use stitching to include it.
 - THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcript—in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
 - ENDING RULES — NON-NEGOTIABLE:
-  The final sentence of ideal_transcript MUST be one of these:
-    - The speaker's conclusion or answer to the question they raised
-    - A punchline or surprising reversal that pays off the setup
-    - A strong declarative statement that closes the argument
-    - A specific result, number, or outcome that proves the point
-  The final sentence of ideal_transcript must NEVER be:
-    - A question (unless it is purely rhetorical with no answer needed)
-    - A transitional phrase ("so anyway", "but yeah", "moving on")
-    - A filler or acknowledgment ("right", "exactly", "I mean")
-    - Mid-argument ("and the reason for that is", "so what happens is")
-    - An incomplete thought that sets up something outside the clip
-  If you reach the word limit before the payoff arrives, extend ideal_transcript past the limit to capture the closing sentence. A clip that runs 5 seconds long but ends properly is always better than a clip that ends on time but cuts the landing.
-- VALUABLE INSIGHT FALLBACK: While structured story arcs are preferred, if a section contains highly engaging, funny, contrarian, or educational discussion but lacks a formal question/resolution payoff, you MUST still extract it! Simply ensure it ends on a completed, coherent thought so the viewer gets clear value. Never be too conservative or return zero clips; prioritize extracting the most entertaining, informative, or high-energy blocks available in the text.
-- Always extend the ideal_transcript forward until the thought fully
+  The final segment's end_quote MUST be one of these:
+    - The speaker's definitive conclusion or answer to the question they raised.
+    - A punchline or surprising reversal that pays off the setup.
+    - A strong declarative statement that closes the argument completely.
+    - A specific result, number, or outcome that proves the point.
+  The final segment's end_quote must NEVER be:
+    - A question (unless it is purely rhetorical with no answer needed).
+    - A transitional phrase ("so anyway", "but yeah", "moving on").
+    - A filler or acknowledgment ("right", "exactly", "I mean").
+    - Mid-argument ("and the reason for that is", "so what happens is").
+    - An incomplete thought that sets up something outside the clip.
+  EXTREMELY IMPORTANT: A clip that runs 5 seconds long but ends cleanly is infinitely better than a clip that ends abruptly mid-thought.
+- SELF-CONTAINMENT MANDATE: The viewer MUST NOT need external context to understand the clip. If the speaker says "When he did that...", the viewer must know who "he" is and what "that" is. If they don't, you must stitch in the earlier segment where the context was established. If you cannot establish context, DO NOT EXTRACT THE CLIP.
+- Always extend the final segment forward until the thought fully
   closes. Never end on a sentence that is still building toward something.
 - Never cut in the middle of a sentence, story, or argument.
 - Only the exact spoken words from the transcript. No invented content.
-- You may edit out boring filler, long pauses, tangents, or secondary details. Simply omit them from the ideal_transcript, and the stitching engine will automatically concatenate the remaining high-energy segments under 60 seconds.
+- STRICT EDITING MANDATE: You MUST actively edit out all boring filler, long pauses, tangents, secondary details, or host interruptions. Skip them entirely. The stitching engine will automatically concatenate your selected high-energy segments into a punchy, jump-cut video. Do not be lazy - extract ONLY the absolute best sentences that drive the point home fast.
 - Do not extract intros, outros, sponsor reads, or off-topic transitions.
-- HOOK NON-REPETITION MANDATE: For `hook_sentence` and `hook_text`, write completely clean, non-repetitive, grammatically correct sentences. NEVER repeat any words, clauses, or phrases inside the sentence (avoid loops like 'mostly reasonable works better than mostly reasonable works better than'). Make sure it is highly punchy, clear, and natural.
+- HOOK NON-REPETITION MANDATE: For `hook_sentence` and `hook_text`, write completely clean, non-repetitive, grammatically correct sentences. YOU ARE STRICTLY FORBIDDEN from using lazy templates like "Discover the secret to", "Meet the", "Learn how to", or "Here is why". Write aggressive, punchy, statement-based hooks (e.g. "WHY SMALL SCHOOLS ALWAYS WIN" instead of "Discover the secret to small schools"). NEVER repeat any words, clauses, or phrases inside the sentence. Make sure it is highly punchy, clear, and natural.
 
 NEVER EXTRACT any of the following regardless of how interesting the
 words sound:
@@ -207,7 +207,7 @@ psychological trigger, use "curiosity_gap" as default.
 
 
 
-# ── LLM Management ───────────────────────────────────────────────────────────
+# â”€â”€ LLM Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _get_llm(llm_path: str, gpu_layers: int = 35):
     if isinstance(llm_path, str) and llm_path.startswith("gemini-"):
@@ -327,7 +327,7 @@ def _query_llm(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
     return []
 
 
-# ── Transcript Formatting ────────────────────────────────────────────────────
+# â”€â”€ Transcript Formatting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _build_text(transcript_data) -> tuple:
     """Returns (text_for_llm, raw_word_list)."""
@@ -366,12 +366,9 @@ def _get_text_slice(full_text: str, start_time: float, end_time: float) -> str:
                 result.append(line)
     return "\n".join(result) if result else full_text[:CHUNK_CHARS]
 
-def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> list:
-    if not ideal_transcript or not raw_words:
+def _map_quotes_to_segments(llm_segments: list, raw_words: list) -> list:
+    if not llm_segments or not raw_words:
         return []
-
-    sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
-    sentences = [s.strip() for s in sentences if s.strip()]
 
     segments = []
     current_segment = None
@@ -390,8 +387,7 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
         if not anchor_words:
             return -1
         anchor_len = len(anchor_words)
-        
-        # Try exact match with anchor_len
+
         for i in range(start_search_idx, len(raw_normalized) - anchor_len + 1):
             match = True
             for j in range(anchor_len):
@@ -400,40 +396,44 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
                     break
             if match:
                 return i
-                
-        # If 3 words fail, try 2 words if possible
+
         if anchor_len > 2:
             for i in range(start_search_idx, len(raw_normalized) - 1):
                 if raw_normalized[i] == anchor_words[0] and raw_normalized[i+1] == anchor_words[1]:
                     return i
-                    
         return -1
 
-    for sentence in sentences:
-        words = [normalize_word(w) for w in sentence.split()]
-        words = [w for w in words if w]
-        if not words:
+    for seg_data in llm_segments:
+        start_q = seg_data.get("start_quote", "")
+        end_q = seg_data.get("end_quote", "")
+
+        start_words = [normalize_word(w) for w in start_q.split()]
+        start_words = [w for w in start_words if w][:5]
+
+        end_words = [normalize_word(w) for w in end_q.split()]
+        end_words = [w for w in end_words if w][-5:]
+
+        if not start_words:
             continue
-            
-        start_anchor = words[:3]
-        end_anchor = words[-3:] if len(words) >= 3 else words
-        
-        # Find start
-        start_idx = find_anchor(start_anchor, search_idx)
+
+        start_idx = find_anchor(start_words, search_idx)
         if start_idx == -1:
             continue
-            
-        # Find end
-        end_idx = find_anchor(end_anchor, start_idx)
-        if end_idx == -1:
-            end_idx = start_idx + len(words) - 1
-            end_idx = min(end_idx, len(raw_words) - 1)
+
+        if end_words:
+            end_idx = find_anchor(end_words, start_idx)
+            if end_idx == -1:
+                end_idx = start_idx + len(start_words) - 1
+            else:
+                end_idx = end_idx + len(end_words) - 1
         else:
-            end_idx = end_idx + len(end_anchor) - 1
-            
+            end_idx = start_idx + len(start_words) - 1
+
+        end_idx = min(end_idx, len(raw_words) - 1)
+
         st = raw_words[start_idx]["start"]
         et = raw_words[end_idx]["end"]
-        
+
         # B4: Walk-forward sentence-boundary cuts
         best_extended_et = et
         for next_idx in range(end_idx + 1, len(raw_words)):
@@ -449,36 +449,45 @@ def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> li
                 break
         et = best_extended_et
 
-        # Diagnostic logging (P4)
-        ui_logger.log(f"  [DIAGNOSTIC] Matching sentence: '{sentence[:50]}...' | start_anchor: {start_anchor} | end_anchor: {end_anchor} | Mapped range: {st:.1f}s - {et:.1f}s")
-        
         search_idx = end_idx + 1
-        
+
         if current_segment is None:
             current_segment = {"start_time": st, "end_time": et}
         else:
             gap = st - current_segment["end_time"]
             if gap < 1.5:
-                # Merge
                 current_segment["end_time"] = max(current_segment["end_time"], et)
             else:
-                # New segment
                 segments.append(current_segment)
                 current_segment = {"start_time": st, "end_time": et}
-                
+
     if current_segment:
         segments.append(current_segment)
-        
-    if not segments and raw_words and ideal_transcript:
-        # Fallback: finding the first word of the ideal_transcript in the raw words
-        first_word = normalize_word(ideal_transcript.split()[0]) if ideal_transcript.split() else ""
-        for i, w in enumerate(raw_words):
-            if normalize_word(w["word"]) == first_word:
-                st = w["start"]
-                et = min(st + 45.0, raw_words[-1]["end"])
-                return [{"start_time": st, "end_time": et}]
-        
+
     return segments
+
+
+def _map_text_to_stitched_segments(ideal_transcript: str, raw_words: list) -> list:
+    """Bridge between ideal_transcript (free text) and _map_quotes_to_segments.
+
+    The LLM returns ideal_transcript as a block of text. This function
+    extracts the first and last words to build synthetic start_quote/end_quote
+    pairs, then delegates to the existing anchor-based mapper.
+    """
+    if not ideal_transcript or not raw_words:
+        return []
+
+    words = ideal_transcript.split()
+    if len(words) < 2:
+        return []
+
+    # Build a single segment request from the full ideal_transcript
+    synth_segments = [{
+        "start_quote": " ".join(words[:5]),
+        "end_quote": " ".join(words[-5:])
+    }]
+
+    return _map_quotes_to_segments(synth_segments, raw_words)
 
 
 def _get_video_duration(word_timestamps: list) -> float:
@@ -501,7 +510,7 @@ def _format_duration(seconds: float) -> str:
     return f"{h}h {m}m"
 
 
-# ── Estimated Clip Density ───────────────────────────────────────────────────
+# â”€â”€ Estimated Clip Density â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def estimate_clip_potential(word_timestamps: list) -> int:
     """Estimate how many clips a video could produce based on its duration."""
@@ -515,48 +524,53 @@ def estimate_clip_potential(word_timestamps: list) -> int:
 
 # ── Post-LLM Validation ─────────────────────────────────────────────────────
 
+# Phrases that indicate the LLM copied schema instructions instead of generating content
+_HOOK_TEXT_POISON_PHRASES = [
+    "exact first", "bold, original", "prompt instructions", "curiosity gap. not a summary",
+    "do not copy", "do not use generic", "specific payload", "declarative statement",
+    "scroll-stopping", "3-5 words of the segment",
+]
+
+
+def _sanitize_hook_text(raw_hook_text: str, fallback_hook_sentence: str) -> str:
+    """Return clean hook_text, falling back to hook_sentence if the LLM
+    output prompt instructions instead of actual content."""
+    text = (raw_hook_text or "").strip()
+
+    if not text:
+        return fallback_hook_sentence
+
+    # Detect prompt instruction leakage
+    text_lower = text.lower()
+    if any(phrase in text_lower for phrase in _HOOK_TEXT_POISON_PHRASES):
+        return fallback_hook_sentence
+
+    return text
+
+
 def _validate_clips(clips: list, raw_words: list) -> list:
-    """
-    Post-LLM validation. Discard clips that:
-    1. Are under 20s or over 120s after stitch estimation
-    (Clips over 90s are sliced down sentence by sentence)
-    """
     valid = []
+    import re
     for clip in clips:
         segments = clip.get("segments", [])
-        ideal_transcript = clip.get("ideal_transcript", "")
-        if not segments or not ideal_transcript:
+        if not segments:
             continue
 
-        # Calculate total stitched duration
         total_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in segments)
 
-        # Duration check: >90s -> slice transcript and remap
-        if total_dur > 90:
-            sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
-            sliced_transcript = ""
-            for s in sentences:
-                test_transcript = (sliced_transcript + " " + s).strip()
-                test_segments = _map_text_to_stitched_segments(test_transcript, raw_words)
-                test_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in test_segments) if test_segments else 0
-                if test_dur > 90 and sliced_transcript:
-                    break
-                sliced_transcript = test_transcript
-            
-            if sliced_transcript:
-                segments = _map_text_to_stitched_segments(sliced_transcript, raw_words)
-                if not segments:
-                    continue
-                total_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in segments)
-                clip["ideal_transcript"] = sliced_transcript
-                clip["segments"] = segments
-                clip["start_time"] = segments[0]["start_time"]
-                clip["end_time"] = segments[-1]["end_time"]
-
-        # Final duration check
-        if total_dur < 10 or total_dur > 120:
+        if total_dur < 15 or total_dur > 180:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
             continue
+
+        # Scrub generic LLM hook templates
+        for hook_key in ["hook_sentence", "hook_text", "title"]:
+            if hook_key in clip and isinstance(clip[hook_key], str):
+                val = clip[hook_key]
+                val = re.sub(r'^(?:Discover|Learn|Find out|Uncover)\b\s*(?:the\s+(?:secret|shocking\s+truth|wild\s+truth|truth|real\s+reason)\s+(?:to|about|behind|of)\b)?\s*', '', val, flags=re.IGNORECASE)
+                val = re.sub(r'^(?:Meet the|Here is why|Why you should|Stop doing this|This is why)\b\s*', '', val, flags=re.IGNORECASE)
+                if val and val[0].islower():
+                    val = val[0].upper() + val[1:]
+                clip[hook_key] = val
 
         clip["duration"] = total_dur
         clip["is_stitched"] = len(segments) > 1
@@ -564,9 +578,7 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
     return valid
 
-
-# ── Pass 0: Persona Detection ───────────────────────────────────────────────
-
+# â”€â”€ Pass 0: Persona Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -> dict:
     """Run a fast pass to detect video genre, tone, target audience, and suggested styles."""
     if not llm_path:
@@ -607,7 +619,7 @@ def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -
     }
 
 
-# ── Pass 1: Topic Indexing ───────────────────────────────────────────────────
+# â”€â”€ Pass 1: Topic Indexing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, language: str = "") -> list:
     """
@@ -729,7 +741,7 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
     return valid_topics
 
 
-# ── Pass 2: Per-Topic Clip Extraction ────────────────────────────────────────
+# ——— Pass 2: Per-Topic Clip Extraction ————————————————————————————————————————————
 
 # 5 one-shot viral hook examples labeled by persona type (L1)
 _VIRAL_HOOKS_EXAMPLES = """
@@ -798,6 +810,7 @@ def get_highlights(
         '[\n'
         '  {\n'
         '    "title": "ULTRA-SHORT TOPIC HOOK (2-5 words max). MUST be punchy, curiosity-inducing, and extremely short to fit on screen (e.g. \\"THE TRUTH ABOUT X\\", \\"STOP DOING THIS\\"). NO long sentences.",\n'
+        '    "ideal_transcript": "Copy the exact spoken words from the transcript that make up this clip. Include the full text from start to end.",\n'
         '    "virality_score": 85,\n'
         '    "hook_score": 20, // integer 0-25 — how scroll-stopping is the opening moment\n'
         '    "engagement_score": 20, // integer 0-25 — how compelling is the middle content\n'
@@ -805,13 +818,20 @@ def get_highlights(
         '    "shareability_score": 20, // integer 0-25 — would someone actively share this\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
-        '    "ideal_transcript": "The exact word-for-word transcript of the perfect 30-90 second clip. It MUST be a detailed, long paragraph of at least 5 to 12 consecutive sentences (typically 50-180 words) to ensure sufficient duration and fully capture the payoff. Do not include timestamps, just copy the raw spoken words exactly.",\n'
+        '    "segments": [\n'
+        '      {\n'
+        '        "start_quote": "The exact first 3-5 spoken words of this segment, copied verbatim from the transcript. No timestamps.",\n'
+        '        "end_quote": "The exact last 3-5 spoken words of this segment, copied verbatim from the transcript. No timestamps."\n'
+        '      }\n'
+        '    ],\n'
+        '    "virality_reason": "1-2 sentences explaining WHY this clip would go viral — what psychological trigger or content quality makes it shareable.",\n'
+        '    "source_topic": "The topic name this clip was extracted from.",\n'
         '    "theme": "Educational|Motivation|Comedy|Suspense|Storytime",\n'
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
         '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
-        '    "hook_text": "Max 8 words. The punchline of this clip — the single most surprising or counterintuitive conclusion it delivers. NOT a summary. NOT copied from the transcript. A bold declarative statement that creates a curiosity gap: the viewer reads it and thinks wait, how is that possible? Use plain conversational language. No hashtags, no emojis, no colons, no filler phrases like Here is why or The truth about. Reflect the PAYOFF, not the topic. Examples: Your goals are making you fail. / Busy people get less done. / Most advice is just fear in disguise.",\n'
-        '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12–18 words) authored for social media — NOT copied from the transcript. Write it as if a top creator is teasing this clip to make someone stop scrolling. Use one of these proven patterns: Contrast (Nobody tells you this about [topic], but it changed everything for me.), Number (This one rule about [topic] is worth more than 10 years of advice.), Direct address (If you\'re struggling with [topic], you need to hear this right now.), Opinion bomb (The thing everyone gets wrong about [topic] is embarrassing.), or Story tease (He made $52k a year and was wealthier than people earning millions.). The hook must be specific to THIS clip\'s content — no generic lines. Maximum 18 words. Do not copy any phrase verbatim from the transcript.",\n'
+        '    "hook_text": "Write 3-8 words: a punchy headline about THIS clip. Example for a clip about first jobs: YOUR FIRST JOB WAS A LIE. Example for a friendship clip: MEN NEED BETTER FRIENDS. Must be specific to the clip content.",\n'
+        '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12-18 words) authored for social media — NOT copied from the transcript. Write an original hook tailored to the specific content of the clip. DO NOT copy the template examples from the prompt. It must be highly specific, punchy, and original. Max 18 words.",\n'
         '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\""\n'
         '  }\n'
         ']'
@@ -831,7 +851,7 @@ def get_highlights(
     virality_prompt = f"{_VIRALITY_BASE}\n\n{_VIRAL_HOOKS_EXAMPLES}\n\n{persona_addition}".format(video_duration_str=video_duration_str)
     virality_prompt += f"\n\n{_TRIGGER_WORDS}\n\n{_HOOK_TYPES}"
     virality_prompt += (
-        "\n\n═══════════════════════════════════════════════════════\n"
+        "\n\nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n"
         "TIMESTAMP EXTRACTION RULES:\n"
         "- The 'start_timestamp' and 'end_timestamp' fields must be floating point numbers (in seconds).\n"
         "- They must correspond precisely to the bracketed timestamps (e.g., [12.5s]) inside the transcript.\n"
@@ -856,7 +876,7 @@ fix. Simply return the corrected JSON.
 □ score is an integer between 0 and 100
 □ broll_keywords is a list of strings, not a single string
 □ emoji_moments is a list of strings
-□ segments is a list of objects each with start_time and end_time as floats
+□ segments is a list of objects each with start_quote (string) and end_quote (string) — exact words from the transcript
 □ No field has a null value — use empty string "" or empty list [] as fallback
 □ Output is a valid JSON array only — no markdown, no commentary, no
   explanation outside the array
@@ -865,7 +885,7 @@ fix. Simply return the corrected JSON.
 """
 
     if topics and len(topics) > 0:
-        # ── Topic-Aware Extraction ──
+        # â”€â”€ Topic-Aware Extraction â”€â”€
         clips_per_topic = max(2, min(4, -(-num_clips // max(1, len(topics)))))
         
         for tidx, topic in enumerate(topics):
@@ -894,7 +914,8 @@ fix. Simply return the corrected JSON.
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                 f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
-                f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
+                f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
+                f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
@@ -907,7 +928,7 @@ fix. Simply return the corrected JSON.
             except Exception as e:
                 ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed — {e}")
     else:
-        # ── Fallback: Run topic indexing first, then extract per-topic ──
+        # â”€â”€ Fallback: Run topic indexing first, then extract per-topic â”€â”€
         ui_logger.log("No topics provided — running automatic topic indexing (Pass 1)...")
         auto_topics = get_topic_index(transcript_data, llm_path, gpu_layers, language)
 
@@ -940,6 +961,7 @@ fix. Simply return the corrected JSON.
                     f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                     f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                     f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
+                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                     f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.{energy_hint}\n\n"
                     f"Transcript:\n{topic_text}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -973,7 +995,8 @@ fix. Simply return the corrected JSON.
                 prompt = (
                     f"{virality_prompt}\n\n"
                     f"Extract ONLY the absolute best viral moments.\n"
-                    f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside the ideal_transcript text. Only output the raw spoken words in ideal_transcript. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
+                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
+                    f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
                     f"Transcript (Part {idx+1}/{len(fallback_chunks)}):\n{f_chunk}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
                 )
@@ -985,7 +1008,7 @@ fix. Simply return the corrected JSON.
 
     ui_logger.log(f"LLM extracted {len(all_highlights)} raw candidates. Validating and scoring...")
 
-    # ── Normalize LLM output into consistent format ──
+    # â”€â”€ Normalize LLM output into consistent format â”€â”€
     normalized = []
     for h in all_highlights:
         try:
@@ -994,30 +1017,36 @@ fix. Simply return the corrected JSON.
             start_ts = h.get("start_timestamp")
             end_ts = h.get("end_timestamp")
             
-            if start_ts is not None and end_ts is not None:
-                try:
-                    start_ts = float(start_ts)
-                    end_ts = float(end_ts)
-                    if raw_words:
-                        matching_words = [w for w in raw_words if start_ts <= w["start"] <= end_ts]
-                        if matching_words:
-                            start_ts = matching_words[0]["start"]
-                            end_ts = matching_words[-1]["end"]
-                    segments = [{"start_time": start_ts, "end_time": end_ts}]
-                except (ValueError, TypeError):
+            # Always use exact text mapping if raw_words are available, as LLMs hallucinate timestamps
+            segments = []
+            if raw_words:
+                # Primary: use LLM's segments array (start_quote/end_quote pairs)
+                llm_segments = h.get("segments", [])
+                if llm_segments and isinstance(llm_segments, list) and all(
+                    isinstance(s, dict) and ("start_quote" in s or "end_quote" in s)
+                    for s in llm_segments
+                ):
+                    segments = _map_quotes_to_segments(llm_segments, raw_words)
+
+                # Fallback: use ideal_transcript text for anchor-based mapping
+                if not segments and ideal_transcript:
                     segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
-            else:
-                segments = _map_text_to_stitched_segments(ideal_transcript, raw_words)
+
+            # Last resort: LLM timestamps (known to be unreliable)
+            if not segments and start_ts is not None and end_ts is not None:
+                try:
+                    segments = [{"start_time": float(start_ts), "end_time": float(end_ts)}]
+                except (ValueError, TypeError):
+                    segments = []
                 
             if not segments:
                 continue
 
-            if not ideal_transcript:
-                if raw_words:
-                    matching_words = [w for w in raw_words if segments[0]["start_time"] <= w["start"] <= segments[-1]["end_time"]]
-                    ideal_transcript = " ".join(w["word"] for w in matching_words)
-                else:
-                    ideal_transcript = "No transcript text available."
+            if raw_words and segments:
+                matching_words = [w for w in raw_words if segments[0]["start_time"] <= w["start"] <= segments[-1]["end_time"]]
+                ideal_transcript = " ".join(w["word"] for w in matching_words)
+            else:
+                ideal_transcript = "No transcript text available."
 
             score = max(0, min(100, int(h.get("virality_score", h.get("score", 50)))))
             theme = h.get("theme", "Storytime")
@@ -1028,7 +1057,7 @@ fix. Simply return the corrected JSON.
             overall_et = segments[-1]["end_time"]
 
             # Composite Scoring (P3)
-            clip_peaks = [p["energy"] for p in (energy_peaks or []) if overall_st <= p["time"] <= overall_et]
+            clip_peaks = [p["energy"] for p in (energy_peaks or []) if overall_st - 2 <= p["time"] <= overall_et + 2]
             energy_val = max(clip_peaks) if clip_peaks else 0.0
             energy_score = int(energy_val * 100)
             composite_score = int((score * 0.6) + (energy_score * 0.4))
@@ -1058,7 +1087,7 @@ fix. Simply return the corrected JSON.
                 "value_score": value_score,
                 "shareability_score": shareability_score,
                 "hook_sentence": hook_sentence,
-                "hook_text": h.get("hook_text", hook_sentence),
+                "hook_text": _sanitize_hook_text(h.get("hook_text", ""), hook_sentence),
                 "hook_type": hook_type,
                 "virality_reason": h.get("virality_reason", ""),
                 "theme": theme,
@@ -1077,22 +1106,28 @@ fix. Simply return the corrected JSON.
     # Sort by score
     validated.sort(key=lambda x: x["score"], reverse=True)
 
-    # Dedup using content Jaccard similarity (>60% word overlap) (B5)
-    def get_words_set(t_str):
-        return set(re.findall(r'\w+', t_str.lower()))
-
+    # Dedup using timestamp overlap (>50% of the shorter clip)
     deduped = []
     for h in validated:
-        h_words = get_words_set(h["ideal_transcript"])
+        h_st = h["start_time"]
+        h_et = h["end_time"]
+        h_dur = h_et - h_st
+
         is_duplicate = False
         for existing in deduped:
-            e_words = get_words_set(existing["ideal_transcript"])
-            intersection = h_words.intersection(e_words)
-            union = h_words.union(e_words)
-            jaccard = len(intersection) / len(union) if union else 0.0
-            if jaccard > 0.60:
-                is_duplicate = True
-                break
+            e_st = existing["start_time"]
+            e_et = existing["end_time"]
+            e_dur = e_et - e_st
+
+            overlap_start = max(h_st, e_st)
+            overlap_end = min(h_et, e_et)
+            overlap_dur = max(0, overlap_end - overlap_start)
+
+            if h_dur > 0 and e_dur > 0:
+                min_dur = min(h_dur, e_dur)
+                if overlap_dur / min_dur > 0.50:
+                    is_duplicate = True
+                    break
         if not is_duplicate:
             deduped.append(h)
 
