@@ -37,11 +37,11 @@ def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: fl
     # VIDEO LAYER
     if layout_mode == "box":
         video_layer = (
-            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1[video_graded]"
+            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,unsharp=5:5:1.0:5:5:0.0,setsar=1[video_graded]"
         )
     else:
         video_layer = (
-            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
+            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,unsharp=5:5:1.0:5:5:0.0,setsar=1[video_graded]"
         )
 
     # BACKGROUND LAYER — five branches on bg_style
@@ -395,7 +395,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{font_name},130,{ts['PrimaryColour']}&,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,240,1"
+        f"Style: Header,{font_name},150,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,8,4,8,40,40,240,1"
     ]
     
     if kwargs.get("magic_hook_text"):
@@ -408,7 +408,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             hook_margin = 120
         # Changed BorderStyle from 3 (opaque box) to 1 (outline + drop shadow)
         # Primary color: White (&H00FFFFFF) with thick black outline
-        lines.append(f"Style: MagicHook,{font_name},100,{ts['PrimaryColour']}&,&H000000FF,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},{hook_align},40,40,{hook_margin},1")
+        lines.append(f"Style: MagicHook,{font_name},120,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,7,4,{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
         "",
@@ -855,13 +855,13 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         
         encoder = _get_best_encoder()
         if encoder == "h264_nvenc":
-            enc_args = ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", "14", "-b:v", "8M", "-maxrate", "10M", "-bufsize", "20M"]
+            enc_args = ["-c:v", "h264_nvenc", "-preset", "p7", "-rc", "vbr", "-cq", "12", "-b:v", "15M", "-maxrate", "20M", "-bufsize", "40M"]
         elif encoder == "h264_amf":
-            enc_args = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "14", "-qp_p", "14"]
+            enc_args = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "12", "-qp_p", "12"]
         elif encoder == "h264_qsv":
-            enc_args = ["-c:v", "h264_qsv", "-preset", "slower", "-global_quality", "14"]
+            enc_args = ["-c:v", "h264_qsv", "-preset", "veryslow", "-global_quality", "12"]
         else:
-            enc_args = ["-c:v", "libx264", "-preset", "slow", "-crf", "14"]
+            enc_args = ["-c:v", "libx264", "-preset", "slower", "-crf", "12"]
 
         # High quality encoding parameters, enforcing a hard end to prevent infinitely hanging processes
         cmd.extend([

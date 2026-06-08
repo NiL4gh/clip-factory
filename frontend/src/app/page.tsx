@@ -398,6 +398,7 @@ export default function Dashboard() {
           ws.close();
           fetchGallery();
           setActiveView("gallery");
+          window.location.href = `${API_BASE}/download_all?project_only=true`;
         } else if (statusRes.data.status === "error") {
           clearInterval(poll);
           setStatus("error");
@@ -442,6 +443,7 @@ export default function Dashboard() {
           ws.close();
           fetchGallery();
           setActiveView("gallery");
+          window.location.href = `${API_BASE}/download_all?project_only=true`;
         }
       }, 2000);
     } catch {
@@ -1216,49 +1218,38 @@ export default function Dashboard() {
 
             <div className="flex-shrink-0 space-y-4">
               <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">BACKGROUND</span>
+                <span className="text-[10px] uppercase font-bold text-slate-500">UNIFIED TEMPLATE</span>
                 <select 
-                  value={globalSettings.bg_style}
-                  onChange={(e) => updateGlobalSetting("bg_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "viral") {
+                      updateGlobalSetting("layout_mode", "box");
+                      updateGlobalSetting("bg_style", "brand");
+                      updateGlobalSetting("caption_style", "Pop");
+                      updateGlobalSetting("title_style", "Impact");
+                      updateGlobalSetting("hook_display", "3s");
+                    } else if (val === "cinematic") {
+                      updateGlobalSetting("layout_mode", "portrait");
+                      updateGlobalSetting("bg_style", "blur");
+                      updateGlobalSetting("caption_style", "CinematicSlate");
+                      updateGlobalSetting("title_style", "None");
+                      updateGlobalSetting("hook_display", "off");
+                    } else if (val === "clean") {
+                      updateGlobalSetting("layout_mode", "box");
+                      updateGlobalSetting("bg_style", "white");
+                      updateGlobalSetting("caption_style", "Classic");
+                      updateGlobalSetting("title_style", "Box");
+                      updateGlobalSetting("hook_display", "full");
+                    }
+                  }}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
                 >
-                  <option value="black">Black</option>
-                  <option value="white">White</option>
-                  <option value="blur">Blur</option>
-                  <option value="gradient">Gradient</option>
-                  <option value="brand">Brand</option>
+                  <option value="">Choose a style template...</option>
+                  <option value="viral">🔥 Viral Focus (High Retention)</option>
+                  <option value="cinematic">🎬 Cinematic Immersive</option>
+                  <option value="clean">✨ Clean & Minimal</option>
                 </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Caption Style</span>
-                <select
-                  value={globalSettings.caption_style}
-                  onChange={(e) => updateGlobalSetting("caption_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire", "PodcastPop", "CinematicSlate", "NeonGlow"].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">TITLE STYLE</span>
-                <select
-                  value={globalSettings.title_style}
-                  onChange={(e) => updateGlobalSetting("title_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  {["Impact", "Box", "Yellow", "Neon", "Orange", "Suits", "Meme", "None"].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Layout Mode</span>
-                <select
-                  value={globalSettings.layout_mode}
-                  onChange={(e) => updateGlobalSetting("layout_mode", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  <option value="box">1:1 Centered Box</option>
-                  <option value="portrait">9:16 Portrait</option>
-                </select>
+                <p className="text-[10px] text-slate-500 mt-1">Automatically configures layout, background, fonts, and hook display to work perfectly together.</p>
               </div>
               <div className="space-y-1">
                 <span className="text-xs font-bold text-slate-500">Music</span>
@@ -1288,7 +1279,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Magic Hook
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> AI Hook Generator
                   </span>
                 </div>
                 <label className="setting-toggle">
@@ -1296,24 +1287,11 @@ export default function Dashboard() {
                   <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
                 </label>
               </div>
-              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm space-y-1.5">
-                <label className="text-[10px] uppercase font-bold text-slate-500 block">
-                  Hook Display
-                </label>
-                <select
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2 outline-none cursor-pointer font-medium"
-                  value={globalSettings.hook_display ?? "full"}
-                  onChange={(e) => updateGlobalSetting("hook_display", e.target.value)}
-                >
-                  <option value="full">Full Duration</option>
-                  <option value="3s">3 Seconds (Fade)</option>
-                  <option value="off">Hidden</option>
-                </select>
-              </div>
+              {/* Hook display removed, controlled by template */}
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Silences
+                    <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Dead Air
                   </span>
                 </div>
                 <label className="setting-toggle">

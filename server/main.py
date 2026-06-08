@@ -889,11 +889,13 @@ async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
 async def download_all(background_tasks: BackgroundTasks, project_only: bool = False):
     import glob
     import zipfile
+    import json
     if project_only:
-        current_filenames = {clip.get("rendered_filename") for clip in _state.get("clips", []) if clip.get("rendered_filename")}
-        files = [os.path.join(OUTPUT_DIR, fn) for fn in current_filenames if os.path.exists(os.path.join(OUTPUT_DIR, fn))]
+        clips_to_download = [clip for clip in _state.get("clips", []) if clip.get("rendered_filename")]
+        files = [os.path.join(OUTPUT_DIR, clip.get("rendered_filename")) for clip in clips_to_download if os.path.exists(os.path.join(OUTPUT_DIR, clip.get("rendered_filename")))]
     else:
         files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+        clips_to_download = []
         
     if not files:
         raise HTTPException(status_code=404, detail="No matching rendered clips found to download.")
@@ -904,6 +906,20 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file in files:
                 zipf.write(file, os.path.basename(file))
+            if project_only:
+                for idx, clip in enumerate(clips_to_download):
+                    filename = clip.get("rendered_filename")
+                    if filename:
+                        metadata = {
+                            "title": clip.get("title", f"Clip {idx+1}"),
+                            "rationale": clip.get("rationale", ""),
+                            "transcript": clip.get("transcript", ""),
+                            "score": clip.get("score", 0),
+                            "duration": clip.get("duration", 0),
+                            "persona": clip.get("persona", ""),
+                        }
+                        meta_filename = f"{os.path.splitext(filename)[0]}_metadata.json"
+                        zipf.writestr(meta_filename, json.dumps(metadata, indent=4))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
         
