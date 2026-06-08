@@ -502,6 +502,7 @@ def estimate_clip_potential(word_timestamps: list) -> int:
 
 def _validate_clips(clips: list, raw_words: list) -> list:
     valid = []
+    import re
     for clip in clips:
         segments = clip.get("segments", [])
         if not segments:
@@ -512,6 +513,16 @@ def _validate_clips(clips: list, raw_words: list) -> list:
         if total_dur < 10 or total_dur > 180:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
             continue
+
+        # Scrub generic LLM hook templates
+        for hook_key in ["hook_sentence", "hook_text", "title"]:
+            if hook_key in clip and isinstance(clip[hook_key], str):
+                val = clip[hook_key]
+                val = re.sub(r'^(?:Discover|Learn|Find out|Uncover)\b\s*(?:the\s+(?:secret|shocking\s+truth|wild\s+truth|truth|real\s+reason)\s+(?:to|about|behind|of)\b)?\s*', '', val, flags=re.IGNORECASE)
+                val = re.sub(r'^(?:Meet the|Here is why|Why you should|Stop doing this|This is why)\b\s*', '', val, flags=re.IGNORECASE)
+                if val and val[0].islower():
+                    val = val[0].upper() + val[1:]
+                clip[hook_key] = val
 
         clip["duration"] = total_dur
         clip["is_stitched"] = len(segments) > 1

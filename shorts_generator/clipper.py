@@ -124,17 +124,10 @@ def _get_best_encoder():
 
     return _DETECTED_ENCODER
 
-# Ensure we have our premium font (Bebas Neue) available on Colab
-_FONT_DIR  = "/content/work"
+# Ensure we have our premium font (Bebas Neue) available locally
+_FONT_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 _FONT_FILE = "BebasNeue-Regular.ttf"
-_FONT_URL  = "https://github.com/google/fonts/raw/main/ofl/bebasneue/BebasNeue-Regular.ttf"
-os.makedirs(_FONT_DIR, exist_ok=True)
-if not os.path.exists(os.path.join(_FONT_DIR, _FONT_FILE)):
-    try:
-        urllib.request.urlretrieve(_FONT_URL, os.path.join(_FONT_DIR, _FONT_FILE))
-        subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except:
-        pass
+
 
 
 # ── Silence Detection & Removal ──────────────────────────────────────────────
@@ -614,20 +607,17 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(work_dir, exist_ok=True)
 
-    # ── Guarantee Bebas Neue font exists in /content/work ──
+    # ── Guarantee Bebas Neue font exists locally ──
     _colab_font = os.path.join(_FONT_DIR, _FONT_FILE)
-    if not os.path.exists(_colab_font):
-        try:
-            urllib.request.urlretrieve(_FONT_URL, _colab_font)
-            subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            ui_logger.log(f"Downloaded Bebas Neue to {_colab_font}")
-        except Exception as _fe:
-            ui_logger.log(f"Font download failed: {_fe}")
     if os.path.exists(_colab_font):
-        ui_logger.log(f"Bebas Neue font ready at {_colab_font}")
         # Refresh fontconfig cache so libass finds the font at render time
-        subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=10)
+        if os.name != 'nt':
+            try:
+                subprocess.run(["fc-cache", "-fv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            except Exception:
+                pass
+    else:
+        ui_logger.log(f"Warning: bundled font missing at {_colab_font}")
     out_id = uuid.uuid4().hex[:8]
     import datetime
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
