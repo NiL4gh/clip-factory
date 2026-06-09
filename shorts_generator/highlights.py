@@ -848,7 +848,7 @@ fix. Simply return the corrected JSON.
                 f"{virality_prompt}\n\n"
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                f"Extract the best viral moments. If a section is genuinely boring or low energy, return an EMPTY array []. NEVER return clips that score below 75.\n"
+                f"Extract the most engaging moments from this section. ALWAYS try to return at least 1-2 good clips unless the section is completely silent or unusable.\n"
                 f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                 f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
@@ -895,9 +895,9 @@ fix. Simply return the corrected JSON.
                     f"{virality_prompt}\n\n"
                     f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                     f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                    f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
-                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
-                    f"CRITICAL: Do NOT output timestamps. Only the exact spoken words.{energy_hint}\n\n"
+                    f"Extract the most engaging and interesting moments from this section. ALWAYS try to return at least 1-2 good clips (30-90s) even if it's an educational or slower-paced video.\n"
+                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s). Do NOT create duplicate variations of the same dialogue.\n"
+                    f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                     f"Transcript:\n{topic_text}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
                 )
@@ -929,7 +929,7 @@ fix. Simply return the corrected JSON.
             for idx, f_chunk in enumerate(fallback_chunks):
                 prompt = (
                     f"{virality_prompt}\n\n"
-                    f"Extract ONLY the absolute best viral moments.\n"
+                    f"Extract the most engaging moments from this chunk. Try to return at least 1-2 good clips.\n"
                     f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                     f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
                     f"Transcript (Part {idx+1}/{len(fallback_chunks)}):\n{f_chunk}\n\n"
