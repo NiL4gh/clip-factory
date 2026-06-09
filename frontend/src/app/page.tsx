@@ -82,7 +82,7 @@ const DEFAULT_SETTINGS = {
 export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle");
-  const APP_VERSION = "v2.0.0-PRO-STRATEGY";
+  const APP_VERSION = "v2.1.0-FINAL-OPUS";
   const [logs, setLogs] = useState<string[]>([]);
   const [results, setResults] = useState<any>(null);
   const [backendVersion, setBackendVersion] = useState<string | null>(null);
