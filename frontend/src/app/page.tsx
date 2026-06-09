@@ -69,12 +69,14 @@ const DEFAULT_SETTINGS = {
   caption_style: "Classic",
   caption_pos: "bottom",
   bg_music_genre: "None",
+  bg_music_vol: 0.5,
   bg_style: "black",
+  layout_mode: "box",
   hook_position: "top",
   hook_display: "full",
   show_outro: false,
   title_style: "Impact",
-  layout_mode: "box",
+  template: "default",
 };
 
 export default function Dashboard() {
@@ -1009,8 +1011,8 @@ export default function Dashboard() {
                   <div className="truncate mb-1 text-[10px] font-bold text-slate-800">{video.filename}</div>
                   <div className="text-[9px] text-slate-500 mb-3 uppercase tracking-wider">{(video.size_mb).toFixed(1)} MB</div>
                   <a 
-                    href={video.url} 
-                    download 
+                    href={`${API_BASE}/download_single?filename=${encodeURIComponent(video.filename)}`} 
+                    download
                     className="w-full bg-slate-50 hover:bg-slate-100 text-indigo-600 text-[10px] font-bold py-2 rounded-lg border border-slate-200 transition-all flex items-center justify-center gap-1.5"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -1220,8 +1222,10 @@ export default function Dashboard() {
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-slate-500">UNIFIED TEMPLATE</span>
                 <select 
+                  value={globalSettings.template || ""}
                   onChange={(e) => {
                     const val = e.target.value;
+                    updateGlobalSetting("template", val);
                     if (val === "viral") {
                       updateGlobalSetting("layout_mode", "box");
                       updateGlobalSetting("bg_style", "brand");
@@ -1251,6 +1255,9 @@ export default function Dashboard() {
                 </select>
                 <p className="text-[10px] text-slate-500 mt-1">Automatically configures layout, background, fonts, and hook display to work perfectly together.</p>
               </div>
+
+
+
               <div className="space-y-1">
                 <span className="text-xs font-bold text-slate-500">Music</span>
                 <select 
@@ -1279,7 +1286,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> AI Hook Generator
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Magic Hook
                   </span>
                 </div>
                 <label className="setting-toggle">
@@ -1291,7 +1298,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Dead Air
+                    <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Silences
                   </span>
                 </div>
                 <label className="setting-toggle">

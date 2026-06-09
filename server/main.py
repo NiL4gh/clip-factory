@@ -885,6 +885,44 @@ async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(_run_bulk_render, req)
     return {"message": "Bulk render started."}
 
+@app.get("/api/download_single")
+async def download_single(background_tasks: BackgroundTasks, filename: str):
+    import zipfile
+    import json
+    
+    mp4_path = os.path.join(OUTPUT_DIR, filename)
+    if not os.path.exists(mp4_path):
+        raise HTTPException(status_code=404, detail="Clip not found.")
+        
+    clip_data = next((c for c in _state.get("clips", []) if c.get("rendered_filename") == filename), None)
+    
+    zip_path = os.path.join(WORK_DIR, f"clip_{int(time.time())}.zip")
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.write(mp4_path, filename)
+            if clip_data:
+                metadata = {
+                    "title": clip_data.get("title", "Clip"),
+                    "rationale": clip_data.get("rationale", ""),
+                    "transcript": clip_data.get("transcript", ""),
+                    "score": clip_data.get("score", 0),
+                    "duration": clip_data.get("duration", 0),
+                    "persona": clip_data.get("persona", ""),
+                }
+                meta_filename = f"{os.path.splitext(filename)[0]}_metadata.json"
+                zipf.writestr(meta_filename, json.dumps(metadata, indent=4))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
+        
+    def remove_file(path: str):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    background_tasks.add_task(remove_file, zip_path)
+    return FileResponse(zip_path, media_type="application/zip", filename=f"clip_{os.path.splitext(filename)[0]}.zip")
+
 @app.get("/api/download_all")
 async def download_all(background_tasks: BackgroundTasks, project_only: bool = False):
     import glob
