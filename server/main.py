@@ -349,9 +349,7 @@ def _save_session(url: str):
 
 def _run_strategize(url: str, llm_label: str, whisper_label: str):
     try:
-        _state["is_strategizing"] = True
-        _state["is_cancelled"] = False
-        ui_logger.clear()
+
         # Clear stale thumbnails from previous run
         import glob as _glob
         for _old in _glob.glob(os.path.join(THUMB_DIR, "thumb_*.jpg")):
@@ -371,20 +369,11 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
 
         log_progress(0, "Initializing AI strategy phase...")
 
-        # Find LLM in catalog
         llm_entry = LLM_CATALOG[0]
         for entry in LLM_CATALOG:
             if entry["label"] == llm_label:
                 llm_entry = entry
                 break
-                
-        # Find Fast Pass LLM (Gemma 2B)
-        fast_llm_entry = None
-        for entry in LLM_CATALOG:
-            if "Gemma 2" in entry["label"]:
-                fast_llm_entry = entry
-                break
-        if not fast_llm_entry: fast_llm_entry = llm_entry
                 
         # Find Whisper
         wsp_size = "medium"
@@ -393,35 +382,13 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
                 wsp_size = entry["size"]
                 break
 
-        is_gemini_main = llm_entry["filename"].startswith("gemini-")
-        is_gemini_fast = fast_llm_entry["filename"].startswith("gemini-")
+        is_api_main = llm_entry["filename"].startswith("api:")
 
-        if is_gemini_main and not _is_gemini_key_valid():
-            ui_logger.log("WARNING: Gemini API key is invalid or not set! Automatically falling back to local LLaMA-3 model to prevent failure.")
-            for entry in LLM_CATALOG:
-                if "LLaMA 3" in entry["label"]:
-                    llm_entry = entry
-                    break
-            is_gemini_main = False
+        llm_path = llm_entry["filename"] if is_api_main else os.path.join(LLM_DIR, llm_entry["filename"])
 
-        if is_gemini_fast and not _is_gemini_key_valid():
-            ui_logger.log("WARNING: Gemini API key is invalid or not set! Automatically falling back to local Gemma-2 model to prevent failure.")
-            for entry in LLM_CATALOG:
-                if "Gemma 2" in entry["label"]:
-                    fast_llm_entry = entry
-                    break
-            is_gemini_fast = False
-
-        llm_path = llm_entry["filename"] if is_gemini_main else os.path.join(LLM_DIR, llm_entry["filename"])
-        fast_llm_path = fast_llm_entry["filename"] if is_gemini_fast else os.path.join(LLM_DIR, fast_llm_entry["filename"])
-
-        if not is_gemini_main and not os.path.exists(llm_path):
+        if not is_api_main and not os.path.exists(llm_path):
             log_progress(5, "Downloading main LLM...")
             hf_hub_download(repo_id=llm_entry["repo"], filename=llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
-            
-        if not is_gemini_fast and not os.path.exists(fast_llm_path):
-            log_progress(10, "Downloading fast-pass LLM...")
-            hf_hub_download(repo_id=fast_llm_entry["repo"], filename=fast_llm_entry["filename"], local_dir=LLM_DIR, local_dir_use_symlinks=False)
 
         source_mp4 = os.path.join(WORK_DIR, "source.mp4")
         _state["current_url"] = url.strip()
@@ -486,9 +453,9 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
             except OSError:
                 pass
 
-        # Phase 0: Persona Detection (Fast Pass)
-        log_progress(40, f"Phase 0/3: Analyzing Video Persona with {fast_llm_entry['label']}...")
-        persona = detect_video_persona(_state["word_timestamps"], llm_path=fast_llm_path, gpu_layers=fast_llm_entry["gpu_layers"])
+        # Phase 0: Persona Detection
+        log_progress(40, f"Phase 0/3: Analyzing Video Persona with {llm_entry['label']}...")
+        persona = detect_video_persona(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"])
         log_progress(45, f"Detected Genre: {persona.get('genre', 'Unknown')} | Tone: {persona.get('tone', 'Unknown')}")
         _state["persona"] = persona
 
@@ -507,7 +474,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
 
         # Phase 1: Topic Indexing
         log_progress(55, "Phase 1/3: Mapping video topics...")
-        topics = get_topic_index(_state["word_timestamps"], llm_path=fast_llm_path, gpu_layers=fast_llm_entry["gpu_layers"])
+        topics = get_topic_index(_state["word_timestamps"], llm_path=llm_path, gpu_layers=llm_entry["gpu_layers"])
         _state["topics"] = topics
         log_progress(65, f"Found {len(topics)} distinct topics in the video.")
 
@@ -601,6 +568,9 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
 async def strategize(req: StrategizeRequest, background_tasks: BackgroundTasks):
     if _state["is_strategizing"] or _state["is_rendering"]:
         raise HTTPException(status_code=400, detail="A task is already running.")
+    _state["is_strategizing"] = True
+    _state["is_cancelled"] = False
+    ui_logger.clear()
     background_tasks.add_task(_run_strategize, req.url, req.llm_label, req.whisper_label)
     return {"message": "Strategizing started."}
 
@@ -649,8 +619,6 @@ async def get_render_status(task_id: str):
 
 def _run_render(req: RenderRequest, task_id: str):
     try:
-        _state["is_rendering"] = True
-        ui_logger.clear()
         ui_logger.log(f"RENDER_STATUS|{req.clip_id}|rendering")
         ui_logger.log(f"Initializing render for clip index {req.clip_id}...")
         
@@ -737,8 +705,6 @@ def _run_render(req: RenderRequest, task_id: str):
 
 def _run_bulk_render(req: BulkRenderRequest):
     try:
-        _state["is_rendering"] = True
-        ui_logger.clear()
         
         num_clips = len(_state["clips"])
         target_ids = req.clip_ids if (req.clip_ids is not None) else list(range(num_clips))
@@ -869,6 +835,9 @@ async def render(req: RenderRequest, background_tasks: BackgroundTasks):
     if req.clip_id < 0 or req.clip_id >= len(_state["clips"]):
         raise HTTPException(status_code=404, detail="Clip not found.")
     
+    _state["is_rendering"] = True
+    ui_logger.clear()
+    
     task_id = f"render_{req.clip_id}_{int(time.time())}"
     _render_status[task_id] = {"status": "running"}
     
@@ -881,6 +850,9 @@ async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="A task is already running.")
     if not _state["clips"]:
         raise HTTPException(status_code=400, detail="No clips available to render.")
+    
+    _state["is_rendering"] = True
+    ui_logger.clear()
     
     background_tasks.add_task(_run_bulk_render, req)
     return {"message": "Bulk render started."}
@@ -1114,6 +1086,80 @@ async def clear_gallery(project_only: bool = False):
             continue
     return {"status": "success", "message": f"Deleted {deleted_count} rendered clips."}
 
+class SettingsRequest(BaseModel):
+    api_keys: dict
+
+@app.post("/api/settings")
+async def update_settings(req: SettingsRequest):
+    env_file = os.path.join(BASE_DIR, ".env")
+    env_vars = {}
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    env_vars[k] = v
+                    
+    for k, v in req.api_keys.items():
+        env_vars[k] = v.strip()
+        os.environ[k] = v.strip()
+            
+    os.makedirs(BASE_DIR, exist_ok=True)
+    with open(env_file, "w") as f:
+        for k, v in env_vars.items():
+            f.write(f"{k}={v}\n")
+            
+    return {"status": "success", "message": "Settings saved"}
+
+@app.delete("/api/models/{filename:path}")
+async def delete_model(filename: str):
+    file_path = os.path.join(LLM_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Model not found")
+    try:
+        os.remove(file_path)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/sessions/{video_id}")
+async def delete_session(video_id: str):
+    import shutil
+    session_dir = os.path.join(BASE_DIR, "sessions", video_id)
+    if not os.path.exists(session_dir):
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        shutil.rmtree(session_dir)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/storage")
+async def get_storage_info():
+    models = []
+    if os.path.exists(LLM_DIR):
+        for f in os.listdir(LLM_DIR):
+            path = os.path.join(LLM_DIR, f)
+            if os.path.isfile(path) and f.endswith(".gguf"):
+                models.append({
+                    "filename": f,
+                    "size_mb": round(os.path.getsize(path) / (1024 * 1024), 1)
+                })
+                
+    sessions = []
+    sessions_dir = os.path.join(BASE_DIR, "sessions")
+    if os.path.exists(sessions_dir):
+        for f in os.listdir(sessions_dir):
+            path = os.path.join(sessions_dir, f)
+            if os.path.isdir(path):
+                # Count files inside
+                size = sum(os.path.getsize(os.path.join(path, f2)) for f2 in os.listdir(path) if os.path.isfile(os.path.join(path, f2)))
+                sessions.append({
+                    "video_id": f,
+                    "size_mb": round(size / (1024 * 1024), 1)
+                })
+                
+    return {"models": models, "sessions": sessions}
 
 # ── Serve Next.js static build (Catch-all for SPA) ──────────
 FRONTEND_DIR = os.path.join(REPO_DIR, "frontend", "out")

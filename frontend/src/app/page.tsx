@@ -110,6 +110,42 @@ export default function Dashboard() {
   const [tempTitle, setTempTitle] = useState("");
   const [galleryFilter, setGalleryFilter] = useState<"all" | "today" | "over30" | "under30">("all");
 
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"api" | "storage">("api");
+  const [storageInfo, setStorageInfo] = useState<{models: any[], sessions: any[]}>({models: [], sessions: []});
+  const [apiKeys, setApiKeys] = useState({GEMINI_API_KEY: "", GROQ_API_KEY: "", OPENROUTER_API_KEY: "", GLM_API_KEY: ""});
+
+  useEffect(() => {
+    if (showSettings && settingsTab === "storage") {
+      axios.get(`${API_BASE}/storage`).then(res => setStorageInfo(res.data)).catch(() => {});
+    }
+  }, [showSettings, settingsTab]);
+
+  const saveSettings = async () => {
+    try {
+      await axios.post(`${API_BASE}/settings`, { api_keys: apiKeys });
+      alert("Settings saved securely!");
+    } catch (e: any) {
+      alert("Failed to save settings: " + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const deleteModel = async (filename: string) => {
+    if (!confirm("Delete model " + filename + "?")) return;
+    try {
+      await axios.delete(`${API_BASE}/models/${encodeURIComponent(filename)}`);
+      setStorageInfo(prev => ({ ...prev, models: prev.models.filter(m => m.filename !== filename) }));
+    } catch {}
+  };
+
+  const deleteSession = async (video_id: string) => {
+    if (!confirm("Delete session " + video_id + "?")) return;
+    try {
+      await axios.delete(`${API_BASE}/sessions/${encodeURIComponent(video_id)}`);
+      setStorageInfo(prev => ({ ...prev, sessions: prev.sessions.filter(s => s.video_id !== video_id) }));
+    } catch {}
+  };
+
   const addLog = (message: string) => {
     const timestampRegex = /^\[\d{2}:\d{2}:\d{2}\]/;
     if (timestampRegex.test(message)) {
@@ -315,11 +351,11 @@ export default function Dashboard() {
     setProgress(null);
     setShowRestoreModal(false);
 
-    const ws = new WebSocket(wsUrl());
-    ws.onmessage = handleWsMessage;
-
     try {
       await axios.post(`${API_BASE}/strategize`, { url: targetUrl, llm_label: llmLabel, whisper_label: whisperLabel });
+      
+      const ws = new WebSocket(wsUrl());
+      ws.onmessage = handleWsMessage;
       const poll = setInterval(async () => {
         const res = await axios.get(`${API_BASE}/results`);
         if (res.data.status === "done") {
@@ -376,8 +412,7 @@ export default function Dashboard() {
 
   const renderClip = async (index: number) => {
     setStatus("rendering");
-    const ws = new WebSocket(wsUrl());
-    ws.onmessage = handleWsMessage;
+    setLogs([]);
 
     try {
       const settings = getSettings(index);
@@ -390,6 +425,9 @@ export default function Dashboard() {
         title: editedTitles[index] || undefined
       });
       
+      const ws = new WebSocket(wsUrl());
+      ws.onmessage = handleWsMessage;
+
       const taskId = res.data.task_id;
       const poll = setInterval(async () => {
         const statusRes = await axios.get(`${API_BASE}/render_status?task_id=${taskId}`);
@@ -416,8 +454,7 @@ export default function Dashboard() {
 
   const renderAllClips = async () => {
     setStatus("rendering");
-    const ws = new WebSocket(wsUrl());
-    ws.onmessage = handleWsMessage;
+    setLogs([]);
 
     const selectedIds = Object.entries(selectedForRender)
       .filter(([_, checked]) => checked)
@@ -436,6 +473,10 @@ export default function Dashboard() {
         titles: editedTitles,
         clip_settings: clipSettingsMap
       });
+      
+      const ws = new WebSocket(wsUrl());
+      ws.onmessage = handleWsMessage;
+      
       const poll = setInterval(async () => {
         const statusRes = await axios.get(`${API_BASE}/status`);
         if (!statusRes.data.is_rendering) {
@@ -542,14 +583,18 @@ export default function Dashboard() {
       {/* ── Left Sidebar ────────────────────────────────── */}
       <div className="flex flex-col h-full relative p-6">
         <div className="flex-shrink-0">
-          {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/10">
-              <Film className="w-5 h-5 text-white" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/10">
+                <Film className="w-5 h-5 text-white" />
+              </div>
+              <h1 className="text-xl font-bold tracking-tight text-slate-800">
+                ClipFactory<span className="text-indigo-500">.ai</span>
+              </h1>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">
-              ClipFactory<span className="text-indigo-500">.ai</span>
-            </h1>
+            <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+              <Settings2 className="w-5 h-5" />
+            </button>
           </div>
           
           {/* URL Input & Generate */}
@@ -1073,12 +1118,19 @@ export default function Dashboard() {
                       updateSetting(selectedClip, "caption_style", "Classic");
                       updateSetting(selectedClip, "title_style", "Box");
                       updateSetting(selectedClip, "hook_display", "full");
+                    } else if (val === "viral-italic") {
+                      updateSetting(selectedClip, "layout_mode", "box");
+                      updateSetting(selectedClip, "bg_style", "brand");
+                      updateSetting(selectedClip, "caption_style", "Pop");
+                      updateSetting(selectedClip, "title_style", "ViralItalic");
+                      updateSetting(selectedClip, "hook_display", "3s");
                     }
                   }}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
                 >
                   <option value="">Choose a style template...</option>
                   <option value="viral">🔥 Viral Focus (High Retention)</option>
+                  <option value="viral-italic">⚡ Viral Italic (Highlight text)</option>
                   <option value="cinematic">🎬 Cinematic Immersive</option>
                   <option value="clean">✨ Clean &amp; Minimal</option>
                 </select>
@@ -1221,8 +1273,6 @@ export default function Dashboard() {
                       updateGlobalSetting("caption_style", "Classic");
                       updateGlobalSetting("title_style", "Box");
                       updateGlobalSetting("hook_display", "full");
-                    }
-                  }}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
                 >
                   <option value="">Choose a style template...</option>
@@ -1352,6 +1402,104 @@ export default function Dashboard() {
         </div>
       )}
 
+      {showSettings && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setShowSettings(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-[600px] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-6 pb-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <Settings2 className="w-5 h-5 text-indigo-500" />
+                Settings & Storage
+              </h3>
+              <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button 
+                  onClick={() => setSettingsTab("api")}
+                  className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settingsTab === "api" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  API Models
+                </button>
+                <button 
+                  onClick={() => setSettingsTab("storage")}
+                  className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${settingsTab === "storage" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Storage
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6 h-[400px] overflow-y-auto">
+              {settingsTab === "api" && (
+                <div className="space-y-4">
+                  <div className="bg-blue-50 text-blue-700 p-3 rounded-lg text-xs font-medium border border-blue-100">
+                    Enter multiple keys separated by commas for built-in automatic fallback rotation. Keys are saved to your Google Drive <code>.env</code> file.
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 uppercase">Gemini API Key</label>
+                    <input type="text" value={apiKeys.GEMINI_API_KEY} onChange={e => setApiKeys(prev => ({...prev, GEMINI_API_KEY: e.target.value}))} placeholder="AIzaSy..." className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 uppercase">Groq API Key (Llama 3)</label>
+                    <input type="text" value={apiKeys.GROQ_API_KEY} onChange={e => setApiKeys(prev => ({...prev, GROQ_API_KEY: e.target.value}))} placeholder="gsk_..." className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 uppercase">OpenRouter API Key</label>
+                    <input type="text" value={apiKeys.OPENROUTER_API_KEY} onChange={e => setApiKeys(prev => ({...prev, OPENROUTER_API_KEY: e.target.value}))} placeholder="sk-or-v1-..." className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 uppercase">GLM API Key (Zhipu)</label>
+                    <input type="text" value={apiKeys.GLM_API_KEY} onChange={e => setApiKeys(prev => ({...prev, GLM_API_KEY: e.target.value}))} className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" />
+                  </div>
+                  <button onClick={saveSettings} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg mt-4 transition-colors">
+                    Save API Keys
+                  </button>
+                </div>
+              )}
+              
+              {settingsTab === "storage" && (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800 border-b pb-2 mb-3">Local GGUF Models</h4>
+                    {storageInfo.models.length === 0 && <p className="text-sm text-slate-500 italic">No local models found.</p>}
+                    <div className="space-y-2">
+                      {storageInfo.models.map(m => (
+                        <div key={m.filename} className="flex items-center justify-between bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-700">{m.filename}</div>
+                            <div className="text-xs text-slate-500">{m.size_mb} MB</div>
+                          </div>
+                          <button onClick={() => deleteModel(m.filename)} className="text-rose-500 hover:bg-rose-50 p-1.5 rounded text-xs font-bold">Delete</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800 border-b pb-2 mb-3">Saved Sessions</h4>
+                    {storageInfo.sessions.length === 0 && <p className="text-sm text-slate-500 italic">No saved sessions found.</p>}
+                    <div className="space-y-2">
+                      {storageInfo.sessions.map(s => (
+                        <div key={s.video_id} className="flex items-center justify-between bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
+                          <div>
+                            <div className="text-sm font-mono text-slate-700">{s.video_id}</div>
+                            <div className="text-xs text-slate-500">{s.size_mb} MB</div>
+                          </div>
+                          <button onClick={() => deleteSession(s.video_id)} className="text-rose-500 hover:bg-rose-50 p-1.5 rounded text-xs font-bold">Delete</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-slate-100 flex justify-end">
+              <button onClick={() => setShowSettings(false)} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

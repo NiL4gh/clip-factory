@@ -13,143 +13,21 @@ _llm_cache = {}
 CHUNK_CHARS = 3000  # More granular chunks to ensure we identify 5-10+ topics for 15-20 clips
 
 
-# â”€â”€ Opus-Style Viral Director Prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-_VIRALITY_BASE = """You are an expert short-form video editor who has studied thousands of viral TikTok, Instagram Reels, and YouTube Shorts clips. Your job is to hunt through this transcript and identify every moment that has the natural shape of a viral clip. A 2-hour podcast typically contains 15-30 of these moments. Your job is to find all of them.
+_VIRALITY_BASE = """You are an expert short-form video editor.
+Your job is to identify highly engaging moments in the transcript that have the natural shape of a viral clip.
 
-TOTAL VIDEO DURATION: {video_duration_str}
+A viral clip has three parts:
+1. THE HOOK: An entry point that creates an open question, challenges a belief, or promises value.
+2. THE BUILD: The context, story, or logic that answers the hook.
+3. THE LANDING: A satisfying conclusion or takeaway.
 
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-THE SHAPE OF A VIRAL CLIP — LEARN THIS PATTERN:
-
-Every viral clip from a podcast or interview has the same three-part shape.
-Your job is to find moments in the transcript where this shape already exists
-naturally in what the speaker said. You are not creating structure — you are
-recognizing it.
-
-PART 1 — THE ENTRY POINT (the first thing the viewer hears):
-This is a line that makes a scrolling viewer stop and watch. It works because
-it creates an open question in their mind — something feels unresolved, surprising,
-or counterintuitive. They have to keep watching to understand it.
-
-What it sounds like in real transcripts:
-- A bold claim that challenges something most people believe:
-  "The problem with goal-setting is that it's actually working against you."
-- A specific surprising detail that implies a bigger story:
-  "I fired my entire sales team on a Tuesday and revenue went up 40%."
-- A question that the viewer immediately wants the answer to:
-  "Why do the most disciplined people I know get the least done?"
-- A contradiction that doesn't make sense yet:
-  "The harder I worked on my marriage, the worse it got."
-
-What it does NOT sound like:
-- Introductions: "So today I want to talk about..."
-- Context-setting: "A little background on this topic..."
-- Transitions: "So moving on to the next point..."
-- Agreements: "Yeah, exactly, that's a great point..."
-
-PART 2 — THE BUILD (the middle of the clip):
-This is where the speaker explains, proves, or tells the story behind the
-entry point. The viewer stays because they want the answer to the question
-the entry point created. The build is what separates a viral clip from a
-viral quote — it earns the payoff through substance.
-
-What it sounds like:
-- The speaker walks through the logic behind their claim step by step
-- The speaker tells a specific story or gives a concrete example
-- The speaker challenges the conventional wisdom and explains why it's wrong
-- The speaker reveals what they discovered, learned, or experienced
-
-The build must be substantial — at least 3-5 sentences of development.
-A clip with a great entry point and no build feels hollow and gets skipped.
-
-PART 3 — THE LANDING (the last thing the viewer hears):
-This is the line that closes the loop. The viewer was holding a question
-in their mind since the entry point — the landing answers it in a way that
-feels satisfying, surprising, or memorable. This is the line people screenshot,
-share, or quote. It is the reason the clip was worth watching.
-
-What it sounds like:
-- A reframe that makes the viewer see something differently:
-  "So the goal was never the goal. The goal was who you had to become to get it."
-- A hard truth delivered plainly:
-  "Most people aren't failing because they lack discipline. They're failing
-   because they're optimizing for the wrong thing."
-- A specific actionable conclusion:
-  "Stop setting outcome goals. Set process goals. Track the behavior, not the result."
-- An emotional release — a moment of genuine humor, vulnerability, or relief
-
-The landing MUST be the actual conclusion of the thought. If the speaker
-is still mid-explanation, mid-story, or mid-argument when you cut — the
-clip has no landing. Keep reading the transcript forward until the thought
-closes naturally. That closing line is your landing.
-
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-HOW TO HUNT FOR THESE MOMENTS:
-
-Read through the transcript and look for these trigger patterns that signal
-a complete viral clip is nearby:
-
-TRIGGER 1 — CONTRAST STATEMENTS:
-Any time the speaker says "but", "however", "the problem is", "here's the
-thing", "what most people don't realize", "the truth is", "what nobody
-tells you" — a clip is likely starting. Read forward from that point and
-find where the thought fully closes.
-
-TRIGGER 2 — SPECIFIC NUMBERS OR DETAILS:
-Any time the speaker uses a specific number, statistic, or concrete detail
-("10 years", "40%", "every single time", "$50,000") — these signal a real
-story or real evidence is coming. These clips have high credibility and
-shareability.
-
-TRIGGER 3 — PERSONAL STORIES WITH A LESSON:
-Any time the speaker says "I remember when", "there was this moment",
-"I used to think", "I made this mistake" — a story arc is beginning.
-Read forward until the speaker explicitly draws the lesson from the story.
-That lesson is your landing.
-
-TRIGGER 4 — DIRECT AUDIENCE ADDRESS:
-Any time the speaker shifts from talking about themselves or others to
-talking directly to the listener — "if you're struggling with", "here's
-what I want you to understand", "stop doing this" — these clips feel
-personal and convert well because the viewer feels spoken to directly.
-
-TRIGGER 5 — OPINION BOMBS (HIGHEST PRIORITY):
-Any time the speaker says something that a significant portion of the
-audience would disagree with or find surprising — mark this clip as hook_type "opinion_bomb".
-These clips generate the most comments and shares. If the speaker directly contradicts
-mainstream advice, industry consensus, or popular belief, ALWAYS extract this clip even if
-the opening context reference is slightly missing. The controversial statement IS the entry point.
-Find where the speaker defends or explains the opinion. That explanation is the build.
-
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 EXTRACTION RULES:
-
-- Extract EVERY moment that has a clear Entry Point, Build, and Landing.
-  If a topic section has 5 such moments, extract all 5.
-- THE STITCHING MANDATE (OPUS CLIP LOGIC): You have the power to extract a clip that consists of multiple, non-contiguous segments! Use the `segments` array to jump-cut past boring filler, long pauses, tangents, or host interruptions. If the core subject (e.g., "pizza") was mentioned 2 minutes ago, but the funniest/best part is them talking about "it" right now, you MUST extract the segment where the subject is introduced and STITCH it to the current discussion.
-- THE CONTEXT MANDATE (SUBJECT RESOLUTION): Do not waste time over-explaining universally known people or concepts (e.g., Michael Jackson). However, you MUST resolve the local conversational subject. If the speakers are talking about how much they hate "it" or loved "that", the viewer MUST find out what "it" is before the clip ends! A clip that talks about a crazy experience but never reveals what the experience actually was is a completely useless clip. If the subject revelation happens earlier or later in the video, use stitching to include it.
-- THE PAYOFF MANDATE: Every single clip MUST deliver a clear, satisfying conclusion, takeaway, or payoff. If the clip's hook or opening raises a specific question, introduces a problem, or starts a discussion topic, the clip MUST include the exact resolution or answer. Sometimes, the payoff is delivered a bit later in the transcript—in these cases, you MUST continue reading forward and extend the clip's end boundary to capture the actual resolution. A clip that cuts off before the answer or payoff is an absolute failure. The viewer must get something high-value out of the ending.
-- ENDING RULES — NON-NEGOTIABLE:
-  The final segment's end_quote MUST be one of these:
-    - The speaker's definitive conclusion or answer to the question they raised.
-    - A punchline or surprising reversal that pays off the setup.
-    - A strong declarative statement that closes the argument completely.
-    - A specific result, number, or outcome that proves the point.
-  The final segment's end_quote must NEVER be:
-    - A question (unless it is purely rhetorical with no answer needed).
-    - A transitional phrase ("so anyway", "but yeah", "moving on").
-    - A filler or acknowledgment ("right", "exactly", "I mean").
-    - Mid-argument ("and the reason for that is", "so what happens is").
-    - An incomplete thought that sets up something outside the clip.
-  EXTREMELY IMPORTANT: A clip that runs 5 seconds long but ends cleanly is infinitely better than a clip that ends abruptly mid-thought.
-- SELF-CONTAINMENT GUIDELINE: Try to include the context if the speaker says "he" or "that". Use stitching to grab the earlier sentence where the subject was introduced. If you cannot easily find the context, EXTRACT THE CLIP ANYWAY as long as the insight, humor, or lesson is highly valuable. Do not discard a great 60-second argument just because the initial subject reference is missing.
-- Always extend the final segment forward until the thought fully
-  closes. Never end on a sentence that is still building toward something.
-- Never cut in the middle of a sentence, story, or argument.
-- Only the exact spoken words from the transcript. No invented content.
-- STRICT EDITING MANDATE: You MUST actively edit out all boring filler, long pauses, tangents, secondary details, or host interruptions. Skip them entirely. The stitching engine will automatically concatenate your selected high-energy segments into a punchy, jump-cut video. Do not be lazy - extract ONLY the absolute best sentences that drive the point home fast.
-- Do not extract intros, outros, sponsor reads, or off-topic transitions.
-- HOOK NON-REPETITION MANDATE: For `hook_sentence` and `hook_text`, write completely clean, non-repetitive, grammatically correct sentences. YOU ARE STRICTLY FORBIDDEN from using lazy templates like "Discover the secret to", "Meet the", "Learn how to", or "Here is why". Write aggressive, punchy, statement-based hooks (e.g. "WHY SMALL SCHOOLS ALWAYS WIN" instead of "Discover the secret to small schools"). NEVER repeat any words, clauses, or phrases inside the sentence. Make sure it is highly punchy, clear, and natural.
+- Extract EVERY moment that follows this structure.
+- You can stitch multiple non-contiguous segments together to skip filler and keep the pace fast.
+- Ensure the local conversational subject is clear to the viewer (e.g., replace "it" with what they are talking about).
+- End clips strongly on a clear resolution, never mid-thought.
+- Write punchy, non-repetitive hooks for `hook_sentence` and `hook_text`.
+- Make sure it is highly punchy, clear, and natural.
 
 NEVER EXTRACT any of the following regardless of how interesting the
 words sound:
@@ -213,7 +91,7 @@ psychological trigger, use "curiosity_gap" as default.
 # â”€â”€ LLM Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _get_llm(llm_path: str, gpu_layers: int = 35):
-    if isinstance(llm_path, str) and llm_path.startswith("gemini-"):
+    if isinstance(llm_path, str) and llm_path.startswith("api:"):
         return llm_path
 
     from llama_cpp import Llama
@@ -246,87 +124,140 @@ def _parse_json_loose(raw: str):
         return []
 
 
-def _query_gemini(model_name: str, system: str, prompt: str, max_tokens: int = 3000) -> list:
-    import os
-    import urllib.request
-    import json
-    
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        ui_logger.log("ERROR: GEMINI_API_KEY environment variable is not set!")
-        raise RuntimeError("Missing GEMINI_API_KEY in environment or .env file.")
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
-    
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": f"System Instructions:\n{system}\n\nUser Request:\n{prompt}"}
-                ]
-            }
-        ],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "temperature": 0.4,
-            "maxOutputTokens": max_tokens
-        }
-    }
-    
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST"
-    )
-    
-    try:
-        ui_logger.log(f"Querying Gemini API ({model_name})...")
-        with urllib.request.urlopen(req) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-            raw_text = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            parsed = _parse_json_loose(raw_text)
+def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
+    if not isinstance(llm, str) or not llm.startswith("api:"):
+        content = f"{system}\n\n{prompt}"
+        try:
+            resp = llm.create_chat_completion(
+                messages=[{"role": "user", "content": content}],
+                temperature=0.40,
+                max_tokens=max_tokens,
+            )
+            raw = resp["choices"][0]["message"]["content"].strip()
+            parsed = _parse_json_loose(raw)
             if isinstance(parsed, list):
                 return parsed
             if isinstance(parsed, dict):
                 return parsed.get("highlights", parsed.get("clips", parsed.get("topics", [parsed])))
-            return []
-    except Exception as e:
-        ui_logger.log(f"Gemini API Error: {e}")
-        if hasattr(e, "read"):
+        except Exception as e:
+            ui_logger.log(f"Model query error: {e}")
+        return []
+
+    import os, urllib.request, json
+    
+    parts = llm.split(":", 2)
+    selected_provider = parts[1] if len(parts) > 1 else "gemini"
+    model_name = parts[2] if len(parts) > 2 else "gemini-2.5-flash"
+    
+    def get_keys(env_var):
+        val = os.getenv(env_var, "").strip()
+        return [k.strip() for k in val.split(",") if k.strip()]
+        
+    providers_config = {
+        "gemini": {
+            "keys": get_keys("GEMINI_API_KEY"),
+            "url_func": lambda model, key: f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+            "format_payload": lambda model, sys, pr, mx: {
+                "contents": [{"parts": [{"text": f"System Instructions:\n{sys}\n\nUser Request:\n{pr}"}]}],
+                "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4, "maxOutputTokens": mx}
+            },
+            "extract_response": lambda res: res["candidates"][0]["content"]["parts"][0]["text"],
+            "fallback_model": "gemini-2.5-flash",
+            "auth_header": False
+        },
+        "groq": {
+            "keys": get_keys("GROQ_API_KEY"),
+            "url_func": lambda model, key: "https://api.groq.com/openai/v1/chat/completions",
+            "format_payload": lambda model, sys, pr, mx: {
+                "model": model,
+                "messages": [{"role": "system", "content": sys}, {"role": "user", "content": pr}],
+                "temperature": 0.4,
+                "max_tokens": mx,
+                "response_format": {"type": "json_object"}
+            },
+            "extract_response": lambda res: res["choices"][0]["message"]["content"],
+            "fallback_model": "llama3-8b-8192",
+            "auth_header": True
+        },
+        "openrouter": {
+            "keys": get_keys("OPENROUTER_API_KEY"),
+            "url_func": lambda model, key: "https://openrouter.ai/api/v1/chat/completions",
+            "format_payload": lambda model, sys, pr, mx: {
+                "model": model,
+                "messages": [{"role": "system", "content": sys}, {"role": "user", "content": pr}],
+                "temperature": 0.4,
+                "max_tokens": mx
+            },
+            "extract_response": lambda res: res["choices"][0]["message"]["content"],
+            "fallback_model": "meta-llama/llama-3-8b-instruct",
+            "auth_header": True
+        },
+        "glm": {
+            "keys": get_keys("GLM_API_KEY"),
+            "url_func": lambda model, key: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            "format_payload": lambda model, sys, pr, mx: {
+                "model": model,
+                "messages": [{"role": "system", "content": sys}, {"role": "user", "content": pr}],
+                "temperature": 0.4,
+                "max_tokens": mx
+            },
+            "extract_response": lambda res: res["choices"][0]["message"]["content"],
+            "fallback_model": "glm-4-flash",
+            "auth_header": True
+        },
+        "ollama": {
+            "keys": ["local"],
+            "url_func": lambda model, key: "http://localhost:11434/api/generate",
+            "format_payload": lambda model, sys, pr, mx: {
+                "model": model,
+                "system": sys,
+                "prompt": pr,
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.4, "num_predict": mx}
+            },
+            "extract_response": lambda res: res["response"],
+            "fallback_model": "llama3",
+            "auth_header": False
+        }
+    }
+    
+    fallback_order = ["gemini", "groq", "openrouter", "glm", "ollama"]
+    if selected_provider in fallback_order:
+        fallback_order.remove(selected_provider)
+    fallback_order.insert(0, selected_provider)
+    
+    for provider_id in fallback_order:
+        pconfig = providers_config.get(provider_id)
+        if not pconfig or not pconfig["keys"]:
+            continue
+            
+        current_model = model_name if provider_id == selected_provider else pconfig["fallback_model"]
+            
+        for key_idx, key in enumerate(pconfig["keys"]):
+            url = pconfig["url_func"](current_model, key)
+            headers = {"Content-Type": "application/json"}
+            if pconfig["auth_header"] and key != "local":
+                headers["Authorization"] = f"Bearer {key}"
+                
+            payload = pconfig["format_payload"](current_model, system, prompt, max_tokens)
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            
             try:
-                err_body = e.read().decode('utf-8')
-                ui_logger.log(f"API Response Details: {err_body}")
-            except:
-                pass
-        return []
-
-
-def _query_llm(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
-    if isinstance(llm, str) and llm.startswith("gemini-"):
-        return _query_gemini(llm, system, prompt, max_tokens)
-
-    # Merging system instructions and user prompt by default to prevent system role support issues and eliminate retries
-    content = f"{system}\n\n{prompt}"
-    try:
-        resp = llm.create_chat_completion(
-            messages=[
-                {"role": "user", "content": content},
-            ],
-            temperature=0.40,
-            max_tokens=max_tokens,
-        )
-    except Exception as e:
-        ui_logger.log(f"Model query error: {e}")
-        return []
-
-    raw = resp["choices"][0]["message"]["content"].strip()
-    parsed = _parse_json_loose(raw)
-    if isinstance(parsed, list):
-        return parsed
-    if isinstance(parsed, dict):
-        return parsed.get("highlights", parsed.get("clips", parsed.get("topics", [parsed])))
+                ui_logger.log(f"Querying {provider_id} API ({current_model}) with key #{key_idx + 1}...")
+                with urllib.request.urlopen(req) as response:
+                    res_data = json.loads(response.read().decode("utf-8"))
+                    raw_text = pconfig["extract_response"](res_data).strip()
+                    parsed = _parse_json_loose(raw_text)
+                    if isinstance(parsed, list): return parsed
+                    if isinstance(parsed, dict): return parsed.get("highlights", parsed.get("clips", parsed.get("topics", [parsed])))
+                    return []
+            except Exception as e:
+                err_code = getattr(e, "code", 500)
+                ui_logger.log(f"{provider_id} API Error (key #{key_idx + 1}): HTTP {err_code}")
+                continue
+                
+    ui_logger.log("All API providers and fallback keys failed.")
     return []
 
 
@@ -605,7 +536,7 @@ def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -
     )
     
     try:
-        results = _query_llm(llm, system, prompt)
+        results = _execute_with_fallback(llm, system, prompt)
         if isinstance(results, list) and len(results) > 0:
             return results[0]
         if isinstance(results, dict):
@@ -716,7 +647,7 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             f"Respond ONLY with a JSON array:\n{topic_schema}"
         )
         try:
-            results = _query_llm(llm, system, prompt, max_tokens=2000)
+            results = _execute_with_fallback(llm, system, prompt, max_tokens=2000)
             if isinstance(results, list):
                 all_topics.extend(results)
         except Exception as e:
@@ -924,7 +855,7 @@ fix. Simply return the corrected JSON.
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
             try:
-                results = _query_llm(llm, system, prompt)
+                results = _execute_with_fallback(llm, system, prompt)
                 for clip in results:
                     clip["source_topic"] = topic["topic"]
                     clip["source_topic_idx"] = tidx
@@ -971,7 +902,7 @@ fix. Simply return the corrected JSON.
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
                 )
                 try:
-                    results = _query_llm(llm, system, prompt)
+                    results = _execute_with_fallback(llm, system, prompt)
                     for clip in results:
                         clip["source_topic"] = topic["topic"]
                         clip["source_topic_idx"] = tidx
@@ -1005,7 +936,7 @@ fix. Simply return the corrected JSON.
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
                 )
                 try:
-                    results = _query_llm(llm, system, prompt)
+                    results = _execute_with_fallback(llm, system, prompt)
                     all_highlights.extend(results)
                 except Exception as e:
                     ui_logger.log(f"Warning: Chunk {idx+1} fallback extraction failed — {e}")

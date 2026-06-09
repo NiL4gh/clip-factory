@@ -340,6 +340,16 @@ TITLE_STYLE_PRESETS = {
         "Shadow":         0,
         "casing":         "upper"
     },
+    "ViralItalic": {
+        "PrimaryColour":  "&H00FFFFFF",   # white
+        "OutlineColour":  "&H00000000",   # black
+        "BackColour":     "&H88000000",   # semi-transparent shadow
+        "BorderStyle":    1,
+        "Outline":        6,
+        "Shadow":         6,
+        "Italic":         -1,
+        "casing":         "upper"
+    },
 }
 
 def _is_header_highlight_target(word: str) -> bool:
@@ -384,6 +394,13 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         margin_v = 560
 
     ts = TITLE_STYLE_PRESETS.get(title_style, TITLE_STYLE_PRESETS["Impact"])
+    header_font = "Impact" if title_style == "ViralItalic" else "Bebas Neue"
+
+    h_italic = ts.get("Italic", 0)
+    h_outline = ts.get("Outline", 12)
+    h_shadow = ts.get("Shadow", 0)
+    h_border_style = ts.get("BorderStyle", 3)
+    h_back_color = ts.get("BackColour", "&H00000000")
 
     lines = [
         "[Script Info]",
@@ -395,7 +412,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{font_name},95,&H0000FFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,3,12,0,8,40,40,240,1"
+        f"Style: Header,{header_font},95,&H0000FFFF,&H000000FF,&H00000000,{h_back_color},-1,{h_italic},0,0,100,100,0,0,{h_border_style},{h_outline},{h_shadow},8,40,40,240,1"
     ]
     
     if kwargs.get("magic_hook_text"):
