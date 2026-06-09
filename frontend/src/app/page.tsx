@@ -1273,6 +1273,14 @@ export default function Dashboard() {
                       updateGlobalSetting("caption_style", "Classic");
                       updateGlobalSetting("title_style", "Box");
                       updateGlobalSetting("hook_display", "full");
+                    } else if (val === "viral-italic") {
+                      updateGlobalSetting("layout_mode", "box");
+                      updateGlobalSetting("bg_style", "brand");
+                      updateGlobalSetting("caption_style", "Pop");
+                      updateGlobalSetting("title_style", "ViralItalic");
+                      updateGlobalSetting("hook_display", "3s");
+                    }
+                  }}
                   className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
                 >
                   <option value="">Choose a style template...</option>
