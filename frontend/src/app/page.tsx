@@ -1049,49 +1049,40 @@ export default function Dashboard() {
 
             <div className="flex-shrink-0 space-y-4">
               <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">BACKGROUND</span>
-                <select 
-                  value={getSettings(selectedClip).bg_style}
-                  onChange={(e) => updateSetting(selectedClip, "bg_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  <option value="black">Black</option>
-                  <option value="white">White</option>
-                  <option value="blur">Blur</option>
-                  <option value="gradient">Gradient</option>
-                  <option value="brand">Brand</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Caption Style</span>
+                <span className="text-[10px] uppercase font-bold text-slate-500">UNIFIED TEMPLATE</span>
                 <select
-                  value={getSettings(selectedClip).caption_style}
-                  onChange={(e) => updateSetting(selectedClip, "caption_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+                  value={getSettings(selectedClip).template || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    updateSetting(selectedClip, "template", val);
+                    if (val === "viral") {
+                      updateSetting(selectedClip, "layout_mode", "box");
+                      updateSetting(selectedClip, "bg_style", "brand");
+                      updateSetting(selectedClip, "caption_style", "Pop");
+                      updateSetting(selectedClip, "title_style", "Impact");
+                      updateSetting(selectedClip, "hook_display", "3s");
+                    } else if (val === "cinematic") {
+                      updateSetting(selectedClip, "layout_mode", "portrait");
+                      updateSetting(selectedClip, "bg_style", "blur");
+                      updateSetting(selectedClip, "caption_style", "CinematicSlate");
+                      updateSetting(selectedClip, "title_style", "None");
+                      updateSetting(selectedClip, "hook_display", "off");
+                    } else if (val === "clean") {
+                      updateSetting(selectedClip, "layout_mode", "box");
+                      updateSetting(selectedClip, "bg_style", "white");
+                      updateSetting(selectedClip, "caption_style", "Classic");
+                      updateSetting(selectedClip, "title_style", "Box");
+                      updateSetting(selectedClip, "hook_display", "full");
+                    }
+                  }}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
                 >
-                  {["Classic", "Pop", "Glow", "Outline", "Minimal", "Fire", "PodcastPop", "CinematicSlate", "NeonGlow"].map(s => <option key={s} value={s}>{s}</option>)}
+                  <option value="">Choose a style template...</option>
+                  <option value="viral">🔥 Viral Focus (High Retention)</option>
+                  <option value="cinematic">🎬 Cinematic Immersive</option>
+                  <option value="clean">✨ Clean &amp; Minimal</option>
                 </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">TITLE STYLE</span>
-                <select
-                  value={getSettings(selectedClip).title_style}
-                  onChange={(e) => updateSetting(selectedClip, "title_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  {["Impact", "Box", "Yellow", "Neon", "Orange", "Suits", "Meme", "None"].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Layout Mode</span>
-                <select
-                  value={getSettings(selectedClip).layout_mode}
-                  onChange={(e) => updateSetting(selectedClip, "layout_mode", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  <option value="box">1:1 Centered Box</option>
-                  <option value="portrait">9:16 Portrait</option>
-                </select>
+                <p className="text-[10px] text-slate-500 mt-1">Overrides global template for this clip only.</p>
               </div>
               <div className="space-y-1">
                 <span className="text-xs font-bold text-slate-500">Music</span>
@@ -1116,7 +1107,7 @@ export default function Dashboard() {
                 </select>
               </div>
             </div>
-            
+
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>
@@ -1128,20 +1119,6 @@ export default function Dashboard() {
                   <input type="checkbox" checked={getSettings(selectedClip).magic_hook} onChange={(e) => updateSetting(selectedClip, "magic_hook", e.target.checked)} />
                   <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
                 </label>
-              </div>
-              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm space-y-1.5">
-                <label className="text-[10px] uppercase font-bold text-slate-500 block">
-                  Hook Display
-                </label>
-                <select
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2 outline-none cursor-pointer font-medium"
-                  value={getSettings(selectedClip).hook_display ?? "full"}
-                  onChange={(e) => updateSetting(selectedClip, "hook_display", e.target.value)}
-                >
-                  <option value="full">Full Duration</option>
-                  <option value="3s">3 Seconds (Fade)</option>
-                  <option value="off">Hidden</option>
-                </select>
               </div>
               <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
                 <div>

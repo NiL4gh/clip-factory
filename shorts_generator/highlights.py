@@ -886,7 +886,7 @@ fix. Simply return the corrected JSON.
 
     if topics and len(topics) > 0:
         # â”€â”€ Topic-Aware Extraction â”€â”€
-        clips_per_topic = max(2, min(4, -(-num_clips // max(1, len(topics)))))
+        clips_per_topic = max(2, min(6, -(-num_clips // max(1, len(topics)))))
         
         for tidx, topic in enumerate(topics):
             ui_logger.log(f"Topic {tidx + 1}/{len(topics)}: \"{topic['topic']}\"")
@@ -913,7 +913,7 @@ fix. Simply return the corrected JSON.
                 f"{virality_prompt}\n\n"
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                f"Extract ONLY the absolute best viral moments. If the section is boring or low energy, return an EMPTY array []. NEVER return clips that score below 85. Quality over quantity.\n"
+                f"Extract the best viral moments. If a section is genuinely boring or low energy, return an EMPTY array []. NEVER return clips that score below 75.\n"
                 f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                 f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
@@ -933,7 +933,7 @@ fix. Simply return the corrected JSON.
         auto_topics = get_topic_index(transcript_data, llm_path, gpu_layers, language)
 
         if auto_topics:
-            clips_per_topic = max(2, min(4, -(-num_clips // max(1, len(auto_topics)))))
+            clips_per_topic = max(2, min(6, -(-num_clips // max(1, len(auto_topics)))))
             for tidx, topic in enumerate(auto_topics):
                 ui_logger.log(f"Topic {tidx + 1}/{len(auto_topics)}: \"{topic['topic']}\"")
                 topic_text = _get_text_slice(text, topic["start_time"], topic["end_time"])
