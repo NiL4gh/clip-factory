@@ -113,12 +113,13 @@ talking directly to the listener — "if you're struggling with", "here's
 what I want you to understand", "stop doing this" — these clips feel
 personal and convert well because the viewer feels spoken to directly.
 
-TRIGGER 5 — OPINION BOMBS:
+TRIGGER 5 — OPINION BOMBS (HIGHEST PRIORITY):
 Any time the speaker says something that a significant portion of the
-audience would disagree with or find surprising — these clips generate
-comments and shares because they provoke a reaction. Find where the
-speaker defends or explains the opinion. That explanation is the build.
-The original statement is the entry point.
+audience would disagree with or find surprising — mark this clip as hook_type "opinion_bomb".
+These clips generate the most comments and shares. If the speaker directly contradicts
+mainstream advice, industry consensus, or popular belief, ALWAYS extract this clip even if
+the opening context reference is slightly missing. The controversial statement IS the entry point.
+Find where the speaker defends or explains the opinion. That explanation is the build.
 
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 EXTRACTION RULES:
@@ -184,7 +185,7 @@ VIRAL TRIGGER WORD REFERENCE (use these to sharpen hook_text):
 
 _HOOK_TYPES = """
 PSYCHOLOGICAL HOOK TYPE — you must classify each clip's hook into exactly
-one of these five types and set the hook_type field accordingly:
+one of these six types and set the hook_type field accordingly:
 
 1. "curiosity_gap" — Information asymmetry. Imply knowledge the viewer
    lacks. Example hook: "Nobody talks about this, but it explains
@@ -199,6 +200,8 @@ one of these five types and set the hook_type field accordingly:
    what changed."
 5. "open_loop" — Create an unresolved tension that demands completion.
    Example hook: "The third point is the one that actually matters."
+6. "opinion_bomb" — A controversial take, hot opinion, or statement that
+   contradicts mainstream advice. Example hook: "Most people are completely wrong about X."
 
 Choose the type that best fits the clip's actual content and tone.
 Do not force a type. If the clip is primarily educational with no strong
@@ -680,8 +683,9 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             "where something genuinely interesting happens. Ignore filler, logistics,\n"
             "introductions, and transitions entirely.\n\n"
             "Hunt specifically for these moment types, in priority order:\n\n"
-            "1. REVELATION — The speaker says something surprising, counterintuitive,\n"
-            "   or that contradicts a commonly held belief. Signal phrases: \"most\n"
+            "1. REVELATION (HIGHEST PRIORITY) — The speaker says something surprising, counterintuitive,\n"
+            "   or that directly contradicts mainstream advice, industry consensus, or popular belief.\n"
+            "   This is the highest priority moment type. Signal phrases: \"most\n"
             "   people think\", \"what nobody tells you\", \"the truth is\", \"I found out\".\n\n"
             "2. TENSION OR DISAGREEMENT — The speaker pushes back on an idea, admits\n"
             "   a mistake, or challenges the audience. Signal phrases: \"but here's the\n"
@@ -689,8 +693,8 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             "3. SPECIFIC NUMBERS OR PROOF — The speaker cites a concrete number,\n"
             "   statistic, personal result, or named example. Signal: any dollar\n"
             "   amount, percentage, timeframe, or named person/company as evidence.\n\n"
-            "4. STRONG PERSONAL OPINION — The speaker makes a declarative claim they\n"
-            "   clearly believe strongly. Signal phrases: \"I genuinely believe\",\n"
+            "4. STRONG PERSONAL OPINION (OPINION BOMB) — The speaker makes a controversial declarative claim\n"
+            "   they clearly believe strongly. Signal phrases: \"I genuinely believe\",\n"
             "   \"most people will never\", \"the reason X fails is\", \"nobody wants to\n"
             "   hear this but\".\n\n"
             "5. STORY WITH STAKES — A personal anecdote or scenario where something\n"
@@ -832,7 +836,7 @@ def get_highlights(
         '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
         '    "hook_text": "Write 3-8 words: a punchy headline about THIS clip. Example for a clip about first jobs: YOUR FIRST JOB WAS A LIE. Example for a friendship clip: MEN NEED BETTER FRIENDS. Must be specific to the clip content.",\n'
         '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12-18 words) authored for social media — NOT copied from the transcript. Write an original hook tailored to the specific content of the clip. DO NOT copy the template examples from the prompt. It must be highly specific, punchy, and original. Max 18 words.",\n'
-        '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\""\n'
+        '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\" | \\"opinion_bomb\\""\n'
         '  }\n'
         ']'
     )
@@ -869,7 +873,7 @@ fix. Simply return the corrected JSON.
   virality_reason, theme, music_query, broll_keywords, emoji_moments,
   source_topic
 □ hook_type is exactly one of: curiosity_gap | loss_aversion |
-  self_identification | pattern_interrupt | open_loop
+  self_identification | pattern_interrupt | open_loop | opinion_bomb
 □ hook_text is 8 words or fewer — if longer, trim it
 □ virality_score is an integer between 0 and 100 — not a string, not a float
 □ hook_score, engagement_score, value_score, shareability_score are each integers between 0 and 25
@@ -1060,14 +1064,17 @@ fix. Simply return the corrected JSON.
             clip_peaks = [p["energy"] for p in (energy_peaks or []) if overall_st - 2 <= p["time"] <= overall_et + 2]
             energy_val = max(clip_peaks) if clip_peaks else 0.0
             energy_score = int(energy_val * 100)
-            composite_score = int((score * 0.6) + (energy_score * 0.4))
+            
+            hook_type = h.get("hook_type", "curiosity_gap")
+            opinion_bonus = 8 if hook_type == "opinion_bomb" else 0
+            composite_score = int((score * 0.6) + (energy_score * 0.4)) + opinion_bonus
+            composite_score = min(100, composite_score)
 
             sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())
             # Read from LLM output, fallback to first sentence if empty/missing
             hook_sentence = h.get("hook_sentence", "").strip()
             if not hook_sentence:
                 hook_sentence = sentences[0] if sentences else ""
-            hook_type = h.get("hook_type", "curiosity_gap")
             hook_score = int(h.get("hook_score", 0) or 0)
             engagement_score = int(h.get("engagement_score", 0) or 0)
             value_score = int(h.get("value_score", 0) or 0)
