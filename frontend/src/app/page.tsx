@@ -351,10 +351,11 @@ export default function Dashboard() {
     setProgress(null);
     setShowRestoreModal(false);
 
+    let ws: WebSocket | null = null;
     try {
       await axios.post(`${API_BASE}/strategize`, { url: targetUrl, llm_label: llmLabel, whisper_label: whisperLabel });
       
-      const ws = new WebSocket(wsUrl());
+      ws = new WebSocket(wsUrl());
       ws.onmessage = handleWsMessage;
       const poll = setInterval(async () => {
         const res = await axios.get(`${API_BASE}/results`);
@@ -362,7 +363,7 @@ export default function Dashboard() {
           clearInterval(poll);
           setResults(res.data);
           setStatus("done");
-          ws.close();
+          ws?.close();
         }
       }, 2000);
     } catch (error: any) {
@@ -370,7 +371,7 @@ export default function Dashboard() {
       console.error(error);
       addLog(`❌ Error starting strategize phase: ${msg}`);
       setStatus("error");
-      ws.close();
+      ws?.close();
     }
   };
 
@@ -414,6 +415,7 @@ export default function Dashboard() {
     setStatus("rendering");
     setLogs([]);
 
+    let ws: WebSocket | null = null;
     try {
       const settings = getSettings(index);
       const exSentences = (excludedSentences[index] || []).map(s => `[WID:${s.start_idx}-${s.end_idx}] ${s.text}`);
@@ -425,7 +427,7 @@ export default function Dashboard() {
         title: editedTitles[index] || undefined
       });
       
-      const ws = new WebSocket(wsUrl());
+      ws = new WebSocket(wsUrl());
       ws.onmessage = handleWsMessage;
 
       const taskId = res.data.task_id;
@@ -435,7 +437,7 @@ export default function Dashboard() {
           clearInterval(poll);
           setStatus("done");
           setProgress(null);
-          ws.close();
+          ws?.close();
           fetchGallery();
           setActiveView("gallery");
           window.location.href = `${API_BASE}/download_all?project_only=true`;
@@ -443,12 +445,12 @@ export default function Dashboard() {
           clearInterval(poll);
           setStatus("error");
           addLog(`❌ Render Error: ${statusRes.data.error}`);
-          ws.close();
+          ws?.close();
         }
       }, 2000);
     } catch {
       setStatus("error");
-      ws.close();
+      ws?.close();
     }
   };
 
@@ -466,6 +468,7 @@ export default function Dashboard() {
       clipSettingsMap[id] = getSettings(id);
     });
 
+    let ws: WebSocket | null = null;
     try {
       await axios.post(`${API_BASE}/render_all`, {
         ...globalSettings,
@@ -474,7 +477,7 @@ export default function Dashboard() {
         clip_settings: clipSettingsMap
       });
       
-      const ws = new WebSocket(wsUrl());
+      ws = new WebSocket(wsUrl());
       ws.onmessage = handleWsMessage;
       
       const poll = setInterval(async () => {
@@ -483,7 +486,7 @@ export default function Dashboard() {
           clearInterval(poll);
           setStatus("done");
           setProgress(null);
-          ws.close();
+          ws?.close();
           fetchGallery();
           setActiveView("gallery");
           window.location.href = `${API_BASE}/download_all?project_only=true`;
@@ -491,7 +494,7 @@ export default function Dashboard() {
       }, 2000);
     } catch {
       setStatus("error");
-      ws.close();
+      ws?.close();
     }
   };
 
