@@ -496,16 +496,6 @@ def _validate_clips(clips: list, raw_words: list) -> list:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
             continue
 
-        # Scrub generic LLM hook templates
-        for hook_key in ["hook_sentence", "hook_text", "title"]:
-            if hook_key in clip and isinstance(clip[hook_key], str):
-                val = clip[hook_key]
-                val = re.sub(r'^(?:Discover|Learn|Find out|Uncover)\b\s*(?:the\s+(?:secret|shocking\s+truth|wild\s+truth|truth|real\s+reason)\s+(?:to|about|behind|of)\b)?\s*', '', val, flags=re.IGNORECASE)
-                val = re.sub(r'^(?:Meet the|Here is why|Why you should|Stop doing this|This is why)\b\s*', '', val, flags=re.IGNORECASE)
-                if val and val[0].islower():
-                    val = val[0].upper() + val[1:]
-                clip[hook_key] = val
-
         clip["duration"] = total_dur
         clip["is_stitched"] = len(segments) > 1
         valid.append(clip)
@@ -785,6 +775,28 @@ def get_highlights(
     # Build the virality prompt with dynamic video duration, structured hook examples, and persona additions
     virality_prompt = f"{_VIRALITY_BASE}\n\n{_VIRAL_HOOKS_EXAMPLES}\n\n{persona_addition}".format(video_duration_str=video_duration_str)
     virality_prompt += f"\n\n{_TRIGGER_WORDS}\n\n{_HOOK_TYPES}"
+
+    angle_instructions = ""
+    if angle == "contrarian":
+        angle_instructions = (
+            "\n\nEXTRACTION ANGLE: CONTRARIAN / HOT TAKES. Focus strictly on controversial claims, unpopular opinions, and contrarian perspectives.\n"
+            "Prioritize segments where the speaker goes against mainstream thought, challenges beliefs, or exposes industry myths."
+        )
+    elif angle == "educational":
+        angle_instructions = (
+            "\n\nEXTRACTION ANGLE: ACTIONABLE SECRETS. Focus strictly on actionable advice, tutorials, step-by-step methods, and educational secrets.\n"
+            "Prioritize segments where the speaker clearly teaches the viewer how to solve a specific problem or explains a clear concept."
+        )
+    elif angle == "story":
+        angle_instructions = (
+            "\n\nEXTRACTION ANGLE: EMOTIONAL STORIES. Focus strictly on narrative-driven passages, personal anecdotes, struggles, failures, and triumphs.\n"
+            "Prioritize clips that tell a cohesive personal story with clear emotional resonance."
+        )
+    elif angle == "multi-angle":
+        angle_instructions = (
+            "\n\nEXTRACTION ANGLE: MULTI-ANGLE MIX. Extract a diverse mix of highlights across different angles: some contrarian hot takes, some educational secrets, and some personal stories, ensuring a wide variety of content."
+        )
+    virality_prompt += angle_instructions
     virality_prompt += (
         "\n\nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n"
         "TIMESTAMP EXTRACTION RULES:\n"
@@ -800,7 +812,8 @@ If any check fails, fix the output before returning. Do not explain the
 fix. Simply return the corrected JSON.
 
 □ Every clip has all required fields: title, ideal_transcript, segments,
-  score, virality_score, energy_score, hook_sentence, hook_text, hook_type,
+  virality_score, hook_score, engagement_score, value_score, shareability_score,
+  start_timestamp, end_timestamp, hook_sentence, hook_text, hook_type,
   virality_reason, theme, music_query, broll_keywords, emoji_moments,
   source_topic
 □ hook_type is exactly one of: curiosity_gap | loss_aversion |
@@ -808,7 +821,6 @@ fix. Simply return the corrected JSON.
 □ hook_text is 8 words or fewer — if longer, trim it
 □ virality_score is an integer between 0 and 100 — not a string, not a float
 □ hook_score, engagement_score, value_score, shareability_score are each integers between 0 and 25
-□ score is an integer between 0 and 100
 □ broll_keywords is a list of strings, not a single string
 □ emoji_moments is a list of strings
 □ segments is a list of objects each with start_quote (string) and end_quote (string) — exact words from the transcript
@@ -896,7 +908,7 @@ fix. Simply return the corrected JSON.
                     f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                     f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                     f"Extract the most engaging and interesting moments from this section. ALWAYS try to return at least 1-2 good clips (30-90s) even if it's an educational or slower-paced video.\n"
-                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s). Do NOT create duplicate variations of the same dialogue.\n"
+                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                     f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                     f"Transcript:\n{topic_text}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"

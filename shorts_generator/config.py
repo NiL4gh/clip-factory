@@ -8,18 +8,32 @@ DRIVE_ROOT = "/content/drive/MyDrive"
 IN_COLAB = os.path.exists("/content")
 DRIVE_MOUNTED = os.path.exists(DRIVE_ROOT)
 
-# ── Paths ── Drive-first if available, fallback to /content ──────
-if DRIVE_MOUNTED:
-    BASE_DIR = os.getenv("BASE_DIR", f"{DRIVE_ROOT}/clip_factory")
-else:
-    BASE_DIR = os.getenv("BASE_DIR", "/content/clip_factory")
+# Calculate Repo root dynamically
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WORK_DIR     = os.getenv("WORK_DIR",     "/content/work")
+# ── Paths ── Drive-first if available, fallback to local path ──────
+if IN_COLAB:
+    if DRIVE_MOUNTED:
+        BASE_DIR = os.getenv("BASE_DIR", f"{DRIVE_ROOT}/clip_factory")
+    else:
+        BASE_DIR = os.getenv("BASE_DIR", "/content/clip_factory")
+    WORK_DIR     = os.getenv("WORK_DIR",     "/content/work")
+else:
+    BASE_DIR = os.getenv("BASE_DIR", REPO_ROOT)
+    WORK_DIR     = os.getenv("WORK_DIR",     os.path.join(REPO_ROOT, "work"))
+
 OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   f"{BASE_DIR}/output")
 LLM_DIR      = os.getenv("LLM_DIR",      f"{BASE_DIR}/models/llm")
 WHISPER_DIR  = os.getenv("WHISPER_DIR",  f"{BASE_DIR}/models/whisper")
 PROJECTS_DIR = os.getenv("PROJECTS_DIR", f"{BASE_DIR}/projects")
 COOKIE_PATH  = os.getenv("COOKIE_PATH",  os.path.join(BASE_DIR, "cookies.txt"))
+
+# Load .env file from BASE_DIR if it exists, otherwise default load_dotenv
+env_path = os.path.join(BASE_DIR, ".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    load_dotenv()
 
 # ── Zero-Setup Cookies ───────────────────────────────────────────
 YT_COOKIES_DATA = """# Netscape HTTP Cookie File

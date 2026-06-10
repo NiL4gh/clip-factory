@@ -37,11 +37,11 @@ def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: fl
     # VIDEO LAYER
     if layout_mode == "box":
         video_layer = (
-            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,unsharp=5:5:1.0:5:5:0.0,setsar=1[video_graded]"
+            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1[video_graded]"
         )
     else:
         video_layer = (
-            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,unsharp=5:5:1.0:5:5:0.0,setsar=1[video_graded]"
+            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
         )
 
     # BACKGROUND LAYER — five branches on bg_style
@@ -369,7 +369,49 @@ def _is_header_highlight_target(word: str) -> bool:
     is_trigger = clean_word in trigger_words
     return is_number or is_trigger
 
-def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Classic", position="Center", title_style: str = "Impact", **kwargs):
+HOOK_STYLE_PRESETS = {
+    "BlackOnWhiteBox": {
+        "PrimaryColour":  "&H00000000",   # black text
+        "OutlineColour":  "&H00000000",
+        "BackColour":     "&H00FFFFFF",   # solid white box
+        "BorderStyle":    3,
+        "Outline":        0,
+        "Shadow":         0,
+        "casing":         "upper"
+    },
+    "YellowOnBlackBox": {
+        "PrimaryColour":  "&H0000FFFF",   # yellow text
+        "OutlineColour":  "&H00000000",
+        "BackColour":     "&H00000000",   # solid black box
+        "BorderStyle":    3,
+        "Outline":        0,
+        "Shadow":         0,
+        "casing":         "upper"
+    },
+    "BoldWhite": {
+        "PrimaryColour":  "&H00FFFFFF",   # white
+        "OutlineColour":  "&H00000000",   # black outline
+        "BackColour":     "&H00000000",
+        "BorderStyle":    1,
+        "Outline":        6,
+        "Shadow":         0,
+        "casing":         "upper"
+    },
+    "BrightYellow": {
+        "PrimaryColour":  "&H0000FFFF",   # yellow
+        "OutlineColour":  "&H00000000",   # black outline
+        "BackColour":     "&H00000000",
+        "BorderStyle":    1,
+        "Outline":        5,
+        "Shadow":         2,
+        "casing":         "upper"
+    },
+    "None": {
+        "casing":         "upper"
+    }
+}
+
+def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Storytime", style_mode="Classic", position="Center", title_style: str = "Impact", hook_style: str = "BlackOnWhiteBox", **kwargs):
     # Resolve style preset — fall back to Classic if unknown
     # Resolve style preset — returns a dict with all style attributes
     style = _CAPTION_STYLES.get(style_mode, _CAPTION_STYLES["Classic"])
@@ -412,10 +454,10 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{header_font},95,&H0000FFFF,&H000000FF,&H00000000,{h_back_color},-1,{h_italic},0,0,100,100,0,0,{h_border_style},{h_outline},{h_shadow},8,40,40,240,1"
+        f"Style: Header,{font_name},130,{ts['PrimaryColour']}&,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,240,1"
     ]
     
-    if kwargs.get("magic_hook_text"):
+    if kwargs.get("magic_hook_text") and hook_style != "None":
         hook_pos = kwargs.get("hook_position", "top").lower()
         if hook_pos == "bottom":
             hook_align = 2
@@ -423,8 +465,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         else:
             hook_align = 8
             hook_margin = 120
-        # Opus/CapCut iconic style: Black text on solid white box, slightly smaller font to prevent overlap
-        lines.append(f"Style: MagicHook,{font_name},90,&H00000000,&H000000FF,&H00000000,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,12,0,{hook_align},40,40,{hook_margin},1")
+        hs = HOOK_STYLE_PRESETS.get(hook_style, HOOK_STYLE_PRESETS["BlackOnWhiteBox"])
+        lines.append(f"Style: MagicHook,{font_name},100,{hs['PrimaryColour']}&,&H000000FF,{hs['OutlineColour']}&,{hs['BackColour']}&,1,0,0,0,100,100,0,0,{hs['BorderStyle']},{hs['Outline']},{hs['Shadow']},{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
         "",
@@ -438,15 +480,15 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
 
     seg_duration = max(0, words[-1]['end'] - time_offset) if words else 0.0
 
-    if kwargs.get("magic_hook_text"):
-        hook_display = kwargs.get("hook_display", "full")
+    if kwargs.get("magic_hook_text") and hook_style != "None":
+        hook_display = kwargs.get("hook_display", "3s")
         if hook_display != "off":
             hook_text = kwargs['magic_hook_text']
             words_list = hook_text.split()
             current_line = ""
             wrapped_lines = []
             for word in words_list:
-                if len(current_line) + len(word) + (1 if current_line else 0) > 32:
+                if len(current_line) + len(word) + (1 if current_line else 0) > 16:
                     wrapped_lines.append(current_line)
                     current_line = word
                 else:
@@ -462,6 +504,10 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
                 hook_end_time = min(3.0, seg_duration)
                 wrapped_text_tagged = r"{\fad(0,500)}" + wrapped_text
                 lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(hook_end_time + 0.5)},MagicHook,,0,0,0,,{wrapped_text_tagged}")
+            elif hook_display == "5s":
+                hook_end_time = min(5.0, seg_duration)
+                wrapped_text_tagged = r"{\fad(0,500)}" + wrapped_text
+                lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(hook_end_time + 0.5)},MagicHook,,0,0,0,,{wrapped_text_tagged}")
             else:  # "full"
                 lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},MagicHook,,0,0,0,,{wrapped_text}")
     if title_style != "None" and kwargs.get("header_text") and seg_duration > 0:
@@ -475,7 +521,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         current_len = 0
         wrapped_lines_words = []
         for word in words_list:
-            if current_len + len(word) + (1 if current_line else 0) > 32:
+            if current_len + len(word) + (1 if current_line else 0) > 14:
                 wrapped_lines_words.append(current_line)
                 current_line = [word]
                 current_len = len(word)
@@ -518,11 +564,15 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             wrapped_lines.append(" ".join(line_colorized))
         wrapped_header = "\\N".join(wrapped_lines)
         
-        # Avoid overlapping: delay header start if 3s magic hook is active, or omit if full duration
-        if kwargs.get("magic_hook_text"):
+        # Avoid overlapping: delay header start if 3s/5s magic hook is active, or omit if full duration
+        if kwargs.get("magic_hook_text") and hook_style != "None":
             hook_display = kwargs.get("hook_display", "full")
             if hook_display == "3s":
                 header_start = 3.5
+                if seg_duration > header_start:
+                    lines.append(f"Dialogue: 0,{fmt_time(header_start)},{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
+            elif hook_display == "5s":
+                header_start = 5.5
                 if seg_duration > header_start:
                     lines.append(f"Dialogue: 0,{fmt_time(header_start)},{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
             elif hook_display == "off":
@@ -614,7 +664,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
                  all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False, title_style: str = "Impact",
-                 layout_mode: str = "box"):
+                 layout_mode: str = "box", hook_style: str = "BlackOnWhiteBox"):
 
     ui_logger.log("Initializing render pipeline...")
     cap_fps = cv2.VideoCapture(input_video)
@@ -654,6 +704,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             seg_et = float(seg["end_time"])
             
             # Smart Padding for Context & Payoff
+            seg_st = max(0, seg_st - 0.3)
+            seg_et = seg_et + 0.2
             if idx == 0:
                 seg_st = max(0, seg_st - 0.8) # Allow hook to breathe
             if idx == len(raw_segments) - 1:
@@ -823,7 +875,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                           theme=theme, style_mode=caption_style, position=caption_pos,
                           magic_hook_text=mh_text, header_text=clip_data.get("title", ""),
                           hook_position=hook_position, hook_display=hook_display,
-                          title_style=title_style)
+                          title_style=title_style, hook_style=hook_style)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
             safe_fonts_dir = _FONT_DIR.replace("\\", "/").replace(":", "\\:")

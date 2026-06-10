@@ -73,7 +73,8 @@ const DEFAULT_SETTINGS = {
   bg_style: "black",
   layout_mode: "box",
   hook_position: "top",
-  hook_display: "full",
+  hook_display: "3s",
+  hook_style: "BlackOnWhiteBox",
   show_outro: false,
   title_style: "Impact",
   template: "default",
@@ -89,6 +90,8 @@ export default function Dashboard() {
   const [selectedClip, setSelectedClip] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<"workspace" | "gallery">("workspace");
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
+  const [angle, setAngle] = useState("standard");
+  const [gallerySessionMode, setGallerySessionMode] = useState<"current" | "all">("current");
   const logEndRef = useRef<HTMLDivElement>(null);
   const [progress, setProgress] = useState<{percent: number; message: string; eta?: number | null} | null>(null);
 
@@ -116,8 +119,18 @@ export default function Dashboard() {
   const [apiKeys, setApiKeys] = useState({GEMINI_API_KEY: "", GROQ_API_KEY: "", OPENROUTER_API_KEY: "", GLM_API_KEY: ""});
 
   useEffect(() => {
-    if (showSettings && settingsTab === "storage") {
-      axios.get(`${API_BASE}/storage`).then(res => setStorageInfo(res.data)).catch(() => {});
+    if (showSettings) {
+      axios.get(`${API_BASE}/settings`)
+        .then(res => {
+          if (res.data?.api_keys) {
+            setApiKeys(res.data.api_keys);
+          }
+        })
+        .catch(() => {});
+
+      if (settingsTab === "storage") {
+        axios.get(`${API_BASE}/storage`).then(res => setStorageInfo(res.data)).catch(() => {});
+      }
     }
   }, [showSettings, settingsTab]);
 
@@ -223,7 +236,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (activeView === "gallery") fetchGallery();
-  }, [activeView]);
+  }, [activeView, gallerySessionMode, results?.video_id]);
 
   useEffect(() => {
     axios.get(`${API_BASE}/heartbeat`)
@@ -267,7 +280,11 @@ export default function Dashboard() {
 
   const fetchGallery = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/gallery`);
+      let query = "";
+      if (gallerySessionMode === "current" && results?.video_id) {
+        query = `?video_id=${results.video_id}`;
+      }
+      const res = await axios.get(`${API_BASE}/gallery${query}`);
       setGallery(res.data);
     } catch { /* silently fail */ }
   };
@@ -353,7 +370,12 @@ export default function Dashboard() {
 
     let ws: WebSocket | null = null;
     try {
-      await axios.post(`${API_BASE}/strategize`, { url: targetUrl, llm_label: llmLabel, whisper_label: whisperLabel });
+      await axios.post(`${API_BASE}/strategize`, { 
+        url: targetUrl, 
+        llm_label: llmLabel, 
+        whisper_label: whisperLabel,
+        angle: angle 
+      });
       
       ws = new WebSocket(wsUrl());
       ws.onmessage = handleWsMessage;
@@ -717,6 +739,20 @@ export default function Dashboard() {
                 ))}
               </select>
             </div>
+            <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <label className="text-[11px] uppercase font-bold text-slate-500 block mb-1">Extraction Angle</label>
+              <select
+                value={angle}
+                onChange={(e) => setAngle(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-100 rounded-lg p-2 text-slate-700 text-sm font-medium outline-none cursor-pointer"
+              >
+                <option value="standard">⚖️ Balanced</option>
+                <option value="contrarian">🔥 Contrarian Hot Takes</option>
+                <option value="educational">💡 Actionable Secrets</option>
+                <option value="story">📖 Emotional Stories</option>
+                <option value="multi-angle">🔀 Multi-Angle Mix</option>
+              </select>
+            </div>
           </div>
         )}
 
@@ -956,6 +992,19 @@ export default function Dashboard() {
               <h2 className="text-xl font-bold text-slate-800">Render Gallery</h2>
             </div>
             <div className="flex items-center gap-2">
+              {/* GALLERY SESSION FILTER DROPDOWN */}
+              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-sm text-xs">
+                <span className="font-bold text-slate-500">Session:</span>
+                <select
+                  value={gallerySessionMode}
+                  onChange={(e) => setGallerySessionMode(e.target.value as any)}
+                  className="font-bold text-slate-800 outline-none bg-transparent cursor-pointer"
+                >
+                  <option value="current">Current Session Only</option>
+                  <option value="all">All Sessions</option>
+                </select>
+              </div>
+
               {/* GALLERY FILTER DROPDOWN */}
               <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-sm text-xs">
                 <span className="font-bold text-slate-500">Filter:</span>
@@ -982,48 +1031,46 @@ export default function Dashboard() {
                 </a>
               )}
 
-              {/* DOWNLOAD CURRENT (ZIP) BUTTON */}
-              {gallery.length > 0 && results?.clips?.some((c: any) => c.rendered_filename) && (
-                <a
-                  href={`${API_BASE}/download_all?project_only=true`}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download Current (ZIP)
-                </a>
-              )}
-
-              {/* DOWNLOAD ALL (ZIP) BUTTON */}
+              {/* DOWNLOAD BUTTONS */}
               {gallery.length > 0 && (
-                <a
-                  href={`${API_BASE}/download_all`}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download All (ZIP)
-                </a>
+                gallerySessionMode === "current" && results?.video_id ? (
+                  <a
+                    href={`${API_BASE}/download_all?video_id=${results.video_id}`}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download Session (ZIP)
+                  </a>
+                ) : (
+                  <a
+                    href={`${API_BASE}/download_all`}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download All (ZIP)
+                  </a>
+                )
               )}
 
-              {/* CLEAR CURRENT RENDERS BUTTON */}
-              {gallery.length > 0 && results?.clips?.some((c: any) => c.rendered_filename) && (
-                <button
-                  onClick={clearCurrentRenders}
-                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Clear Current
-                </button>
-              )}
-
-              {/* CLEAR GALLERY BUTTON */}
+              {/* CLEAR BUTTONS */}
               {gallery.length > 0 && (
-                <button
-                  onClick={clearGallery}
-                  className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Clear Gallery
-                </button>
+                gallerySessionMode === "current" && results?.video_id ? (
+                  <button
+                    onClick={clearCurrentRenders}
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Clear Session Renders
+                  </button>
+                ) : (
+                  <button
+                    onClick={clearGallery}
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Clear All Gallery
+                  </button>
+                )
               )}
 
               <button 
@@ -1159,6 +1206,51 @@ export default function Dashboard() {
                 >
                   <option value="bottom">Inside Bottom</option>
                   <option value="top">Inside Top</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Header Text Style</span>
+                <select
+                  value={getSettings(selectedClip).title_style || "Impact"}
+                  onChange={(e) => updateSetting(selectedClip, "title_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="Impact">Classic White with Outline</option>
+                  <option value="Box">White on Black Box</option>
+                  <option value="Yellow">Bold Yellow</option>
+                  <option value="Neon">Neon Purple Glow</option>
+                  <option value="Orange">Bold Orange</option>
+                  <option value="Suits">Clean Title Case</option>
+                  <option value="Meme">Black Text</option>
+                  <option value="ViralItalic">Bold Italic White</option>
+                  <option value="None">No Header</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Hook Text Style</span>
+                <select
+                  value={getSettings(selectedClip).hook_style || "BlackOnWhiteBox"}
+                  onChange={(e) => updateSetting(selectedClip, "hook_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="BlackOnWhiteBox">Black text on White box</option>
+                  <option value="YellowOnBlackBox">Yellow text on Black box</option>
+                  <option value="BoldWhite">Bold White Text</option>
+                  <option value="BrightYellow">Bright Yellow Text</option>
+                  <option value="None">Disabled</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Hook Display Duration</span>
+                <select
+                  value={getSettings(selectedClip).hook_display || "3s"}
+                  onChange={(e) => updateSetting(selectedClip, "hook_display", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="3s">First 3 Seconds</option>
+                  <option value="5s">First 5 Seconds</option>
+                  <option value="full">Entire Video</option>
+                  <option value="off">Off</option>
                 </select>
               </div>
             </div>
@@ -1316,6 +1408,51 @@ export default function Dashboard() {
                 >
                   <option value="bottom">Inside Bottom</option>
                   <option value="top">Inside Top</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Header Text Style</span>
+                <select
+                  value={globalSettings.title_style || "Impact"}
+                  onChange={(e) => updateGlobalSetting("title_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="Impact">Classic White with Outline</option>
+                  <option value="Box">White on Black Box</option>
+                  <option value="Yellow">Bold Yellow</option>
+                  <option value="Neon">Neon Purple Glow</option>
+                  <option value="Orange">Bold Orange</option>
+                  <option value="Suits">Clean Title Case</option>
+                  <option value="Meme">Black Text</option>
+                  <option value="ViralItalic">Bold Italic White</option>
+                  <option value="None">No Header</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Hook Text Style</span>
+                <select
+                  value={globalSettings.hook_style || "BlackOnWhiteBox"}
+                  onChange={(e) => updateGlobalSetting("hook_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="BlackOnWhiteBox">Black text on White box</option>
+                  <option value="YellowOnBlackBox">Yellow text on Black box</option>
+                  <option value="BoldWhite">Bold White Text</option>
+                  <option value="BrightYellow">Bright Yellow Text</option>
+                  <option value="None">Disabled</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Hook Display Duration</span>
+                <select
+                  value={globalSettings.hook_display || "3s"}
+                  onChange={(e) => updateGlobalSetting("hook_display", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="3s">First 3 Seconds</option>
+                  <option value="5s">First 5 Seconds</option>
+                  <option value="full">Entire Video</option>
+                  <option value="off">Off</option>
                 </select>
               </div>
             </div>
@@ -1487,14 +1624,37 @@ export default function Dashboard() {
                   <div>
                     <h4 className="text-sm font-bold text-slate-800 border-b pb-2 mb-3">Saved Sessions</h4>
                     {storageInfo.sessions.length === 0 && <p className="text-sm text-slate-500 italic">No saved sessions found.</p>}
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {storageInfo.sessions.map(s => (
-                        <div key={s.video_id} className="flex items-center justify-between bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
-                          <div>
-                            <div className="text-sm font-mono text-slate-700">{s.video_id}</div>
-                            <div className="text-xs text-slate-500">{s.size_mb} MB</div>
+                        <div key={s.video_id} className="flex flex-col bg-slate-50 border border-slate-100 p-3 rounded-xl gap-2 shadow-sm">
+                          <div className="flex justify-between items-start">
+                            <div className="max-w-[80%] space-y-1">
+                              <div className="text-sm font-semibold text-slate-700 truncate" title={s.url || s.video_id}>
+                                {s.url ? s.url : `Session: ${s.video_id}`}
+                              </div>
+                              <div className="flex gap-3 text-[11px] text-slate-500 font-medium">
+                                <span>📁 {s.size_mb} MB</span>
+                                <span>🎬 {s.clips_count} Clips</span>
+                                <span>⏱️ {s.duration ? `${Math.round(s.duration)}s` : 'Unknown'}</span>
+                              </div>
+                            </div>
+                            <button onClick={() => deleteSession(s.video_id)} className="text-rose-500 hover:bg-rose-50 p-1.5 rounded-lg text-xs font-bold transition-all">
+                              Delete
+                            </button>
                           </div>
-                          <button onClick={() => deleteSession(s.video_id)} className="text-rose-500 hover:bg-rose-50 p-1.5 rounded text-xs font-bold">Delete</button>
+                          {s.url && (
+                            <button
+                              onClick={async () => {
+                                setShowSettings(false);
+                                setUrl(s.url);
+                                await restoreSession(s.url);
+                              }}
+                              className="w-full py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              Restore Session
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

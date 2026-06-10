@@ -200,6 +200,7 @@ class StrategizeRequest(BaseModel):
     url: str
     llm_label: Optional[str] = "🦙 LLaMA 3 8B Instruct Q4"
     whisper_label: Optional[str] = "Medium (Fast/Accurate)"
+    angle: Optional[str] = "standard"
 
 # Render tracking
 _render_status = {} # { task_id: { status: "running"|"done"|"error", filename: str } }
@@ -220,6 +221,7 @@ class RenderRequest(BaseModel):
     hook_display: str = "full"  # "full" | "3s" | "off"
     show_outro: bool = False
     title_style: str = "Impact"
+    hook_style: str = "BlackOnWhiteBox"
     layout_mode: str = "box"
 
 class BulkRenderRequest(BaseModel):
@@ -238,6 +240,7 @@ class BulkRenderRequest(BaseModel):
     hook_display: str = "full"  # "full" | "3s" | "off"
     show_outro: bool = False
     title_style: str = "Impact"
+    hook_style: str = "BlackOnWhiteBox"
     layout_mode: str = "box"
 
 class SessionRequest(BaseModel):
@@ -347,7 +350,7 @@ def _save_session(url: str):
     except Exception as e:
         ui_logger.log(f"⚠️ Failed to save session to Google Drive: {e}")
 
-def _run_strategize(url: str, llm_label: str, whisper_label: str):
+def _run_strategize(url: str, llm_label: str, whisper_label: str, angle: str = "standard"):
     try:
 
         # Clear stale thumbnails from previous run
@@ -488,7 +491,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str):
             llm_path=llm_path,
             gpu_layers=llm_entry["gpu_layers"],
             max_clips=30,
-            angle="standard",
+            angle=angle,
             topics=topics,
             energy_peaks=_state["energy_peaks"],
             persona=_state["persona"],
@@ -571,7 +574,7 @@ async def strategize(req: StrategizeRequest, background_tasks: BackgroundTasks):
     _state["is_strategizing"] = True
     _state["is_cancelled"] = False
     ui_logger.clear()
-    background_tasks.add_task(_run_strategize, req.url, req.llm_label, req.whisper_label)
+    background_tasks.add_task(_run_strategize, req.url, req.llm_label, req.whisper_label, req.angle)
     return {"message": "Strategizing started."}
 
 @app.post("/api/cancel_strategize")
@@ -601,8 +604,15 @@ async def reset_state():
 async def get_results():
     if _state["is_strategizing"]:
         return {"status": "running"}
+    import hashlib
+    video_id = ""
+    url = _state.get("current_url")
+    if url:
+        video_id = hashlib.md5(url.strip().encode("utf-8")).hexdigest()
     return {
         "status": "done",
+        "current_url": url,
+        "video_id": video_id,
         "persona": _state["persona"],
         "clips": _state["clips"],
         "topics": _state["topics"],
@@ -648,6 +658,10 @@ def _run_render(req: RenderRequest, task_id: str):
         
         all_sentences = [] # We would need to rebuild this from word_timestamps if needed, but for now we pass empty or rebuild.
         
+        import hashlib
+        url = _state.get("current_url")
+        video_id = hashlib.md5(url.strip().encode("utf-8")).hexdigest() if url else ""
+
         out = render_short(
             input_video=input_mp4, clip_data=clip,
             word_timestamps=_state["word_timestamps"],
@@ -665,7 +679,8 @@ def _run_render(req: RenderRequest, task_id: str):
             hook_display=req.hook_display,
             show_outro=req.show_outro,
             title_style=req.title_style,
-            layout_mode=req.layout_mode
+            layout_mode=req.layout_mode,
+            hook_style=req.hook_style
         )
         
         # ── BGM mixing via enhance_clip ──
@@ -679,16 +694,19 @@ def _run_render(req: RenderRequest, task_id: str):
                     ui_logger.log(f"BGM mixing failed ({bgm_err}) — clip saved without music.")
 
         import shutil
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
+        session_output_dir = os.path.join(OUTPUT_DIR, video_id) if video_id else OUTPUT_DIR
+        os.makedirs(session_output_dir, exist_ok=True)
+        dst = os.path.join(session_output_dir, os.path.basename(out))
         if out != dst: shutil.copy2(out, dst)
         ui_logger.log(f"Rendered successfully: {os.path.basename(out)}")
-        _render_status[task_id]["filename"] = os.path.basename(dst)
+        
+        rel_fn = f"{video_id}/{os.path.basename(dst)}" if video_id else os.path.basename(dst)
+        _render_status[task_id]["filename"] = rel_fn
         _render_status[task_id]["status"] = "done"
         ui_logger.log(f"RENDER_STATUS|{req.clip_id}|done")
         
         # Store rendered filename in the clip state to support CSV export and UI references
-        _state["clips"][req.clip_id]["rendered_filename"] = os.path.basename(dst)
+        _state["clips"][req.clip_id]["rendered_filename"] = rel_fn
         if _state.get("current_url"):
             _save_session(_state["current_url"])
         
@@ -737,6 +755,10 @@ def _run_bulk_render(req: BulkRenderRequest):
                 ui_logger.log("✅ Source video downloaded successfully.")
             else:
                 raise FileNotFoundError("Source video file is missing and no current URL is available in session state.")
+
+        import hashlib
+        url = _state.get("current_url")
+        video_id = hashlib.md5(url.strip().encode("utf-8")).hexdigest() if url else ""
 
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         
@@ -790,7 +812,8 @@ def _run_bulk_render(req: BulkRenderRequest):
                     hook_display=settings.get("hook_display", "full"),
                     show_outro=settings.get("show_outro", False),
                     title_style=settings.get("title_style", "Impact"),
-                    layout_mode=settings.get("layout_mode", "box")
+                    layout_mode=settings.get("layout_mode", "box"),
+                    hook_style=settings.get("hook_style", "BlackOnWhiteBox")
                 )
 
                 # BGM mixing
@@ -805,15 +828,17 @@ def _run_bulk_render(req: BulkRenderRequest):
                             ui_logger.log(f"BGM mixing failed ({bgm_err}) for clip {idx} — saved without music.")
                             
                 import shutil
-                os.makedirs(OUTPUT_DIR, exist_ok=True)
-                dst = os.path.join(OUTPUT_DIR, os.path.basename(out))
+                session_output_dir = os.path.join(OUTPUT_DIR, video_id) if video_id else OUTPUT_DIR
+                os.makedirs(session_output_dir, exist_ok=True)
+                dst = os.path.join(session_output_dir, os.path.basename(out))
                 if out != dst:
                     shutil.copy2(out, dst)
                 ui_logger.log(f"Rendered clip {idx} successfully: {os.path.basename(out)}")
                 ui_logger.log(f"RENDER_STATUS|{idx}|done")
                 
                 # Store rendered filename in the clip state to support CSV export and UI references
-                _state["clips"][idx]["rendered_filename"] = os.path.basename(dst)
+                rel_fn = f"{video_id}/{os.path.basename(dst)}" if video_id else os.path.basename(dst)
+                _state["clips"][idx]["rendered_filename"] = rel_fn
                 if _state.get("current_url"):
                     _save_session(_state["current_url"])
                 
@@ -896,15 +921,30 @@ async def download_single(background_tasks: BackgroundTasks, filename: str):
     return FileResponse(zip_path, media_type="application/zip", filename=f"clip_{os.path.splitext(filename)[0]}.zip")
 
 @app.get("/api/download_all")
-async def download_all(background_tasks: BackgroundTasks, project_only: bool = False):
+async def download_all(background_tasks: BackgroundTasks, project_only: bool = False, video_id: Optional[str] = None):
     import glob
     import zipfile
     import json
+    import hashlib
+    
     if project_only:
         clips_to_download = [clip for clip in _state.get("clips", []) if clip.get("rendered_filename")]
-        files = [os.path.join(OUTPUT_DIR, clip.get("rendered_filename")) for clip in clips_to_download if os.path.exists(os.path.join(OUTPUT_DIR, clip.get("rendered_filename")))]
+        files = []
+        curr_url = _state.get("current_url")
+        curr_video_id = hashlib.md5(curr_url.strip().encode("utf-8")).hexdigest() if curr_url else ""
+        for clip in clips_to_download:
+            fn = clip.get("rendered_filename")
+            p1 = os.path.join(OUTPUT_DIR, fn)
+            p2 = os.path.join(OUTPUT_DIR, curr_video_id, fn) if curr_video_id else p1
+            if os.path.exists(p1):
+                files.append(p1)
+            elif os.path.exists(p2):
+                files.append(p2)
+    elif video_id:
+        files = glob.glob(os.path.join(OUTPUT_DIR, video_id, "*.mp4"))
+        clips_to_download = []
     else:
-        files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+        files = glob.glob(os.path.join(OUTPUT_DIR, "**", "*.mp4"), recursive=True)
         clips_to_download = []
         
     if not files:
@@ -920,6 +960,7 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
                 for idx, clip in enumerate(clips_to_download):
                     filename = clip.get("rendered_filename")
                     if filename:
+                        base_filename = os.path.basename(filename)
                         metadata = {
                             "title": clip.get("title", f"Clip {idx+1}"),
                             "rationale": clip.get("rationale", ""),
@@ -928,7 +969,7 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
                             "duration": clip.get("duration", 0),
                             "persona": clip.get("persona", ""),
                         }
-                        meta_filename = f"{os.path.splitext(filename)[0]}_metadata.json"
+                        meta_filename = f"{os.path.splitext(base_filename)[0]}_metadata.json"
                         zipf.writestr(meta_filename, json.dumps(metadata, indent=4))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
@@ -942,6 +983,8 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
     background_tasks.add_task(remove_file, zip_path)
     
     filename = "clipfactory_project_clips.zip" if project_only else "clipfactory_all_clips.zip"
+    if video_id:
+        filename = f"clipfactory_session_{video_id[:8]}_clips.zip"
     return FileResponse(
         zip_path,
         media_type="application/zip",
@@ -1009,22 +1052,28 @@ def _get_video_duration_ffprobe(filepath: str) -> float:
     return 0.0
 
 @app.get("/api/gallery")
-async def get_gallery():
+async def get_gallery(video_id: Optional[str] = None):
     import glob
-    files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+    if video_id:
+        files = glob.glob(os.path.join(OUTPUT_DIR, video_id, "*.mp4"))
+    else:
+        files = glob.glob(os.path.join(OUTPUT_DIR, "**", "*.mp4"), recursive=True)
+        
     files.sort(key=os.path.getmtime, reverse=True)
     result = []
     for f in files:
         try:
             stat = os.stat(f)
             duration = _get_video_duration_ffprobe(f)
+            rel_path = os.path.relpath(f, OUTPUT_DIR).replace("\\", "/")
             result.append({
                 "filename": os.path.basename(f),
-                "url": f"/media/{os.path.basename(f)}",
+                "url": f"/media/{rel_path}",
                 "size_mb": round(stat.st_size / (1024 * 1024), 1),
                 "created_at": _dt.datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %H:%M"),
                 "created_at_ts": float(stat.st_mtime),
-                "duration": duration
+                "duration": duration,
+                "rel_path": rel_path
             })
         except OSError:
             continue
@@ -1034,25 +1083,29 @@ async def get_gallery():
 async def export_csv():
     import csv
     import io
+    import hashlib
     from fastapi.responses import StreamingResponse
     
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["filename", "clip title", "hook sentence", "virality score", "duration"])
     
-    import glob
-    existing_files = {os.path.basename(f) for f in glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))}
+    curr_url = _state.get("current_url")
+    curr_video_id = hashlib.md5(curr_url.strip().encode("utf-8")).hexdigest() if curr_url else ""
     
     for clip in _state.get("clips", []):
         fn = clip.get("rendered_filename")
-        if fn and fn in existing_files:
-            writer.writerow([
-                fn,
-                clip.get("title", ""),
-                clip.get("hook_sentence", ""),
-                clip.get("score", ""),
-                clip.get("duration", "")
-            ])
+        if fn:
+            p1 = os.path.join(OUTPUT_DIR, fn)
+            p2 = os.path.join(OUTPUT_DIR, curr_video_id, fn) if curr_video_id else p1
+            if os.path.exists(p1) or os.path.exists(p2):
+                writer.writerow([
+                    os.path.basename(fn),
+                    clip.get("title", ""),
+                    clip.get("hook_sentence", ""),
+                    clip.get("score", ""),
+                    clip.get("duration", "")
+                ])
             
     output.seek(0)
     return StreamingResponse(
@@ -1062,11 +1115,23 @@ async def export_csv():
     )
 
 @app.post("/api/clear_gallery")
-async def clear_gallery(project_only: bool = False):
+async def clear_gallery(project_only: bool = False, video_id: Optional[str] = None):
     import glob
+    import shutil
+    import hashlib
+    
     if project_only:
         current_filenames = {clip.get("rendered_filename") for clip in _state.get("clips", []) if clip.get("rendered_filename")}
-        files = [os.path.join(OUTPUT_DIR, fn) for fn in current_filenames if os.path.exists(os.path.join(OUTPUT_DIR, fn))]
+        files = []
+        curr_url = _state.get("current_url")
+        curr_video_id = hashlib.md5(curr_url.strip().encode("utf-8")).hexdigest() if curr_url else ""
+        for fn in current_filenames:
+            p1 = os.path.join(OUTPUT_DIR, fn)
+            p2 = os.path.join(OUTPUT_DIR, curr_video_id, fn) if curr_video_id else p1
+            if os.path.exists(p1):
+                files.append(p1)
+            elif os.path.exists(p2):
+                files.append(p2)
         
         # Clear rendered_filename inside the _state so they are no longer marked as rendered
         for clip in _state.get("clips", []):
@@ -1074,8 +1139,10 @@ async def clear_gallery(project_only: bool = False):
                 del clip["rendered_filename"]
         if _state.get("current_url"):
             _save_session(_state["current_url"])
+    elif video_id:
+        files = glob.glob(os.path.join(OUTPUT_DIR, video_id, "*.mp4"))
     else:
-        files = glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))
+        files = glob.glob(os.path.join(OUTPUT_DIR, "**", "*.mp4"), recursive=True)
         
     deleted_count = 0
     for f in files:
@@ -1084,7 +1151,46 @@ async def clear_gallery(project_only: bool = False):
             deleted_count += 1
         except OSError:
             continue
+            
+    # Clean up empty subdirectories
+    if not project_only and not video_id:
+        for item in os.listdir(OUTPUT_DIR):
+            item_path = os.path.join(OUTPUT_DIR, item)
+            if os.path.isdir(item_path):
+                try:
+                    if not os.listdir(item_path):
+                        os.rmdir(item_path)
+                except OSError:
+                    pass
+    elif video_id:
+        session_dir = os.path.join(OUTPUT_DIR, video_id)
+        if os.path.exists(session_dir) and os.path.isdir(session_dir):
+            try:
+                if not os.listdir(session_dir):
+                    os.rmdir(session_dir)
+            except OSError:
+                pass
+                
     return {"status": "success", "message": f"Deleted {deleted_count} rendered clips."}
+
+@app.get("/api/settings")
+async def get_settings():
+    env_file = os.path.join(BASE_DIR, ".env")
+    env_vars = {}
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    env_vars[k] = v.strip()
+    return {
+        "api_keys": {
+            "GEMINI_API_KEY": env_vars.get("GEMINI_API_KEY", ""),
+            "GROQ_API_KEY": env_vars.get("GROQ_API_KEY", ""),
+            "OPENROUTER_API_KEY": env_vars.get("OPENROUTER_API_KEY", ""),
+            "GLM_API_KEY": env_vars.get("GLM_API_KEY", ""),
+        }
+    }
 
 class SettingsRequest(BaseModel):
     api_keys: dict
@@ -1136,6 +1242,7 @@ async def delete_session(video_id: str):
 
 @app.get("/api/storage")
 async def get_storage_info():
+    import json
     models = []
     if os.path.exists(LLM_DIR):
         for f in os.listdir(LLM_DIR):
@@ -1154,9 +1261,25 @@ async def get_storage_info():
             if os.path.isdir(path):
                 # Count files inside
                 size = sum(os.path.getsize(os.path.join(path, f2)) for f2 in os.listdir(path) if os.path.isfile(os.path.join(path, f2)))
+                state_file = os.path.join(path, "state.json")
+                url = ""
+                clips_count = 0
+                duration = 0
+                if os.path.exists(state_file):
+                    try:
+                        with open(state_file, "r", encoding="utf-8") as sf:
+                            sdata = json.load(sf)
+                            url = sdata.get("current_url", "")
+                            clips_count = len(sdata.get("clips", []))
+                            duration = sdata.get("video_duration", 0)
+                    except:
+                        pass
                 sessions.append({
                     "video_id": f,
-                    "size_mb": round(size / (1024 * 1024), 1)
+                    "size_mb": round(size / (1024 * 1024), 1),
+                    "url": url,
+                    "clips_count": clips_count,
+                    "duration": duration
                 })
                 
     return {"models": models, "sessions": sessions}
