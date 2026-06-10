@@ -99,14 +99,19 @@ export default function Dashboard() {
   useEffect(() => {
     const check = async () => {
       try {
-        const res = await fetch('/health', { signal: AbortSignal.timeout(5000) });
+        // Try relative URL first (same origin), then fallback
+        const res = await fetch('/health', { 
+          signal: AbortSignal.timeout(5000),
+          cache: 'no-store'
+        });
         setBackendStatus(res.ok ? 'connected' : 'disconnected');
-      } catch {
+      } catch (err) {
+        console.warn('Health check failed:', err);
         setBackendStatus('disconnected');
       }
     };
     check();
-    const interval = setInterval(check, 8000);
+    const interval = setInterval(check, 10000);
     return () => clearInterval(interval);
   }, []);
   const [status, setStatus] = useState("idle");
@@ -634,30 +639,28 @@ export default function Dashboard() {
 
   return (
     <ErrorBoundary>
-      <div className="grid grid-cols-[320px_1fr_300px] h-screen overflow-hidden bg-slate-50 text-slate-900">
-      
-      {/* ── Left Sidebar ────────────────────────────────── */}
-      <div className="flex flex-col h-full relative p-6">
-        <div className="flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/10">
-                <Film className="w-5 h-5 text-white" />
-              </div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-800">
-                ClipFactory<span className="text-indigo-500">.ai</span>
-              </h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${backendStatus === 'connected' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                {backendStatus}
-              </span>
-              <DarkModeToggle />
-              <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
-                <Settings2 className="w-5 h-5" />
-              </button>
-            </div>
+      <div className="flex flex-col h-screen overflow-hidden bg-slate-50 text-slate-900">
+        <header className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200 dark:bg-gray-900 dark:border-gray-800 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">ClipFactory.ai</h1>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${backendStatus === 'connected' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
+              {backendStatus}
+            </span>
           </div>
+          <div className="flex items-center gap-3">
+            <DarkModeToggle />
+            <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+              <Settings2 className="w-5 h-5" />
+            </button>
+          </div>
+        </header>
+
+        <div className="grid grid-cols-[320px_1fr_300px] flex-1 overflow-hidden">
+          
+          {/* ── Left Sidebar ────────────────────────────────── */}
+          <div className="flex flex-col h-full relative p-6 border-r border-slate-200">
+            <div className="flex-shrink-0">
+
           
           {/* URL Input & Generate */}
           <div className="flex-shrink-0 space-y-4">
@@ -709,7 +712,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Console */}
+        {/* Console
         <div className="absolute bottom-6 left-6 right-6 top-[340px] overflow-y-auto bg-black rounded-md p-2 border border-gray-800 custom-scrollbar">
           <div className="shrink-0 px-2 pt-1 pb-2 flex items-center gap-2 text-slate-400 font-sans uppercase tracking-widest font-bold text-[10px] border-b border-slate-800 mb-2">
             <Activity className="w-3 h-3" /> System Logs
@@ -725,6 +728,7 @@ export default function Dashboard() {
               <div ref={logEndRef} />
             </div>
           </div>
+        */}
       </div>
 
       {/* ── Center Main Area ────────────────────────────────── */}
@@ -738,11 +742,13 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {activeTab === 'logs' ? (
-          <div className="h-[500px] p-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl">
+        {activeTab === 'logs' && (
+          <div className="h-[600px] p-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl">
             <LogViewer sessionId={sessionId} />
           </div>
-        ) : (
+        )}
+
+        {activeTab === 'workspace' && (
           <>
             {(status === "strategizing" || status === "rendering") && progress && (
           <div className="bg-white border border-slate-200 rounded-xl p-5 mb-8 shadow-sm">
@@ -1785,6 +1791,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+      </div>
     </div>
     </ErrorBoundary>
   );
