@@ -744,7 +744,7 @@ export default function Dashboard() {
 
         {activeTab === 'logs' && (
           <div className="h-[600px] p-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl">
-            <LogViewer sessionId={sessionId} />
+            <LogViewer sessionId={sessionId} apiBase={API_BASE} />
           </div>
         )}
 

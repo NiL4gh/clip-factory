@@ -14,7 +14,7 @@ interface LogEntry {
   details?: Record<string, unknown>;
 }
 
-export const LogViewer: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+export const LogViewer: React.FC<{ sessionId: string; apiBase?: string }> = ({ sessionId, apiBase }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [filter, setFilter] = useState<'all' | 'app' | 'llm' | 'ffmpeg'>('all');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -25,7 +25,8 @@ export const LogViewer: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   useEffect(() => {
     let es: EventSource;
     const connect = () => {
-      es = new EventSource(`/api/logs/${sessionId}/stream`);
+      const base = apiBase ? apiBase.replace(/\/+$/, '') : '/api';
+      es = new EventSource(`${base}/logs/${sessionId}/stream`);
       es.onopen = () => setIsConnected(true);
       es.onmessage = (e) => {
         const entry = JSON.parse(e.data);
@@ -39,7 +40,7 @@ export const LogViewer: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     };
     connect();
     return () => es?.close();
-  }, [sessionId]);
+  }, [sessionId, apiBase]);
 
   useEffect(() => {
     if (autoScroll && bottomRef.current) {
