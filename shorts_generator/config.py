@@ -75,13 +75,24 @@ if not os.path.exists(COOKIE_PATH):
 from pathlib import Path
 FONT_DIR = Path(WORK_DIR) / "fonts"
 AVAILABLE_FONTS = {
-    'Montserrat': FONT_DIR / 'Montserrat-Bold.ttf',
-    'Montserrat Black': FONT_DIR / 'Montserrat-Black.ttf',
-    'Bebas Neue': FONT_DIR / 'BebasNeue-Regular.ttf',
-    'Inter': FONT_DIR / 'Inter-Bold.ttf',
-    'Roboto': FONT_DIR / 'Roboto-Bold.ttf',
-    'Poppins': FONT_DIR / 'Poppins-Bold.ttf',
+    'montserrat': FONT_DIR / 'Montserrat-Bold.ttf',
+    'montserrat black': FONT_DIR / 'Montserrat-Black.ttf',
+    'montserrat-black': FONT_DIR / 'Montserrat-Black.ttf',
+    'bebas': FONT_DIR / 'BebasNeue-Regular.ttf',
+    'bebas neue': FONT_DIR / 'BebasNeue-Regular.ttf',
+    'inter': FONT_DIR / 'Inter-Bold.ttf',
+    'roboto': FONT_DIR / 'Roboto-Bold.ttf',
+    'poppins': FONT_DIR / 'Poppins-Bold.ttf',
 }
+# Retain original case keys for backwards-compatibility and references
+AVAILABLE_FONTS.update({
+    'Montserrat': AVAILABLE_FONTS['montserrat'],
+    'Montserrat Black': AVAILABLE_FONTS['montserrat-black'],
+    'Bebas Neue': AVAILABLE_FONTS['bebas neue'],
+    'Inter': AVAILABLE_FONTS['inter'],
+    'Roboto': AVAILABLE_FONTS['roboto'],
+    'Poppins': AVAILABLE_FONTS['poppins'],
+})
 FONT_PATH = AVAILABLE_FONTS['Montserrat']
 
 # Warn on import if fonts missing

@@ -82,17 +82,24 @@ const DEFAULT_SETTINGS = {
   show_outro: false,
   title_style: "Impact",
   template: "default",
+  header_font: "bebas",
+  caption_font: "bebas",
+  hook_font: "bebas",
+};
+
+const FONT_MAP: Record<string, string> = {
+  'bebas': 'Bebas Neue',
+  'bebas neue': 'Bebas Neue',
+  'montserrat': 'Montserrat',
+  'montserrat-black': 'Montserrat Black',
+  'inter': 'Inter',
+  'roboto': 'Roboto',
+  'poppins': 'Poppins'
 };
 
 export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [activeTab, setActiveTab] = useState<'workspace' | 'logs'>('workspace');
-  const [style, setStyle] = useState({
-    headerFont: 'Montserrat',
-    captionFont: 'Bebas Neue',
-    hookFont: 'Montserrat',
-    bgStyle: 'black' as 'black' | 'brand' | 'blur' | 'white',
-  });
   const sessionId = useMemo(() => crypto.randomUUID(), []);
   const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected'>('disconnected');
 
@@ -636,6 +643,8 @@ export default function Dashboard() {
       }
     });
   };
+
+  const activeSettings = selectedClip !== null ? getSettings(selectedClip) : globalSettings;
 
   return (
     <ErrorBoundary>
@@ -1199,60 +1208,13 @@ export default function Dashboard() {
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Live Preview</h3>
           <ClipPreview
             headerText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].title : ''}
-            headerFont={style.headerFont}
+            headerFont={FONT_MAP[activeSettings.header_font] || 'Bebas Neue'}
             captionText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].caption : ''}
-            captionFont={style.captionFont}
+            captionFont={FONT_MAP[activeSettings.caption_font] || 'Bebas Neue'}
             hookText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].hook : ''}
-            hookFont={style.hookFont}
-            bgStyle={style.bgStyle}
+            hookFont={FONT_MAP[activeSettings.hook_font] || 'Bebas Neue'}
+            bgStyle={(activeSettings.bg_style || 'black') as 'black' | 'brand' | 'blur' | 'white'}
           />
-        </div>
-
-        <div className="space-y-3 p-4 border-b border-[var(--border-color)]">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Typography</h3>
-          
-          <div className="space-y-1.5">
-            <label className="text-xs text-[var(--text-secondary)]">Header Font</label>
-            <select value={style.headerFont} onChange={e => setStyle(s => ({...s, headerFont: e.target.value}))} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/50">
-              <option value="Montserrat">Montserrat</option>
-              <option value="Bebas Neue">Bebas Neue</option>
-              <option value="Poppins">Poppins</option>
-              <option value="Roboto">Roboto</option>
-              <option value="Inter">Inter</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs text-[var(--text-secondary)]">Caption Font</label>
-            <select value={style.captionFont} onChange={e => setStyle(s => ({...s, captionFont: e.target.value}))} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/50">
-              <option value="Montserrat">Montserrat</option>
-              <option value="Bebas Neue">Bebas Neue</option>
-              <option value="Poppins">Poppins</option>
-              <option value="Roboto">Roboto</option>
-              <option value="Inter">Inter</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs text-[var(--text-secondary)]">Hook Font</label>
-            <select value={style.hookFont} onChange={e => setStyle(s => ({...s, hookFont: e.target.value}))} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/50">
-              <option value="Montserrat">Montserrat</option>
-              <option value="Bebas Neue">Bebas Neue</option>
-              <option value="Poppins">Poppins</option>
-              <option value="Roboto">Roboto</option>
-              <option value="Inter">Inter</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="space-y-3 p-4 border-b border-[var(--border-color)]">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Background</h3>
-          <select value={style.bgStyle} onChange={e => setStyle(s => ({...s, bgStyle: e.target.value as any}))} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/50">
-            <option value="black">Black</option>
-            <option value="brand">Brand Slate-900</option>
-            <option value="blur">Blur</option>
-            <option value="white">White</option>
-          </select>
         </div>
         
         {selectedClip !== null && results?.clips[selectedClip] ? (
@@ -1371,6 +1333,64 @@ export default function Dashboard() {
                   <option value="5s">First 5 Seconds</option>
                   <option value="full">Entire Video</option>
                   <option value="off">Off</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Background Style</span>
+                <select 
+                  value={getSettings(selectedClip).bg_style || "black"}
+                  onChange={(e) => updateSetting(selectedClip, "bg_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="black">Black</option>
+                  <option value="brand">Brand Slate-900</option>
+                  <option value="blur">Blur</option>
+                  <option value="white">White</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Header Font</span>
+                <select 
+                  value={getSettings(selectedClip).header_font || "bebas"}
+                  onChange={(e) => updateSetting(selectedClip, "header_font", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="bebas">Bebas Neue</option>
+                  <option value="montserrat">Montserrat</option>
+                  <option value="montserrat-black">Montserrat Black</option>
+                  <option value="inter">Inter</option>
+                  <option value="roboto">Roboto</option>
+                  <option value="poppins">Poppins</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Caption Font</span>
+                <select 
+                  value={getSettings(selectedClip).caption_font || "bebas"}
+                  onChange={(e) => updateSetting(selectedClip, "caption_font", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="bebas">Bebas Neue</option>
+                  <option value="montserrat">Montserrat</option>
+                  <option value="montserrat-black">Montserrat Black</option>
+                  <option value="inter">Inter</option>
+                  <option value="roboto">Roboto</option>
+                  <option value="poppins">Poppins</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Hook Font</span>
+                <select 
+                  value={getSettings(selectedClip).hook_font || "bebas"}
+                  onChange={(e) => updateSetting(selectedClip, "hook_font", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="bebas">Bebas Neue</option>
+                  <option value="montserrat">Montserrat</option>
+                  <option value="montserrat-black">Montserrat Black</option>
+                  <option value="inter">Inter</option>
+                  <option value="roboto">Roboto</option>
+                  <option value="poppins">Poppins</option>
                 </select>
               </div>
             </div>
@@ -1573,6 +1593,64 @@ export default function Dashboard() {
                   <option value="5s">First 5 Seconds</option>
                   <option value="full">Entire Video</option>
                   <option value="off">Off</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Background Style</span>
+                <select 
+                  value={globalSettings.bg_style || "black"}
+                  onChange={(e) => updateGlobalSetting("bg_style", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="black">Black</option>
+                  <option value="brand">Brand Slate-900</option>
+                  <option value="blur">Blur</option>
+                  <option value="white">White</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Header Font</span>
+                <select 
+                  value={globalSettings.header_font || "bebas"}
+                  onChange={(e) => updateGlobalSetting("header_font", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="bebas">Bebas Neue</option>
+                  <option value="montserrat">Montserrat</option>
+                  <option value="montserrat-black">Montserrat Black</option>
+                  <option value="inter">Inter</option>
+                  <option value="roboto">Roboto</option>
+                  <option value="poppins">Poppins</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Caption Font</span>
+                <select 
+                  value={globalSettings.caption_font || "bebas"}
+                  onChange={(e) => updateGlobalSetting("caption_font", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="bebas">Bebas Neue</option>
+                  <option value="montserrat">Montserrat</option>
+                  <option value="montserrat-black">Montserrat Black</option>
+                  <option value="inter">Inter</option>
+                  <option value="roboto">Roboto</option>
+                  <option value="poppins">Poppins</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Hook Font</span>
+                <select 
+                  value={globalSettings.hook_font || "bebas"}
+                  onChange={(e) => updateGlobalSetting("hook_font", e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+                >
+                  <option value="bebas">Bebas Neue</option>
+                  <option value="montserrat">Montserrat</option>
+                  <option value="montserrat-black">Montserrat Black</option>
+                  <option value="inter">Inter</option>
+                  <option value="roboto">Roboto</option>
+                  <option value="poppins">Poppins</option>
                 </select>
               </div>
             </div>

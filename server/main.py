@@ -319,7 +319,7 @@ async def get_config():
 # ── Health Check ──
 @app.get('/health')
 async def health_check():
-    return {'status': 'ok', 'timestamp': datetime.utcnow().isoformat() + 'Z', 'version': '2.5-pro'}
+    return {'status': 'ok', 'timestamp': _dt.datetime.utcnow().isoformat() + 'Z', 'version': '2.5-pro'}
 
 # ── Fonts Endpoint ──
 @app.get('/api/fonts')
@@ -943,7 +943,8 @@ async def render(req: RenderRequest, background_tasks: BackgroundTasks):
     # Validate all font selections before rendering
     for element in ['header_font', 'caption_font', 'hook_font']:
         font = getattr(req, element, 'bebas')
-        path = AVAILABLE_FONTS.get(font)
+        font_key = font.lower().strip() if font else 'bebas'
+        path = AVAILABLE_FONTS.get(font_key)
         if not path or not os.path.exists(path):
             raise HTTPException(status_code=400, detail=f"Missing font file for {element}: {font}. Add to work/fonts/")
     
@@ -966,7 +967,8 @@ async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
     # Validate all global font selections before rendering
     for element in ['header_font', 'caption_font', 'hook_font']:
         font = getattr(req, element, 'bebas')
-        path = AVAILABLE_FONTS.get(font)
+        font_key = font.lower().strip() if font else 'bebas'
+        path = AVAILABLE_FONTS.get(font_key)
         if not path or not os.path.exists(path):
             raise HTTPException(status_code=400, detail=f"Missing global font file for {element}: {font}. Add to work/fonts/")
             
@@ -977,7 +979,8 @@ async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
                 for element in ['header_font', 'caption_font', 'hook_font']:
                     font = per_clip.get(element)
                     if font:
-                        path = AVAILABLE_FONTS.get(font)
+                        font_key = font.lower().strip()
+                        path = AVAILABLE_FONTS.get(font_key)
                         if not path or not os.path.exists(path):
                             raise HTTPException(status_code=400, detail=f"Missing font file for {element} in clip {idx_str}: {font}. Add to work/fonts/")
     
