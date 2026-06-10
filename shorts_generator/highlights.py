@@ -7,10 +7,178 @@ Professional 3-pass architecture:
 """
 import json
 import re
-from .logger import ui_logger
+from .logger import ui_logger, get_logger
 
 _llm_cache = {}
 CHUNK_CHARS = 3000  # More granular chunks to ensure we identify 5-10+ topics for 15-20 clips
+
+
+def analyze_past_performance(session_logs: list) -> dict:
+    """Read past LLM logs to improve future prompts"""
+    insights = {
+        'avg_hook_score': 0,
+        'common_failures': [],
+        'best_performing_patterns': []
+    }
+    
+    for log in session_logs:
+        if log.get('type') == 'llm' and log.get('reasoning'):
+            # Extract patterns from reasoning
+            reasoning_lower = log['reasoning'].lower()
+            if 'controversy' in reasoning_lower or 'contrarian' in reasoning_lower:
+                insights['best_performing_patterns'].append('controversy')
+            if 'curiosity gap' in reasoning_lower or 'curiosity' in reasoning_lower:
+                insights['best_performing_patterns'].append('curiosity_gap')
+        
+        if log.get('error'):
+            insights['common_failures'].append(log['error'])
+    
+    return insights
+
+def build_extraction_prompt(transcript: str) -> str:
+    return f'''You are an expert viral video editor. Analyze this transcript and extract the best clips.
+
+<transcript>
+{transcript}
+</transcript>
+
+For each clip, provide:
+1. start_time, end_time (seconds)
+2. hook (max 32 chars, scroll-stopper)
+3. header (descriptive title)
+4. caption (detailed description)
+5. sub-scores: hook_score (H), engagement (En), value (Va), shareability (Sh) — 0-100
+6. virality_score = weighted composite
+7. energy_level 1-10
+
+<reasoning>
+Explain your strategy in plain language:
+- Why is this hook effective? What emotion does it trigger?
+- Why these timestamps specifically?
+- What makes this shareable?
+- What pattern or technique are you using?
+</reasoning>
+
+Output strict JSON: {{"clips": [...]}}'''
+
+def validate_gemini_key() -> bool:
+    import os
+    return bool(os.getenv("GEMINI_API_KEY", "").strip())
+
+def call_gemini(prompt: str) -> str:
+    import os, urllib.request, json
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{"parts": [{"text": f"System Instructions:\nYou are an elite AI director for TikTok, Instagram Reels, and YouTube Shorts. Output ONLY raw JSON arrays. No prose, no markdown, no explanation whatsoever.\n\nUser Request:\n{prompt}"}]}],
+        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4, "maxOutputTokens": 3000}
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        res = json.loads(resp.read().decode("utf-8"))
+        return res["candidates"][0]["content"]["parts"][0]["text"]
+
+def call_local_llm(prompt: str) -> str:
+    import os
+    from shorts_generator.config import LLM_DIR, LLM_CATALOG
+    llm_path = ""
+    for entry in LLM_CATALOG:
+        if not entry["filename"].startswith("api:"):
+            cand = os.path.join(LLM_DIR, entry["filename"])
+            if os.path.exists(cand):
+                llm_path = cand
+                break
+    if not llm_path:
+        llm_path = os.path.join(LLM_DIR, LLM_CATALOG[0]["filename"])
+    
+    llm = _get_llm(llm_path)
+    content = f"You are an elite AI director for TikTok, Instagram Reels, and YouTube Shorts. Output ONLY raw JSON arrays. No prose, no markdown, no explanation whatsoever.\n\n{prompt}"
+    resp = llm.create_chat_completion(
+        messages=[{"role": "user", "content": content}],
+        temperature=0.40,
+        max_tokens=3000,
+    )
+    return resp["choices"][0]["message"]["content"].strip()
+
+def parse_json_response(response: str) -> list:
+    return _parse_json_loose(response)
+
+def extract_clips(video_path: str, transcript: str, session_id: str, model_pref: str = 'gemini'):
+    logger = get_logger(session_id)
+    logger.log_app('extraction', 'started', {
+        'video': str(video_path),
+        'transcript_words': len(transcript.split()),
+        'preferred_model': model_pref
+    })
+    ui_logger.info(f"Starting clip extraction for {video_path} using {model_pref}")
+    
+    prompt = build_extraction_prompt(transcript)
+    
+    try:
+        start = time.time()
+        
+        # Existing model selection logic preserved
+        if model_pref == 'gemini' and validate_gemini_key():
+            response = call_gemini(prompt)
+            model_used = 'gemini-2.5-flash'
+        else:
+            response = call_local_llm(prompt)
+            model_used = 'local-llama'
+        
+        latency = (time.time() - start) * 1000
+        
+        # Extract reasoning block
+        reasoning = None
+        if '<reasoning>' in response:
+            try:
+                reasoning = response.split('<reasoning>')[1].split('</reasoning>')[0].strip()
+            except:
+                reasoning = None
+        
+        logger.log_llm(
+            model=model_used,
+            prompt=prompt,
+            response=response,
+            reasoning=reasoning,
+            latency_ms=round(latency, 2)
+        )
+        ui_logger.success(f"LLM returned {len(response)} chars in {latency:.0f}ms")
+        
+        clips = parse_json_response(response)
+        avg_virality = sum(c.get('virality_score', 0) for c in clips) / len(clips) if clips else 0
+        
+        logger.log_app('extraction', 'completed', {
+            'clips_found': len(clips),
+            'avg_virality': round(avg_virality, 1),
+            'model_used': model_used
+        })
+        ui_logger.success(f"Extraction complete: {len(clips)} clips found (avg virality: {avg_virality:.1f})")
+        
+        return clips
+        
+    except Exception as e:
+        logger.log_app('extraction', 'failed', {}, error=str(e))
+        logger.log_llm(model_pref, prompt, '', error=str(e))
+        ui_logger.error(f"Extraction failed: {str(e)}")
+        raise
+
+def build_enhanced_prompt(prompt_text: str, session_id: str) -> str:
+    logger = get_logger(session_id)
+    past_logs = logger.get_entries(filter_type='llm', limit=50)
+    insights = analyze_past_performance(past_logs)
+    
+    base = prompt_text
+    
+    if insights['best_performing_patterns']:
+        base += f"\n\nBased on past performance, emphasize: {', '.join(set(insights['best_performing_patterns']))}"
+    
+    return base
 
 
 _VIRALITY_BASE = """You are an expert short-form video editor.
@@ -124,7 +292,30 @@ def _parse_json_loose(raw: str):
         return []
 
 
-def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000) -> list:
+def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000, session_id: str = "global") -> list:
+    import time
+    from shorts_generator.logger import get_logger
+    logger = get_logger(session_id)
+    
+    start_time = time.time()
+    
+    def log_llm_call(model_used: str, response_text: str, error: str = None):
+        latency = (time.time() - start_time) * 1000
+        reasoning = None
+        if response_text and "<reasoning>" in response_text:
+            try:
+                reasoning = response_text.split("<reasoning>")[1].split("</reasoning>")[0].strip()
+            except:
+                pass
+        logger.log_llm_interaction(
+            model=model_used,
+            prompt=prompt,
+            response=response_text or "",
+            reasoning=reasoning,
+            latency_ms=latency,
+            error=error
+        )
+
     if not isinstance(llm, str) or not llm.startswith("api:"):
         content = f"{system}\n\n{prompt}"
         try:
@@ -135,12 +326,14 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
             )
             raw = resp["choices"][0]["message"]["content"].strip()
             parsed = _parse_json_loose(raw)
+            log_llm_call("local-llama", raw)
             if isinstance(parsed, list):
                 return parsed
             if isinstance(parsed, dict):
                 return parsed.get("highlights", parsed.get("clips", parsed.get("topics", [parsed])))
         except Exception as e:
             ui_logger.log(f"Model query error: {e}")
+            log_llm_call("local-llama", "", error=str(e))
         return []
 
     import os, urllib.request, json
@@ -249,12 +442,14 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
                     res_data = json.loads(response.read().decode("utf-8"))
                     raw_text = pconfig["extract_response"](res_data).strip()
                     parsed = _parse_json_loose(raw_text)
+                    log_llm_call(f"{provider_id}:{current_model}", raw_text)
                     if isinstance(parsed, list): return parsed
                     if isinstance(parsed, dict): return parsed.get("highlights", parsed.get("clips", parsed.get("topics", [parsed])))
                     return []
             except Exception as e:
                 err_code = getattr(e, "code", 500)
                 ui_logger.log(f"{provider_id} API Error (key #{key_idx + 1}): HTTP {err_code}")
+                log_llm_call(f"{provider_id}:{current_model}", "", error=str(e))
                 continue
                 
     ui_logger.log("All API providers and fallback keys failed.")
@@ -502,8 +697,8 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
     return valid
 
-# â”€â”€ Pass 0: Persona Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -> dict:
+# ── Pass 0: Persona Detection ───────────────────────────────────────────────
+def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35, session_id: str = "global") -> dict:
     """Run a fast pass to detect video genre, tone, target audience, and suggested styles."""
     if not llm_path:
         return {}
@@ -526,7 +721,7 @@ def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -
     )
     
     try:
-        results = _execute_with_fallback(llm, system, prompt)
+        results = _execute_with_fallback(llm, system, prompt, session_id=session_id)
         if isinstance(results, list) and len(results) > 0:
             return results[0]
         if isinstance(results, dict):
@@ -545,7 +740,7 @@ def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35) -
 
 # â”€â”€ Pass 1: Topic Indexing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, language: str = "") -> list:
+def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, language: str = "", session_id: str = "global") -> list:
     """
     First pass: Map the entire transcript into distinct discussion topics.
     Returns a list of topics with their timestamp ranges.
@@ -637,7 +832,7 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
             f"Respond ONLY with a JSON array:\n{topic_schema}"
         )
         try:
-            results = _execute_with_fallback(llm, system, prompt, max_tokens=2000)
+            results = _execute_with_fallback(llm, system, prompt, max_tokens=2000, session_id=session_id)
             if isinstance(results, list):
                 all_topics.extend(results)
         except Exception as e:
@@ -707,12 +902,20 @@ def get_highlights(
     topics: list = None,
     energy_peaks: list = None,
     persona: dict = None,
+    session_id: str = "global",
 ) -> dict:
     """
     Extract viral clips from the transcript using multi-segment stitching.
     If topics are provided (from Pass 1), extract clips per-topic for comprehensive coverage.
     """
     text, raw_words = _build_text(transcript_data)
+    logger = get_logger(session_id)
+    logger.log_app_event('extraction', 'started', {
+        'transcript_length': len(text) if text else 0,
+        'model_preference': llm_path,
+        'requested_clips': num_clips,
+        'angle': angle
+    })
 
     if not llm_path:
         raise RuntimeError("llm_path is required for local highlight detection.")
@@ -867,17 +1070,19 @@ fix. Simply return the corrected JSON.
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
             )
             try:
-                results = _execute_with_fallback(llm, system, prompt)
+                prompt = build_enhanced_prompt(prompt, session_id)
+                results = _execute_with_fallback(llm, system, prompt, session_id=session_id)
                 for clip in results:
                     clip["source_topic"] = topic["topic"]
                     clip["source_topic_idx"] = tidx
                 all_highlights.extend(results)
             except Exception as e:
                 ui_logger.log(f"Warning: Topic {tidx + 1} extraction failed — {e}")
+                logger.log_app_event('extraction_topic', 'failed', {'topic': topic['topic'], 'error': str(e)})
     else:
-        # â”€â”€ Fallback: Run topic indexing first, then extract per-topic â”€â”€
+        # ── Fallback: Run topic indexing first, then extract per-topic ──
         ui_logger.log("No topics provided — running automatic topic indexing (Pass 1)...")
-        auto_topics = get_topic_index(transcript_data, llm_path, gpu_layers, language)
+        auto_topics = get_topic_index(transcript_data, llm_path, gpu_layers, language, session_id=session_id)
 
         if auto_topics:
             clips_per_topic = max(2, min(6, -(-num_clips // max(1, len(auto_topics)))))
@@ -914,7 +1119,8 @@ fix. Simply return the corrected JSON.
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
                 )
                 try:
-                    results = _execute_with_fallback(llm, system, prompt)
+                    prompt = build_enhanced_prompt(prompt, session_id)
+                    results = _execute_with_fallback(llm, system, prompt, session_id=session_id)
                     for clip in results:
                         clip["source_topic"] = topic["topic"]
                         clip["source_topic_idx"] = tidx
@@ -948,7 +1154,8 @@ fix. Simply return the corrected JSON.
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
                 )
                 try:
-                    results = _execute_with_fallback(llm, system, prompt)
+                    prompt = build_enhanced_prompt(prompt, session_id)
+                    results = _execute_with_fallback(llm, system, prompt, session_id=session_id)
                     all_highlights.extend(results)
                 except Exception as e:
                     ui_logger.log(f"Warning: Chunk {idx+1} fallback extraction failed — {e}")
@@ -1083,6 +1290,10 @@ fix. Simply return the corrected JSON.
 
     final = deduped[:max_clips]
     ui_logger.log(f"Done. {len(final)} top clips passed validation.")
+    logger.log_app_event('extraction', 'completed', {
+        'clips_found': len(final),
+        'avg_virality': sum(c.get('virality_score', 0) for c in final) / len(final) if final else 0
+    })
     return {"highlights": final}
 
 

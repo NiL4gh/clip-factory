@@ -9,9 +9,156 @@ import re as _re
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from shorts_generator.config import FONT_PATH
+from shorts_generator.config import FONT_PATH, AVAILABLE_FONTS, FONT_DIR
 from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
-from .logger import ui_logger
+from .logger import ui_logger, get_logger
+
+def get_font_path(element_type: str, font_choice: str) -> str:
+    """element_type: 'header' | 'caption' | 'hook'"""
+    choice = font_choice.lower().strip() if font_choice else 'bebas'
+    if choice not in AVAILABLE_FONTS:
+        choice = 'bebas'
+    
+    font_file = AVAILABLE_FONTS.get(choice)
+    # Fallback to 'bebas' if the requested file doesn't exist
+    if not font_file or not os.path.exists(font_file):
+        if choice != 'bebas':
+            choice = 'bebas'
+            font_file = AVAILABLE_FONTS.get(choice)
+            
+    if not font_file or not os.path.exists(font_file):
+        raise FileNotFoundError(f"Font {font_choice} not found at {font_file}. Place .ttf files in work/fonts/")
+    return str(font_file)
+
+def get_font_family(font_choice: str) -> str:
+    choice = font_choice.lower().strip() if font_choice else 'bebas'
+    mapping = {
+        'montserrat': 'Montserrat',
+        'montserrat-black': 'Montserrat Black',
+        'bebas': 'Bebas Neue',
+        'inter': 'Inter',
+        'roboto': 'Roboto',
+        'poppins': 'Poppins',
+    }
+    font_file = AVAILABLE_FONTS.get(choice)
+    if not font_file or not os.path.exists(font_file):
+        choice = 'bebas'
+    return mapping.get(choice, 'Bebas Neue')
+
+def validate_input_quality(video_path: str, session_id: str = "global") -> dict:
+    """Check input resolution and warn if below 1080p using ffprobe"""
+    import subprocess
+    import json
+    logger = get_logger(session_id)
+    
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,bit_rate",
+        "-of", "json",
+        video_path
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        probe = json.loads(proc.stdout)
+        stream = probe.get("streams", [{}])[0]
+        width = int(stream.get("width", 0))
+        height = int(stream.get("height", 0))
+        bitrate = stream.get("bit_rate", "unknown")
+        
+        if height > 0 and height < 1080:
+            logger.logger.warning(f"Input video is {width}x{height}, upscaling to 1080p may reduce quality")
+            
+        return {"width": width, "height": height, "bitrate": bitrate}
+    except Exception as e:
+        logger.logger.warning(f"validate_input_quality probe failed: {e}")
+        return {"width": 0, "height": 0, "bitrate": "unknown"}
+
+def run_ffmpeg_with_logging(session_id: str, cmd: list, stage: str):
+    logger = get_logger(session_id)
+    logger.log_app_event(stage, 'ffmpeg_started', {'command': ' '.join(cmd[:10]) + '...'})
+    
+    import time
+    start = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    duration = time.time() - start
+    
+    logger.log_ffmpeg(
+        command=' '.join(cmd),
+        return_code=proc.returncode,
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+        duration_sec=duration
+    )
+    
+    if proc.returncode != 0:
+        logger.log_app_event(stage, 'failed', {}, error=proc.stderr[-500:])
+        raise RuntimeError(f'FFmpeg failed at {stage}: {proc.stderr[-200:]}')
+    
+    logger.log_app_event(stage, 'completed', {'duration_sec': duration})
+    return proc
+
+def run_ffmpeg(cmd: list, session_id: str = "global", stage: str = "ffmpeg", check: bool = False, **kwargs):
+    logger = get_logger(session_id)
+    logger.log_app_event(stage, 'ffmpeg_started', {'command': ' '.join(cmd[:10]) + '...'})
+    
+    import time
+    start = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    duration = time.time() - start
+    
+    logger.log_ffmpeg(
+        command=' '.join(cmd),
+        return_code=proc.returncode,
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+        duration_sec=duration
+    )
+    if proc.returncode != 0:
+        logger.log_app_event(stage, 'failed', {}, error=proc.stderr[-500:])
+        if check:
+            raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=proc.stderr)
+    else:
+        logger.log_app_event(stage, 'completed', {'duration_sec': duration})
+    return proc
+
+def build_ffmpeg_encode(video_path: str, output_path: str, gpu_encoder: str = None, session_id: str = "global") -> list:
+    enc = gpu_encoder or "libx264"
+    return [
+        "ffmpeg", "-y", "-i", video_path,
+        "-c:v", enc, "-pix_fmt", "yuv420p",
+        output_path
+    ]
+
+def render_clip(video_path: str, output_path: str, style: dict, session_id: str, gpu_encoder: str = None):
+    logger = get_logger(session_id)
+    
+    # Validate input quality first
+    validate_input_quality(video_path, session_id)
+    
+    logger.log_app('render', 'started', {
+        'input': str(video_path),
+        'output': str(output_path),
+        'encoder': gpu_encoder or 'libx264'
+    })
+    ui_logger.info(f'Starting render: {video_path} -> {output_path}')
+    
+    try:
+        # Build command
+        cmd = build_ffmpeg_encode(video_path, output_path, gpu_encoder, session_id)
+        
+        # Run with logging (replaces your existing subprocess.run)
+        run_ffmpeg(cmd, session_id, stage='render')
+        
+        logger.log_app('render', 'completed', {'output': str(output_path)})
+        ui_logger.success(f'Render complete: {output_path}')
+        
+        return output_path
+        
+    except Exception as e:
+        logger.log_app('render', 'failed', {}, error=str(e))
+        ui_logger.error(f'Render failed: {str(e)}')
+        raise
 
 # ── 1:1 Layout constants & Background frame extractor ────────────────────────
 LAYOUT_TOP_ZONE_H  = 320   # px — hook text zone above video
@@ -19,13 +166,13 @@ LAYOUT_VIDEO_SIZE  = 1080  # px — 1:1 video square width/height
 LAYOUT_VIDEO_Y     = 320   # px — y offset where video square starts
 LAYOUT_BOT_ZONE_H  = 520   # px — caption/hook zone below video
 
-def _extract_bg_frame(input_path: str, timestamp: float, output_path: str) -> bool:
+def _extract_bg_frame(input_path: str, timestamp: float, output_path: str, session_id: str = "global") -> bool:
     try:
         cmd = [
             "ffmpeg", "-y", "-ss", str(timestamp), "-i", input_path,
             "-vframes", "1", "-q:v", "2", output_path
         ]
-        res = subprocess.run(cmd, capture_output=True)
+        res = run_ffmpeg(cmd, session_id=session_id, stage='extract_bg')
         if res.returncode == 0 and os.path.exists(output_path):
             return True
         return False
@@ -132,7 +279,7 @@ _FONT_FILE = "BebasNeue-Regular.ttf"
 
 # ── Silence Detection & Removal ──────────────────────────────────────────────
 
-def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -30, min_silence_dur: float = 0.5) -> str:
+def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -30, min_silence_dur: float = 0.5, session_id: str = "global") -> str:
     """
     Run FFmpeg silencedetect on a rendered segment, then re-cut to remove
     silent gaps, creating fast-paced jump-cut style delivery.
@@ -144,10 +291,10 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
         import numpy as np
         temp_wav = input_path.replace(".mp4", "_rms.wav")
         try:
-            subprocess.run([
+            run_ffmpeg([
                 "ffmpeg", "-y", "-i", input_path, "-vn",
                 "-ar", "16000", "-ac", "1", temp_wav
-            ], capture_output=True, check=True)
+            ], session_id=session_id, stage='silence_wav', check=True)
             y, sr = librosa.load(temp_wav, sr=16000)
             rms = librosa.feature.rms(y=y)[0]
             rms_db = librosa.power_to_db(rms, ref=np.max)
@@ -173,7 +320,7 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
         "-f", "null", "-"
     ]
     try:
-        result = subprocess.run(detect_cmd, capture_output=True, text=True)
+        result = run_ffmpeg(detect_cmd, session_id=session_id, stage='silence_detect')
         stderr = result.stderr
     except Exception:
         return input_path
@@ -203,7 +350,7 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
     # Get video duration
     probe_cmd = ["ffmpeg", "-i", input_path, "-f", "null", "-"]
     try:
-        probe_res = subprocess.run(probe_cmd, capture_output=True, text=True)
+        probe_res = run_ffmpeg(probe_cmd, session_id=session_id, stage='silence_probe')
         dur_match = _re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", probe_res.stderr)
         if dur_match:
             total_dur = int(dur_match.group(1)) * 3600 + int(dur_match.group(2)) * 60 + float(dur_match.group(3))
@@ -257,7 +404,7 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
         output_path
     ])
     try:
-        subprocess.run(trim_cmd, check=True, capture_output=True, text=True)
+        run_ffmpeg(trim_cmd, session_id=session_id, stage='trim_segment', check=True)
         return output_path
     except subprocess.CalledProcessError:
         return input_path
@@ -424,7 +571,22 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     border_style = style.get("border_style", 1)
     back_color = style.get("back_color", "&H80000000&")
     casing = style.get("casing", "upper")
-    font_name = "Bebas Neue"
+    
+    # Resolve per-element fonts from kwargs
+    caption_font_choice = kwargs.get("caption_font", "bebas")
+    header_font_choice = kwargs.get("header_font", "bebas")
+    hook_font_choice = kwargs.get("hook_font", "bebas")
+    
+    # Verify font paths physically exist (raises FileNotFoundError if missing)
+    get_font_path("caption", caption_font_choice)
+    get_font_path("header", header_font_choice)
+    get_font_path("hook", hook_font_choice)
+    
+    # Get the correct font family names to render inside the ASS file
+    caption_font_name = get_font_family(caption_font_choice)
+    header_font_name = "Impact" if title_style == "ViralItalic" else get_font_family(header_font_choice)
+    hook_font_name = get_font_family(hook_font_choice)
+
     p = {"main": main_color, "high": high_color}
 
     caption_pos = position.lower() if position else "bottom"
@@ -436,7 +598,6 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         margin_v = 560
 
     ts = TITLE_STYLE_PRESETS.get(title_style, TITLE_STYLE_PRESETS["Impact"])
-    header_font = "Impact" if title_style == "ViralItalic" else "Bebas Neue"
 
     h_italic = ts.get("Italic", 0)
     h_outline = ts.get("Outline", 12)
@@ -452,9 +613,9 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Main,{font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Highlight,{font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{font_name},130,{ts['PrimaryColour']}&,{ts['OutlineColour']}&,{ts['BackColour']}&,1,0,0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,240,1"
+        f"Style: Main,{caption_font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
+        f"Style: Highlight,{caption_font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
+        f"Style: Header,{header_font_name},130,{ts['PrimaryColour']}&,&H000000FF,{ts['OutlineColour']}&,{ts['BackColour']}&,{bold},{h_italic},0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,240,1"
     ]
     
     if kwargs.get("magic_hook_text") and hook_style != "None":
@@ -466,7 +627,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
             hook_align = 8
             hook_margin = 120
         hs = HOOK_STYLE_PRESETS.get(hook_style, HOOK_STYLE_PRESETS["BlackOnWhiteBox"])
-        lines.append(f"Style: MagicHook,{font_name},100,{hs['PrimaryColour']}&,&H000000FF,{hs['OutlineColour']}&,{hs['BackColour']}&,1,0,0,0,100,100,0,0,{hs['BorderStyle']},{hs['Outline']},{hs['Shadow']},{hook_align},40,40,{hook_margin},1")
+        lines.append(f"Style: MagicHook,{hook_font_name},100,{hs['PrimaryColour']}&,&H000000FF,{hs['OutlineColour']}&,{hs['BackColour']}&,1,0,0,0,100,100,0,0,{hs['BorderStyle']},{hs['Outline']},{hs['Shadow']},{hook_align},40,40,{hook_margin},1")
 
     lines.extend([
         "",
@@ -635,7 +796,7 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         f.write("\n".join(lines))
 
 
-def _generate_text_card(output_path, text, duration, font_file, font_size=64):
+def _generate_text_card(output_path, text, duration, font_file, font_size=64, session_id: str = "global"):
     text = '\n'.join(textwrap.wrap(text, width=22))
     safe_text = text.replace("'", "").replace(":", "")
     vf_filter = f"drawtext=text='{safe_text}':fontcolor=white:fontsize={font_size}:line_spacing=12:x=(w-text_w)/2:y=(h-text_h)/2"
@@ -656,7 +817,7 @@ def _generate_text_card(output_path, text, duration, font_file, font_size=64):
         "-movflags", "+faststart",
         output_path
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run_ffmpeg(cmd, session_id=session_id, stage='text_card', check=True)
 
 def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  face_center=True, add_subs=True, theme="Storytime",
@@ -664,7 +825,9 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  override_start=None, override_end=None, excluded_sentences=None,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
                  all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False, title_style: str = "Impact",
-                 layout_mode: str = "box", hook_style: str = "BlackOnWhiteBox"):
+                 layout_mode: str = "box", hook_style: str = "BlackOnWhiteBox",
+                 header_font: str = "bebas", caption_font: str = "bebas", hook_font: str = "bebas",
+                 session_id: str = "global"):
 
     ui_logger.log("Initializing render pipeline...")
     cap_fps = cv2.VideoCapture(input_video)
@@ -786,7 +949,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         if bg_style in ["blur", "gradient"]:
             bg_timestamp = min(seg_st + 2.0, seg_et)
             bg_frame_path = os.path.join(work_dir, f"bg_frame_{out_id}_{idx}.jpg")
-            _extract_bg_frame(input_video, bg_timestamp, bg_frame_path)
+            _extract_bg_frame(input_video, bg_timestamp, bg_frame_path, session_id=session_id)
 
         clip_duration = seg_et - seg_st
         extra_input_args, layout_fc, layout_out = _build_layout_filtergraph(
@@ -875,10 +1038,11 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                           theme=theme, style_mode=caption_style, position=caption_pos,
                           magic_hook_text=mh_text, header_text=clip_data.get("title", ""),
                           hook_position=hook_position, hook_display=hook_display,
-                          title_style=title_style, hook_style=hook_style)
+                          title_style=title_style, hook_style=hook_style,
+                          header_font=header_font, caption_font=caption_font, hook_font=hook_font)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
-            safe_fonts_dir = _FONT_DIR.replace("\\", "/").replace(":", "\\:")
+            safe_fonts_dir = FONT_DIR.replace("\\", "/").replace(":", "\\:")
             filter_complex += f"[{current_v}]ass='{safe_ass}':fontsdir='{safe_fonts_dir}'[{next_v}];"
             current_v = next_v
             input_idx += 1
@@ -978,7 +1142,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         # ── Post-render silence removal pass ──
         if remove_silence:
             desilenced = os.path.join(work_dir, f"desil_{out_id}_{idx}.mp4")
-            seg_out = _remove_silence_ffmpeg(seg_out, desilenced)
+            seg_out = _remove_silence_ffmpeg(seg_out, desilenced, session_id=session_id)
         rendered_segs.append(seg_out)
 
     if not rendered_segs:
@@ -989,7 +1153,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
     try:
         if show_outro:
             end_card_path = os.path.join(work_dir, f"end_{out_id}.mp4")
-            _generate_text_card(end_card_path, "FOLLOW FOR MORE!", 1.5, _colab_font, font_size=70)
+            _generate_text_card(end_card_path, "FOLLOW FOR MORE!", 1.5, _colab_font, font_size=70, session_id=session_id)
             rendered_segs = rendered_segs + [end_card_path]
     except Exception as card_err:
         ui_logger.log(f"  Warning: Title/End card generation failed ({card_err}), continuing without them.")
@@ -1029,12 +1193,12 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             final_output
         ])
         try:
-            subprocess.run(concat_cmd, check=True, capture_output=True, text=True, timeout=300)
+            run_ffmpeg(concat_cmd, session_id=session_id, stage='concat', check=True, timeout=300)
         except subprocess.TimeoutExpired:
             ui_logger.log("FFmpeg concat timed out after 300s!")
             raise RuntimeError("FFmpeg concatenation timed out due to segment stream mismatch.")
         except subprocess.CalledProcessError as e:
-            ui_logger.log(f"FFmpeg concat error: {e.stderr[-500:]}")
+            ui_logger.log(f"FFmpeg concat error: {e.stderr[-500:] if hasattr(e, 'stderr') and e.stderr else 'unknown'}")
             raise
 
     # ── LLM-Driven BGM Mixing (music_query from highlights) ──
@@ -1060,7 +1224,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                     "-shortest",
                     bgm_output
                 ]
-                subprocess.run(bgm_cmd, check=True, capture_output=True, text=True)
+                run_ffmpeg(bgm_cmd, session_id=session_id, stage='bgm_mix', check=True)
                 shutil.move(bgm_output, final_output)
                 ui_logger.log("BGM mixed successfully.")
         except Exception as bgm_err:

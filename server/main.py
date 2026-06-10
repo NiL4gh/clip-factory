@@ -8,11 +8,12 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 import urllib.request as _urlreq
 from typing import List, Optional
-from fastapi import FastAPI, BackgroundTasks, WebSocket, HTTPException
+from fastapi import FastAPI, BackgroundTasks, WebSocket, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from pydantic import BaseModel, Field
 
 # Ensure repo root is in sys.path
 try:
@@ -24,7 +25,7 @@ if REPO_DIR not in sys.path:
 
 from shorts_generator.config import (
     BASE_DIR, WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR,
-    COOKIE_PATH, LLM_CATALOG, WHISPER_CATALOG, PROJECTS_DIR,
+    COOKIE_PATH, LLM_CATALOG, WHISPER_CATALOG, PROJECTS_DIR, AVAILABLE_FONTS,
 )
 from shorts_generator.downloader import download_video, download_srt
 from shorts_generator.transcriber import transcribe_audio, parse_srt_to_word_timestamps
@@ -32,7 +33,7 @@ from shorts_generator.highlights import get_highlights, get_topic_index, detect_
 from shorts_generator.clipper import render_short
 from shorts_generator.enhancer import enhance_clip
 from shorts_generator import cache
-from shorts_generator.logger import ui_logger
+from shorts_generator.logger import ui_logger, get_logger, LOG_DIR, safe_print
 from shorts_generator.audio_analyzer import analyze_audio_energy
 from huggingface_hub import hf_hub_download
 
@@ -78,7 +79,16 @@ clipper._DETECTED_ENCODER = _GPU_ENCODER
 app = FastAPI(title="ClipFactory AI Director API")
 
 VERSION = "2.4.0-PRO-STRATEGY"
-print(f"🚀 ClipFactory AI Director Backend {VERSION} starting...")
+safe_print(f"🚀 ClipFactory AI Director Backend {VERSION} starting...")
+
+class TimeoutMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        try:
+            return await asyncio.wait_for(call_next(request), timeout=300.0)
+        except asyncio.TimeoutError:
+            return JSONResponse({'detail': 'Request timeout after 300s'}, status_code=504)
+
+app.add_middleware(TimeoutMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,6 +97,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    ui_logger.error(f"Unhandled error: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={'detail': str(exc), 'type': type(exc).__name__}
+    )
 
 # Serve rendered clips as static media
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -201,6 +219,7 @@ class StrategizeRequest(BaseModel):
     llm_label: Optional[str] = "🦙 LLaMA 3.1 8B Instruct Q4"
     whisper_label: Optional[str] = "Medium (Fast/Accurate)"
     angle: Optional[str] = "standard"
+    session_id: Optional[str] = "global"
 
 # Render tracking
 _render_status = {} # { task_id: { status: "running"|"done"|"error", filename: str } }
@@ -223,6 +242,10 @@ class RenderRequest(BaseModel):
     title_style: str = "Impact"
     hook_style: str = "BlackOnWhiteBox"
     layout_mode: str = "box"
+    header_font: Optional[str] = "bebas"
+    caption_font: Optional[str] = "bebas"
+    hook_font: Optional[str] = "bebas"
+    session_id: Optional[str] = "global"
 
 class BulkRenderRequest(BaseModel):
     face_center: bool = True
@@ -242,6 +265,10 @@ class BulkRenderRequest(BaseModel):
     title_style: str = "Impact"
     hook_style: str = "BlackOnWhiteBox"
     layout_mode: str = "box"
+    header_font: Optional[str] = "bebas"
+    caption_font: Optional[str] = "bebas"
+    hook_font: Optional[str] = "bebas"
+    session_id: Optional[str] = "global"
 
 class SessionRequest(BaseModel):
     url: str
@@ -288,6 +315,51 @@ async def get_config():
         "bgm_genres": list(BGM_CATALOG.keys()),
         "gemini_active": _is_gemini_key_valid(),
     }
+
+# ── Health Check ──
+@app.get('/health')
+async def health_check():
+    return {'status': 'ok', 'timestamp': datetime.utcnow().isoformat() + 'Z', 'version': '2.5-pro'}
+
+# ── Fonts Endpoint ──
+@app.get('/api/fonts')
+async def list_fonts():
+    from shorts_generator.config import AVAILABLE_FONTS
+    return {
+        name: {'exists': path.exists(), 'path': str(path)}
+        for name, path in AVAILABLE_FONTS.items()
+    }
+
+# ── Log Endpoints ──
+@app.get('/api/logs/{session_id}')
+async def get_logs(session_id: str, type: Optional[str] = Query(None), limit: int = 200):
+    logger = get_logger(session_id)
+    return {'entries': logger.get_entries(log_type=type, limit=limit)}
+
+@app.get('/api/logs/{session_id}/stream')
+async def stream_logs(session_id: str):
+    logger = get_logger(session_id)
+    last_idx = 0
+    
+    async def event_generator():
+        nonlocal last_idx
+        while True:
+            current = logger.get_entries(limit=9999)
+            if len(current) > last_idx:
+                for entry in current[last_idx:]:
+                    yield f'data: {json.dumps(entry)}\n\n'
+                last_idx = len(current)
+            await asyncio.sleep(0.5)
+    
+    return StreamingResponse(event_generator(), media_type='text/event-stream')
+
+@app.get('/api/logs')
+async def list_sessions():
+    sessions = list(set(
+        f.stem.replace('session_', '').split('_')[0]
+        for f in LOG_DIR.glob('session_*.log')
+    ))
+    return {'sessions': sessions}
 
 @app.get("/api/heartbeat")
 async def heartbeat():
@@ -680,7 +752,11 @@ def _run_render(req: RenderRequest, task_id: str):
             show_outro=req.show_outro,
             title_style=req.title_style,
             layout_mode=req.layout_mode,
-            hook_style=req.hook_style
+            hook_style=req.hook_style,
+            header_font=req.header_font,
+            caption_font=req.caption_font,
+            hook_font=req.hook_font,
+            session_id=req.session_id
         )
         
         # ── BGM mixing via enhance_clip ──
@@ -813,7 +889,11 @@ def _run_bulk_render(req: BulkRenderRequest):
                     show_outro=settings.get("show_outro", False),
                     title_style=settings.get("title_style", "Impact"),
                     layout_mode=settings.get("layout_mode", "box"),
-                    hook_style=settings.get("hook_style", "BlackOnWhiteBox")
+                    hook_style=settings.get("hook_style", "BlackOnWhiteBox"),
+                    header_font=settings.get("header_font", "bebas"),
+                    caption_font=settings.get("caption_font", "bebas"),
+                    hook_font=settings.get("hook_font", "bebas"),
+                    session_id=settings.get("session_id", "global")
                 )
 
                 # BGM mixing
@@ -859,6 +939,13 @@ async def render(req: RenderRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="A task is already running.")
     if req.clip_id < 0 or req.clip_id >= len(_state["clips"]):
         raise HTTPException(status_code=404, detail="Clip not found.")
+        
+    # Validate all font selections before rendering
+    for element in ['header_font', 'caption_font', 'hook_font']:
+        font = getattr(req, element, 'bebas')
+        path = AVAILABLE_FONTS.get(font)
+        if not path or not os.path.exists(path):
+            raise HTTPException(status_code=400, detail=f"Missing font file for {element}: {font}. Add to work/fonts/")
     
     _state["is_rendering"] = True
     ui_logger.clear()
@@ -875,6 +962,24 @@ async def render_all(req: BulkRenderRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="A task is already running.")
     if not _state["clips"]:
         raise HTTPException(status_code=400, detail="No clips available to render.")
+        
+    # Validate all global font selections before rendering
+    for element in ['header_font', 'caption_font', 'hook_font']:
+        font = getattr(req, element, 'bebas')
+        path = AVAILABLE_FONTS.get(font)
+        if not path or not os.path.exists(path):
+            raise HTTPException(status_code=400, detail=f"Missing global font file for {element}: {font}. Add to work/fonts/")
+            
+    # Validate per-clip font selections if provided
+    if req.clip_settings:
+        for idx_str, per_clip in req.clip_settings.items():
+            if per_clip:
+                for element in ['header_font', 'caption_font', 'hook_font']:
+                    font = per_clip.get(element)
+                    if font:
+                        path = AVAILABLE_FONTS.get(font)
+                        if not path or not os.path.exists(path):
+                            raise HTTPException(status_code=400, detail=f"Missing font file for {element} in clip {idx_str}: {font}. Add to work/fonts/")
     
     _state["is_rendering"] = True
     ui_logger.clear()

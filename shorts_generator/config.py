@@ -72,7 +72,22 @@ if not os.path.exists(COOKIE_PATH):
 
 
 # ── Font Configuration ───────────────────────────────────────────
-FONT_PATH = os.path.join(WORK_DIR, "Montserrat-Bold.ttf")
+from pathlib import Path
+FONT_DIR = Path(WORK_DIR) / "fonts"
+AVAILABLE_FONTS = {
+    'Montserrat': FONT_DIR / 'Montserrat-Bold.ttf',
+    'Montserrat Black': FONT_DIR / 'Montserrat-Black.ttf',
+    'Bebas Neue': FONT_DIR / 'BebasNeue-Regular.ttf',
+    'Inter': FONT_DIR / 'Inter-Bold.ttf',
+    'Roboto': FONT_DIR / 'Roboto-Bold.ttf',
+    'Poppins': FONT_DIR / 'Poppins-Bold.ttf',
+}
+FONT_PATH = AVAILABLE_FONTS['Montserrat']
+
+# Warn on import if fonts missing
+for name, path in AVAILABLE_FONTS.items():
+    if not path.exists():
+        print(f'⚠️  Font missing: {name} at {path}')
 
 # ── Local & API LLM catalog ───────────────────────────────────────
 LLM_CATALOG = [

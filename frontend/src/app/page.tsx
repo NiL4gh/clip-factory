@@ -8,6 +8,10 @@ import {
   Film, RefreshCw, Eye, EyeOff, ArrowRight, Settings2, Volume2, StopCircle, Trash2, Tag, Copy
 } from 'lucide-react';
 import axios from 'axios';
+import { ClipPreview } from '@/components/ClipPreview';
+import { LogViewer } from '@/components/LogViewer';
+import { DarkModeToggle } from '@/components/DarkModeToggle';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 /* ------------------------------------------------------------------ */
 /*  API / WS base — configurable for Colab via NEXT_PUBLIC_API_URL    */
@@ -82,6 +86,29 @@ const DEFAULT_SETTINGS = {
 
 export default function Dashboard() {
   const [url, setUrl] = useState("");
+  const [activeTab, setActiveTab] = useState<'workspace' | 'logs'>('workspace');
+  const [style, setStyle] = useState({
+    headerFont: 'Montserrat',
+    captionFont: 'Bebas Neue',
+    hookFont: 'Montserrat',
+    bgStyle: 'black' as 'black' | 'brand' | 'blur' | 'white',
+  });
+  const sessionId = useMemo(() => crypto.randomUUID(), []);
+  const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected'>('disconnected');
+
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch('/health', { signal: AbortSignal.timeout(5000) });
+        setBackendStatus(res.ok ? 'connected' : 'disconnected');
+      } catch {
+        setBackendStatus('disconnected');
+      }
+    };
+    check();
+    const interval = setInterval(check, 8000);
+    return () => clearInterval(interval);
+  }, []);
   const [status, setStatus] = useState("idle");
   const APP_VERSION = "v2.1.0-FINAL-OPUS";
   const [logs, setLogs] = useState<string[]>([]);
@@ -374,7 +401,8 @@ export default function Dashboard() {
         url: targetUrl, 
         llm_label: llmLabel, 
         whisper_label: whisperLabel,
-        angle: angle 
+        angle: angle,
+        session_id: sessionId
       });
       
       ws = new WebSocket(wsUrl());
@@ -446,7 +474,8 @@ export default function Dashboard() {
         clip_id: index,
         ...settings,
         excluded_sentences: exSentences,
-        title: editedTitles[index] || undefined
+        title: editedTitles[index] || undefined,
+        session_id: sessionId
       });
       
       ws = new WebSocket(wsUrl());
@@ -496,7 +525,8 @@ export default function Dashboard() {
         ...globalSettings,
         clip_ids: selectedIds.length > 0 ? selectedIds : undefined,
         titles: editedTitles,
-        clip_settings: clipSettingsMap
+        clip_settings: clipSettingsMap,
+        session_id: sessionId
       });
       
       ws = new WebSocket(wsUrl());
@@ -603,7 +633,8 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="grid grid-cols-[320px_1fr_300px] h-screen overflow-hidden bg-slate-50 text-slate-900">
+    <ErrorBoundary>
+      <div className="grid grid-cols-[320px_1fr_300px] h-screen overflow-hidden bg-slate-50 text-slate-900">
       
       {/* ── Left Sidebar ────────────────────────────────── */}
       <div className="flex flex-col h-full relative p-6">
@@ -617,9 +648,15 @@ export default function Dashboard() {
                 ClipFactory<span className="text-indigo-500">.ai</span>
               </h1>
             </div>
-            <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
-              <Settings2 className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-3">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${backendStatus === 'connected' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                {backendStatus}
+              </span>
+              <DarkModeToggle />
+              <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                <Settings2 className="w-5 h-5" />
+              </button>
+            </div>
           </div>
           
           {/* URL Input & Generate */}
@@ -692,7 +729,22 @@ export default function Dashboard() {
 
       {/* ── Center Main Area ────────────────────────────────── */}
       <div className="flex-1 h-full overflow-y-auto p-8 relative custom-scrollbar">
-        {(status === "strategizing" || status === "rendering") && progress && (
+        <div className="flex border-b border-[var(--border-color)] mb-6">
+          <button onClick={() => setActiveTab('workspace')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'workspace' ? 'text-[var(--text-primary)] border-b-2 border-indigo-500 bg-[var(--bg-tertiary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+            Workspace
+          </button>
+          <button onClick={() => setActiveTab('logs')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'logs' ? 'text-[var(--text-primary)] border-b-2 border-indigo-500 bg-[var(--bg-tertiary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+            Logs
+          </button>
+        </div>
+
+        {activeTab === 'logs' ? (
+          <div className="h-[500px] p-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl">
+            <LogViewer sessionId={sessionId} />
+          </div>
+        ) : (
+          <>
+            {(status === "strategizing" || status === "rendering") && progress && (
           <div className="bg-white border border-slate-200 rounded-xl p-5 mb-8 shadow-sm">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-bold text-slate-800">{progress.message}</span>
@@ -1124,6 +1176,8 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+          </>
+        )}
       </div>
 
       {/* ── Right Sidebar ────────────────────────────────── */}
@@ -1133,6 +1187,66 @@ export default function Dashboard() {
             <Settings2 className="w-5 h-5 text-indigo-500" />
             {selectedClip !== null ? "Advanced Settings" : "Global Defaults"}
           </h3>
+        </div>
+
+        <div className="space-y-4 p-4 border-b border-[var(--border-color)]">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Live Preview</h3>
+          <ClipPreview
+            headerText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].title : ''}
+            headerFont={style.headerFont}
+            captionText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].caption : ''}
+            captionFont={style.captionFont}
+            hookText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].hook : ''}
+            hookFont={style.hookFont}
+            bgStyle={style.bgStyle}
+          />
+        </div>
+
+        <div className="space-y-3 p-4 border-b border-[var(--border-color)]">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Typography</h3>
+          
+          <div className="space-y-1.5">
+            <label className="text-xs text-[var(--text-secondary)]">Header Font</label>
+            <select value={style.headerFont} onChange={e => setStyle(s => ({...s, headerFont: e.target.value}))} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+              <option value="Montserrat">Montserrat</option>
+              <option value="Bebas Neue">Bebas Neue</option>
+              <option value="Poppins">Poppins</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Inter">Inter</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs text-[var(--text-secondary)]">Caption Font</label>
+            <select value={style.captionFont} onChange={e => setStyle(s => ({...s, captionFont: e.target.value}))} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+              <option value="Montserrat">Montserrat</option>
+              <option value="Bebas Neue">Bebas Neue</option>
+              <option value="Poppins">Poppins</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Inter">Inter</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs text-[var(--text-secondary)]">Hook Font</label>
+            <select value={style.hookFont} onChange={e => setStyle(s => ({...s, hookFont: e.target.value}))} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+              <option value="Montserrat">Montserrat</option>
+              <option value="Bebas Neue">Bebas Neue</option>
+              <option value="Poppins">Poppins</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Inter">Inter</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-3 p-4 border-b border-[var(--border-color)]">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Background</h3>
+          <select value={style.bgStyle} onChange={e => setStyle(s => ({...s, bgStyle: e.target.value as any}))} className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+            <option value="black">Black</option>
+            <option value="brand">Brand Slate-900</option>
+            <option value="blur">Blur</option>
+            <option value="white">White</option>
+          </select>
         </div>
         
         {selectedClip !== null && results?.clips[selectedClip] ? (
@@ -1672,5 +1786,6 @@ export default function Dashboard() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }
