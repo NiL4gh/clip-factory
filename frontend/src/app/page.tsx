@@ -96,7 +96,7 @@ export default function Dashboard() {
   const [progress, setProgress] = useState<{percent: number; message: string; eta?: number | null} | null>(null);
 
   // Model selectors
-  const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3 8B Instruct Q4");
+  const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3.1 8B Instruct Q4");
   const [whisperLabel, setWhisperLabel] = useState("⭐ medium");
   const [catalogData, setCatalogData] = useState<{llm_catalog:{label:string}[], whisper_catalog:{label:string}[], bgm_genres:string[]}>({llm_catalog:[], whisper_catalog:[], bgm_genres:[]});
   const [renderSettings, setRenderSettings] = useState<Record<number, typeof DEFAULT_SETTINGS>>({});
@@ -1586,7 +1586,7 @@ export default function Dashboard() {
                     <input type="text" value={apiKeys.GEMINI_API_KEY} onChange={e => setApiKeys(prev => ({...prev, GEMINI_API_KEY: e.target.value}))} placeholder="AIzaSy..." className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-600 uppercase">Groq API Key (Llama 3)</label>
+                    <label className="text-xs font-bold text-slate-600 uppercase">Groq API Key (Llama 3.1)</label>
                     <input type="text" value={apiKeys.GROQ_API_KEY} onChange={e => setApiKeys(prev => ({...prev, GROQ_API_KEY: e.target.value}))} placeholder="gsk_..." className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" />
                   </div>
                   <div>

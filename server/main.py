@@ -198,7 +198,7 @@ _state = {
 
 class StrategizeRequest(BaseModel):
     url: str
-    llm_label: Optional[str] = "🦙 LLaMA 3 8B Instruct Q4"
+    llm_label: Optional[str] = "🦙 LLaMA 3.1 8B Instruct Q4"
     whisper_label: Optional[str] = "Medium (Fast/Accurate)"
     angle: Optional[str] = "standard"
 

@@ -176,7 +176,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
                 "response_format": {"type": "json_object"}
             },
             "extract_response": lambda res: res["choices"][0]["message"]["content"],
-            "fallback_model": "llama3-8b-8192",
+            "fallback_model": "llama-3.1-8b-instant",
             "auth_header": True
         },
         "openrouter": {
@@ -189,7 +189,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
                 "max_tokens": mx
             },
             "extract_response": lambda res: res["choices"][0]["message"]["content"],
-            "fallback_model": "meta-llama/llama-3-8b-instruct",
+            "fallback_model": "meta-llama/llama-3.1-8b-instruct",
             "auth_header": True
         },
         "glm": {
@@ -217,7 +217,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
                 "options": {"temperature": 0.4, "num_predict": mx}
             },
             "extract_response": lambda res: res["response"],
-            "fallback_model": "llama3",
+            "fallback_model": "llama3.1",
             "auth_header": False
         }
     }
