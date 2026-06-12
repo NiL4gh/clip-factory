@@ -378,14 +378,16 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
     )
     
     encoder = _get_best_encoder()
+    # Quality unified to CRF/QP 12 across all render stages (matches the main
+    # segment render) so output quality does not vary between passes.
     if encoder == "h264_nvenc":
-        enc_args = ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", "14", "-b:v", "8M", "-maxrate", "10M", "-bufsize", "20M"]
+        enc_args = ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", "12", "-b:v", "8M", "-maxrate", "10M", "-bufsize", "20M"]
     elif encoder == "h264_amf":
-        enc_args = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "14", "-qp_p", "14"]
+        enc_args = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "12", "-qp_p", "12"]
     elif encoder == "h264_qsv":
-        enc_args = ["-c:v", "h264_qsv", "-preset", "slower", "-global_quality", "14"]
+        enc_args = ["-c:v", "h264_qsv", "-preset", "slower", "-global_quality", "12"]
     else:
-        enc_args = ["-c:v", "libx264", "-preset", "slow", "-crf", "14"]
+        enc_args = ["-c:v", "libx264", "-preset", "slow", "-crf", "12"]
 
 
     trim_cmd = [
@@ -811,7 +813,7 @@ def _generate_text_card(output_path, text, duration, font_file, font_size=64, se
         "-map", "0:v", "-map", "1:a",
         "-vf", vf_filter,
         "-t", str(duration),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "16",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "12",
         "-profile:v", "high", "-pix_fmt", "yuv420p", "-x264opts", "keyint=30",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart",
