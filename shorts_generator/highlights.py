@@ -35,139 +35,6 @@ def analyze_past_performance(session_logs: list) -> dict:
     
     return insights
 
-def build_extraction_prompt(transcript: str) -> str:
-    return f'''You are an expert viral video editor. Analyze this transcript and extract the best clips.
-
-<transcript>
-{transcript}
-</transcript>
-
-For each clip, provide:
-1. start_time, end_time (seconds)
-2. hook (max 32 chars, scroll-stopper)
-3. header (descriptive title)
-4. caption (detailed description)
-5. sub-scores: hook_score (H), engagement (En), value (Va), shareability (Sh) — 0-100
-6. virality_score = weighted composite
-7. energy_level 1-10
-
-<reasoning>
-Explain your strategy in plain language:
-- Why is this hook effective? What emotion does it trigger?
-- Why these timestamps specifically?
-- What makes this shareable?
-- What pattern or technique are you using?
-</reasoning>
-
-Output strict JSON: {{"clips": [...]}}'''
-
-def validate_gemini_key() -> bool:
-    import os
-    return bool(os.getenv("GEMINI_API_KEY", "").strip())
-
-def call_gemini(prompt: str) -> str:
-    import os, urllib.request, json
-    key = os.getenv("GEMINI_API_KEY", "").strip()
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": f"System Instructions:\nYou are an elite AI director for TikTok, Instagram Reels, and YouTube Shorts. Output ONLY raw JSON arrays. No prose, no markdown, no explanation whatsoever.\n\nUser Request:\n{prompt}"}]}],
-        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4, "maxOutputTokens": 3000}
-    }
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-        return res["candidates"][0]["content"]["parts"][0]["text"]
-
-def call_local_llm(prompt: str) -> str:
-    import os
-    from shorts_generator.config import LLM_DIR, LLM_CATALOG
-    llm_path = ""
-    for entry in LLM_CATALOG:
-        if not entry["filename"].startswith("api:"):
-            cand = os.path.join(LLM_DIR, entry["filename"])
-            if os.path.exists(cand):
-                llm_path = cand
-                break
-    if not llm_path:
-        llm_path = os.path.join(LLM_DIR, LLM_CATALOG[0]["filename"])
-    
-    llm = _get_llm(llm_path)
-    content = f"You are an elite AI director for TikTok, Instagram Reels, and YouTube Shorts. Output ONLY raw JSON arrays. No prose, no markdown, no explanation whatsoever.\n\n{prompt}"
-    resp = llm.create_chat_completion(
-        messages=[{"role": "user", "content": content}],
-        temperature=0.40,
-        max_tokens=3000,
-    )
-    return resp["choices"][0]["message"]["content"].strip()
-
-def parse_json_response(response: str) -> list:
-    return _parse_json_loose(response)
-
-def extract_clips(video_path: str, transcript: str, session_id: str, model_pref: str = 'gemini'):
-    logger = get_logger(session_id)
-    logger.log_app('extraction', 'started', {
-        'video': str(video_path),
-        'transcript_words': len(transcript.split()),
-        'preferred_model': model_pref
-    })
-    ui_logger.info(f"Starting clip extraction for {video_path} using {model_pref}")
-    
-    prompt = build_extraction_prompt(transcript)
-    
-    try:
-        start = time.time()
-        
-        # Existing model selection logic preserved
-        if model_pref == 'gemini' and validate_gemini_key():
-            response = call_gemini(prompt)
-            model_used = 'gemini-2.5-flash'
-        else:
-            response = call_local_llm(prompt)
-            model_used = 'local-llama'
-        
-        latency = (time.time() - start) * 1000
-        
-        # Extract reasoning block
-        reasoning = None
-        if '<reasoning>' in response:
-            try:
-                reasoning = response.split('<reasoning>')[1].split('</reasoning>')[0].strip()
-            except:
-                reasoning = None
-        
-        logger.log_llm(
-            model=model_used,
-            prompt=prompt,
-            response=response,
-            reasoning=reasoning,
-            latency_ms=round(latency, 2)
-        )
-        ui_logger.success(f"LLM returned {len(response)} chars in {latency:.0f}ms")
-        
-        clips = parse_json_response(response)
-        avg_virality = sum(c.get('virality_score', 0) for c in clips) / len(clips) if clips else 0
-        
-        logger.log_app('extraction', 'completed', {
-            'clips_found': len(clips),
-            'avg_virality': round(avg_virality, 1),
-            'model_used': model_used
-        })
-        ui_logger.success(f"Extraction complete: {len(clips)} clips found (avg virality: {avg_virality:.1f})")
-        
-        return clips
-        
-    except Exception as e:
-        logger.log_app('extraction', 'failed', {}, error=str(e))
-        logger.log_llm(model_pref, prompt, '', error=str(e))
-        ui_logger.error(f"Extraction failed: {str(e)}")
-        raise
-
 def build_enhanced_prompt(prompt_text: str, session_id: str) -> str:
     logger = get_logger(session_id)
     past_logs = logger.get_entries(filter_type='llm', limit=50)
@@ -256,7 +123,7 @@ psychological trigger, use "curiosity_gap" as default.
 
 
 
-# â”€â”€ LLM Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- LLM Management -----------------------------------------------------------
 
 def _get_llm(llm_path: str, gpu_layers: int = 35):
     if isinstance(llm_path, str) and llm_path.startswith("api:"):
@@ -456,7 +323,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
     return []
 
 
-# â”€â”€ Transcript Formatting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Transcript Formatting ----------------------------------------------------
 
 def _build_text(transcript_data) -> tuple:
     """Returns (text_for_llm, raw_word_list)."""
@@ -639,7 +506,7 @@ def _format_duration(seconds: float) -> str:
     return f"{h}h {m}m"
 
 
-# â”€â”€ Estimated Clip Density â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Estimated Clip Density ---------------------------------------------------
 
 def estimate_clip_potential(word_timestamps: list) -> int:
     """Estimate how many clips a video could produce based on its duration."""
@@ -738,7 +605,7 @@ def detect_video_persona(transcript_data, llm_path: str, gpu_layers: int = 35, s
     }
 
 
-# â”€â”€ Pass 1: Topic Indexing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Pass 1: Topic Indexing ---------------------------------------------------
 
 def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, language: str = "", session_id: str = "global") -> list:
     """
@@ -976,7 +843,8 @@ def get_highlights(
         persona_addition = _INTERVIEW_PROMPT_ADDITION
 
     # Build the virality prompt with dynamic video duration, structured hook examples, and persona additions
-    virality_prompt = f"{_VIRALITY_BASE}\n\n{_VIRAL_HOOKS_EXAMPLES}\n\n{persona_addition}".format(video_duration_str=video_duration_str)
+    virality_prompt = f"{_VIRALITY_BASE}\n\n{_VIRAL_HOOKS_EXAMPLES}\n\n{persona_addition}"
+    virality_prompt += f"\n\nThe source video is approximately {video_duration_str} long."
     virality_prompt += f"\n\n{_TRIGGER_WORDS}\n\n{_HOOK_TYPES}"
 
     angle_instructions = ""
@@ -1001,7 +869,7 @@ def get_highlights(
         )
     virality_prompt += angle_instructions
     virality_prompt += (
-        "\n\nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n"
+        "\n\n=======================================================\n"
         "TIMESTAMP EXTRACTION RULES:\n"
         "- The 'start_timestamp' and 'end_timestamp' fields must be floating point numbers (in seconds).\n"
         "- They must correspond precisely to the bracketed timestamps (e.g., [12.5s]) inside the transcript.\n"
@@ -1035,7 +903,7 @@ fix. Simply return the corrected JSON.
 """
 
     if topics and len(topics) > 0:
-        # â”€â”€ Topic-Aware Extraction â”€â”€
+        # -- Topic-Aware Extraction --
         clips_per_topic = max(2, min(6, -(-num_clips // max(1, len(topics)))))
         
         for tidx, topic in enumerate(topics):
@@ -1162,7 +1030,7 @@ fix. Simply return the corrected JSON.
 
     ui_logger.log(f"LLM extracted {len(all_highlights)} raw candidates. Validating and scoring...")
 
-    # â”€â”€ Normalize LLM output into consistent format â”€â”€
+    # -- Normalize LLM output into consistent format --
     normalized = []
     for h in all_highlights:
         try:

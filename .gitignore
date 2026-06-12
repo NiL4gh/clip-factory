@@ -6,3 +6,12 @@ venv/
 output/
 *.mp4
 .DS_Store
+
+# Runtime / build artifacts (should never be committed)
+work/
+*.tsbuildinfo
+*.log
+.remember/
+.agent/
+.agents/
+frontend/.next/
