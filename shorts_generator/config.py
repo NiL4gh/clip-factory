@@ -11,24 +11,40 @@ DRIVE_MOUNTED = os.path.exists(DRIVE_ROOT)
 # Calculate Repo root dynamically
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# ── Paths ── Drive-first if available, fallback to local path ──────
+# ── Storage layout ────────────────────────────────────────────────
+# Everything persistent lives under BASE_DIR (on Google Drive when mounted, so it
+# survives the Colab runtime being recycled). One clean, navigable tree:
+#
+#   {BASE_DIR}/                         (Drive: MyDrive/clip_factory)
+#   ├── models/llm/                     large GGUF model files — KEEP, never auto-clean
+#   ├── models/whisper/                 cached Whisper weights
+#   ├── projects/<video_id>/            per-video working data (transcript, highlights, clips)
+#   ├── output/<video_id>/              final rendered clips shown in the gallery
+#   ├── sessions/<video_id>/            resumable strategy state (state.json)
+#   ├── logs/                           AI-debug logs (JSONL + text) — persisted for diagnosis
+#   └── cookies.txt / .env              YouTube cookies + optional API keys
+#
+# <video_id> is the same readable key everywhere (the YouTube id, e.g. ru44DngJYoA;
+# see cache.video_id). WORK_DIR stays INSIDE the cloned repo because the launcher
+# downloads fonts there (work/fonts) — a mismatch makes every caption font "missing".
 if IN_COLAB:
     if DRIVE_MOUNTED:
         BASE_DIR = os.getenv("BASE_DIR", f"{DRIVE_ROOT}/clip_factory")
     else:
         BASE_DIR = os.getenv("BASE_DIR", "/content/clip_factory")
-    # Keep work/ INSIDE the cloned repo so it matches where the Colab launcher
-    # downloads fonts (work/fonts) and writes logs (work/logs). A mismatch here
-    # makes every caption font "missing" at render time.
-    WORK_DIR     = os.getenv("WORK_DIR",     os.path.join(REPO_ROOT, "work"))
+    WORK_DIR = os.getenv("WORK_DIR", os.path.join(REPO_ROOT, "work"))
 else:
     BASE_DIR = os.getenv("BASE_DIR", REPO_ROOT)
-    WORK_DIR     = os.getenv("WORK_DIR",     os.path.join(REPO_ROOT, "work"))
+    WORK_DIR = os.getenv("WORK_DIR", os.path.join(REPO_ROOT, "work"))
 
-OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   f"{BASE_DIR}/output")
-LLM_DIR      = os.getenv("LLM_DIR",      f"{BASE_DIR}/models/llm")
-WHISPER_DIR  = os.getenv("WHISPER_DIR",  f"{BASE_DIR}/models/whisper")
-PROJECTS_DIR = os.getenv("PROJECTS_DIR", f"{BASE_DIR}/projects")
+# Persistent, large — must NOT move or models re-download (slow). Keep these paths stable.
+LLM_DIR      = os.getenv("LLM_DIR",      os.path.join(BASE_DIR, "models", "llm"))
+WHISPER_DIR  = os.getenv("WHISPER_DIR",  os.path.join(BASE_DIR, "models", "whisper"))
+# Per-video data, outputs, resumable sessions, and diagnosis logs.
+PROJECTS_DIR = os.getenv("PROJECTS_DIR", os.path.join(BASE_DIR, "projects"))
+OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   os.path.join(BASE_DIR, "output"))
+SESSIONS_DIR = os.getenv("SESSIONS_DIR", os.path.join(BASE_DIR, "sessions"))
+LOGS_DIR     = os.getenv("LOGS_DIR",     os.path.join(BASE_DIR, "logs"))
 COOKIE_PATH  = os.getenv("COOKIE_PATH",  os.path.join(BASE_DIR, "cookies.txt"))
 
 # Load .env file from BASE_DIR if it exists, otherwise default load_dotenv

@@ -25,7 +25,7 @@ if REPO_DIR not in sys.path:
 
 from shorts_generator.config import (
     BASE_DIR, WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR,
-    COOKIE_PATH, LLM_CATALOG, WHISPER_CATALOG, PROJECTS_DIR, AVAILABLE_FONTS,
+    COOKIE_PATH, LLM_CATALOG, WHISPER_CATALOG, PROJECTS_DIR, SESSIONS_DIR, AVAILABLE_FONTS,
 )
 from shorts_generator.downloader import download_video, download_srt
 from shorts_generator.transcriber import transcribe_audio, parse_srt_to_word_timestamps
@@ -398,11 +398,10 @@ async def websocket_logs(websocket: WebSocket):
         pass
 
 def _save_session(url: str):
-    import hashlib
     import json
     try:
-        video_id = hashlib.md5(url.strip().encode("utf-8")).hexdigest()
-        session_dir = os.path.join(BASE_DIR, "sessions", video_id)
+        video_id = cache.video_id(url)
+        session_dir = os.path.join(SESSIONS_DIR, video_id)
         os.makedirs(session_dir, exist_ok=True)
         session_file = os.path.join(session_dir, "state.json")
         
@@ -676,11 +675,10 @@ async def reset_state():
 async def get_results():
     if _state["is_strategizing"]:
         return {"status": "running"}
-    import hashlib
     video_id = ""
     url = _state.get("current_url")
     if url:
-        video_id = hashlib.md5(url.strip().encode("utf-8")).hexdigest()
+        video_id = cache.video_id(url)
     return {
         "status": "done",
         "current_url": url,
@@ -730,9 +728,8 @@ def _run_render(req: RenderRequest, task_id: str):
         
         all_sentences = [] # We would need to rebuild this from word_timestamps if needed, but for now we pass empty or rebuild.
         
-        import hashlib
         url = _state.get("current_url")
-        video_id = hashlib.md5(url.strip().encode("utf-8")).hexdigest() if url else ""
+        video_id = cache.video_id(url) if url else ""
 
         out = render_short(
             input_video=input_mp4, clip_data=clip,
@@ -832,9 +829,8 @@ def _run_bulk_render(req: BulkRenderRequest):
             else:
                 raise FileNotFoundError("Source video file is missing and no current URL is available in session state.")
 
-        import hashlib
         url = _state.get("current_url")
-        video_id = hashlib.md5(url.strip().encode("utf-8")).hexdigest() if url else ""
+        video_id = cache.video_id(url) if url else ""
 
         clips_dir = cache.get_clips_dir(_state["current_url"]) if _state["current_url"] else OUTPUT_DIR
         
@@ -1033,13 +1029,12 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
     import glob
     import zipfile
     import json
-    import hashlib
-    
+
     if project_only:
         clips_to_download = [clip for clip in _state.get("clips", []) if clip.get("rendered_filename")]
         files = []
         curr_url = _state.get("current_url")
-        curr_video_id = hashlib.md5(curr_url.strip().encode("utf-8")).hexdigest() if curr_url else ""
+        curr_video_id = cache.video_id(curr_url) if curr_url else ""
         for clip in clips_to_download:
             fn = clip.get("rendered_filename")
             p1 = os.path.join(OUTPUT_DIR, fn)
@@ -1102,20 +1097,18 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
 
 @app.post("/api/check_session")
 async def check_session(req: SessionRequest):
-    import hashlib
     url = req.url.strip()
-    video_id = hashlib.md5(url.encode("utf-8")).hexdigest()
-    session_file = os.path.join(BASE_DIR, "sessions", video_id, "state.json")
+    video_id = cache.video_id(url)
+    session_file = os.path.join(SESSIONS_DIR, video_id, "state.json")
     exists = os.path.exists(session_file)
     return {"exists": exists, "video_id": video_id}
 
 @app.post("/api/restore_session")
 async def restore_session(req: SessionRequest):
-    import hashlib
     import json
     url = req.url.strip()
-    video_id = hashlib.md5(url.encode("utf-8")).hexdigest()
-    session_file = os.path.join(BASE_DIR, "sessions", video_id, "state.json")
+    video_id = cache.video_id(url)
+    session_file = os.path.join(SESSIONS_DIR, video_id, "state.json")
     if not os.path.exists(session_file):
         raise HTTPException(status_code=404, detail="No session found for this URL.")
     try:
@@ -1191,15 +1184,14 @@ async def get_gallery(video_id: Optional[str] = None):
 async def export_csv():
     import csv
     import io
-    import hashlib
     from fastapi.responses import StreamingResponse
-    
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["filename", "clip title", "hook sentence", "virality score", "duration"])
-    
+
     curr_url = _state.get("current_url")
-    curr_video_id = hashlib.md5(curr_url.strip().encode("utf-8")).hexdigest() if curr_url else ""
+    curr_video_id = cache.video_id(curr_url) if curr_url else ""
     
     for clip in _state.get("clips", []):
         fn = clip.get("rendered_filename")
@@ -1226,13 +1218,12 @@ async def export_csv():
 async def clear_gallery(project_only: bool = False, video_id: Optional[str] = None):
     import glob
     import shutil
-    import hashlib
-    
+
     if project_only:
         current_filenames = {clip.get("rendered_filename") for clip in _state.get("clips", []) if clip.get("rendered_filename")}
         files = []
         curr_url = _state.get("current_url")
-        curr_video_id = hashlib.md5(curr_url.strip().encode("utf-8")).hexdigest() if curr_url else ""
+        curr_video_id = cache.video_id(curr_url) if curr_url else ""
         for fn in current_filenames:
             p1 = os.path.join(OUTPUT_DIR, fn)
             p2 = os.path.join(OUTPUT_DIR, curr_video_id, fn) if curr_video_id else p1
@@ -1339,7 +1330,7 @@ async def delete_model(filename: str):
 @app.delete("/api/sessions/{video_id}")
 async def delete_session(video_id: str):
     import shutil
-    session_dir = os.path.join(BASE_DIR, "sessions", video_id)
+    session_dir = os.path.join(SESSIONS_DIR, video_id)
     if not os.path.exists(session_dir):
         raise HTTPException(status_code=404, detail="Session not found")
     try:
@@ -1362,7 +1353,7 @@ async def get_storage_info():
                 })
                 
     sessions = []
-    sessions_dir = os.path.join(BASE_DIR, "sessions")
+    sessions_dir = SESSIONS_DIR
     if os.path.exists(sessions_dir):
         for f in os.listdir(sessions_dir):
             path = os.path.join(sessions_dir, f)

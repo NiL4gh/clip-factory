@@ -7,7 +7,14 @@ from typing import Any, Dict, List, Optional
 
 import sys
 
-LOG_DIR = Path(__file__).parent.parent / 'work' / 'logs'
+# Write the AI-debug logs to the Drive-persistent location so they survive the
+# Colab runtime being recycled (these exist so an AI can diagnose past runs).
+# Fall back to the repo's work/logs if config can't be imported.
+try:
+    from .config import LOGS_DIR as _LOGS_DIR
+    LOG_DIR = Path(_LOGS_DIR)
+except Exception:
+    LOG_DIR = Path(__file__).parent.parent / 'work' / 'logs'
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 def safe_print(message: str) -> None:

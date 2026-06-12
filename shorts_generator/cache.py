@@ -12,12 +12,18 @@ from datetime import datetime
 from .config import PROJECTS_DIR
 
 
-def _video_id(url: str) -> str:
-    """Extract YouTube video ID or hash arbitrary URLs."""
+def video_id(url: str) -> str:
+    """The single, readable storage key for a video, used by projects/, output/,
+    and sessions/ alike. Returns the YouTube id (e.g. ru44DngJYoA); for non-YouTube
+    URLs, a short hash. Keeping one scheme everywhere is what makes Drive navigable."""
     m = re.search(r'(?:v=|youtu\.be/|/shorts/)([\w-]{11})', url)
     if m:
         return m.group(1)
     return hashlib.md5(url.encode()).hexdigest()[:12]
+
+
+# Backwards-compatible alias (older internal callers used the underscore name).
+_video_id = video_id
 
 
 def project_dir(url: str) -> str:
