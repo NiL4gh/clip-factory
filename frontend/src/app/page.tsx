@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { ClipPreview } from '@/components/ClipPreview';
-import { LogViewer } from '@/components/LogViewer';
 import { DarkModeToggle } from '@/components/DarkModeToggle';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
@@ -66,25 +65,50 @@ function formatEta(seconds: number | undefined | null): string {
 /* ------------------------------------------------------------------ */
 /*  Main Dashboard                                                     */
 /* ------------------------------------------------------------------ */
+// Defaults match the "viral" preset so clips look intentional out of the box.
+// Fields not exposed in the simplified UI keep these sensible values and are still
+// sent to the backend (which supports all of them) — see STYLE_PRESETS below.
 const DEFAULT_SETTINGS = {
   face_center: true,
   magic_hook: true,
   remove_silence: true,
-  caption_style: "Classic",
+  caption_style: "Pop",
   caption_pos: "bottom",
   bg_music_genre: "None",
   bg_music_vol: 0.5,
-  bg_style: "black",
+  bg_style: "brand",
   layout_mode: "box",
   hook_position: "top",
   hook_display: "3s",
   hook_style: "BlackOnWhiteBox",
   show_outro: false,
   title_style: "Impact",
-  template: "default",
+  template: "viral",
   header_font: "bebas",
   caption_font: "bebas",
   hook_font: "bebas",
+};
+
+// Proven style combinations. Picking a preset writes the individual fields below
+// (the backend reads those, not `template`); `template` is remembered only so the
+// dropdown can show which preset is active. No more silent overwrites — each preset
+// states exactly what it changes.
+const STYLE_PRESETS: Record<string, { label: string; summary: string; changes: Record<string, string> }> = {
+  viral: {
+    label: "🔥 Viral",
+    summary: "Bold Pop captions, brand background, hook header for the first 3s. Best for talking-head clips.",
+    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "3s" },
+  },
+  clean: {
+    label: "✨ Clean",
+    summary: "Classic captions on a white background, simple boxed header, no hook timer.",
+    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "off" },
+  },
+  cinematic: {
+    label: "🎬 Cinematic",
+    summary: "Full-frame blurred background, cinematic captions, no header. Best for visual content.",
+    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off" },
+  },
 };
 
 const FONT_MAP: Record<string, string> = {
@@ -99,7 +123,6 @@ const FONT_MAP: Record<string, string> = {
 
 export default function Dashboard() {
   const [url, setUrl] = useState("");
-  const [activeTab, setActiveTab] = useState<'workspace' | 'logs'>('workspace');
   const sessionId = useMemo(() => crypto.randomUUID(), []);
   const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected'>('disconnected');
 
@@ -133,6 +156,7 @@ export default function Dashboard() {
   const [gallerySessionMode, setGallerySessionMode] = useState<"current" | "all">("current");
   const logEndRef = useRef<HTMLDivElement>(null);
   const [progress, setProgress] = useState<{percent: number; message: string; eta?: number | null} | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Model selectors
   const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3.1 8B Instruct Q4");
@@ -646,6 +670,19 @@ export default function Dashboard() {
 
   const activeSettings = selectedClip !== null ? getSettings(selectedClip) : globalSettings;
 
+  // Unified setter: writes to the selected clip if one is open, otherwise to the
+  // global defaults. Replaces the two duplicate settings panels with one.
+  const applySetting = (key: string, value: any) => {
+    if (selectedClip !== null) updateSetting(selectedClip, key, value);
+    else updateGlobalSetting(key, value);
+  };
+  const applyPreset = (presetKey: string) => {
+    applySetting("template", presetKey);
+    const preset = STYLE_PRESETS[presetKey];
+    if (!preset) return;
+    Object.entries(preset.changes).forEach(([k, v]) => applySetting(k, v));
+  };
+
   return (
     <ErrorBoundary>
       <div className="flex flex-col h-screen overflow-hidden bg-slate-50 text-slate-900">
@@ -721,10 +758,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Console
+        {/* System Log — live summary of what the app is doing (websocket-driven). */}
         <div className="absolute bottom-6 left-6 right-6 top-[340px] overflow-y-auto bg-black rounded-md p-2 border border-gray-800 custom-scrollbar">
           <div className="shrink-0 px-2 pt-1 pb-2 flex items-center gap-2 text-slate-400 font-sans uppercase tracking-widest font-bold text-[10px] border-b border-slate-800 mb-2">
-            <Activity className="w-3 h-3" /> System Logs
+            <Activity className="w-3 h-3" /> System Log
           </div>
             <div className="text-white font-mono text-xs leading-relaxed pb-4">
               {logs.length === 0 && <div className="text-slate-500 italic">No activity yet.</div>}
@@ -737,28 +774,10 @@ export default function Dashboard() {
               <div ref={logEndRef} />
             </div>
           </div>
-        */}
       </div>
 
       {/* ── Center Main Area ────────────────────────────────── */}
       <div className="flex-1 h-full overflow-y-auto p-8 relative custom-scrollbar">
-        <div className="flex border-b border-[var(--border-color)] mb-6">
-          <button onClick={() => setActiveTab('workspace')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'workspace' ? 'text-[var(--text-primary)] border-b-2 border-indigo-500 bg-[var(--bg-tertiary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-            Workspace
-          </button>
-          <button onClick={() => setActiveTab('logs')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'logs' ? 'text-[var(--text-primary)] border-b-2 border-indigo-500 bg-[var(--bg-tertiary)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-            Logs
-          </button>
-        </div>
-
-        {activeTab === 'logs' && (
-          <div className="h-[600px] p-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl">
-            <LogViewer sessionId={sessionId} apiBase={API_BASE} />
-          </div>
-        )}
-
-        {activeTab === 'workspace' && (
-          <>
             {(status === "strategizing" || status === "rendering") && progress && (
           <div className="bg-white border border-slate-200 rounded-xl p-5 mb-8 shadow-sm">
             <div className="flex justify-between items-center mb-2">
@@ -1191,8 +1210,6 @@ export default function Dashboard() {
             )}
           </div>
         </div>
-          </>
-        )}
       </div>
 
       {/* ── Right Sidebar ────────────────────────────────── */}
@@ -1204,243 +1221,140 @@ export default function Dashboard() {
           </h3>
         </div>
 
-        <div className="space-y-4 p-4 border-b border-[var(--border-color)]">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Live Preview</h3>
-          <ClipPreview
-            headerText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].title : ''}
-            headerFont={FONT_MAP[activeSettings.header_font] || 'Bebas Neue'}
-            captionText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].caption : ''}
-            captionFont={FONT_MAP[activeSettings.caption_font] || 'Bebas Neue'}
-            hookText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].hook : ''}
-            hookFont={FONT_MAP[activeSettings.hook_font] || 'Bebas Neue'}
-            bgStyle={(activeSettings.bg_style || 'black') as 'black' | 'brand' | 'blur' | 'white'}
-          />
+        <div className="p-4 border-b border-slate-200">
+          <button
+            onClick={() => setShowPreview(v => !v)}
+            className="w-full flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500 hover:text-indigo-600 transition-colors"
+          >
+            <span className="flex items-center gap-1.5"><Eye className="w-3.5 h-3.5" /> Preview</span>
+            {showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
+          </button>
+          {showPreview && (
+            <div className="mt-3">
+              <ClipPreview
+                headerText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].title : ''}
+                headerFont={FONT_MAP[activeSettings.header_font] || 'Bebas Neue'}
+                captionText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].caption : ''}
+                captionFont={FONT_MAP[activeSettings.caption_font] || 'Bebas Neue'}
+                hookText={selectedClip !== null && results?.clips[selectedClip] ? results.clips[selectedClip].hook : ''}
+                hookFont={FONT_MAP[activeSettings.hook_font] || 'Bebas Neue'}
+                bgStyle={(activeSettings.bg_style || 'black') as 'black' | 'brand' | 'blur' | 'white'}
+              />
+            </div>
+          )}
         </div>
-        
-        {selectedClip !== null && results?.clips[selectedClip] ? (
-          <div className="p-5 space-y-6 animate-fadeIn">
-            <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mb-2">
-              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block mb-1">Editing Clip</span>
-              <p className="text-xs font-bold text-indigo-900 line-clamp-1">{results.clips[selectedClip].title || "Selected Clip"}</p>
+
+        {/* Unified render settings — edits the selected clip, or all clips
+            (Global Defaults) when none is selected. One panel, no duplicates. */}
+        <div className="p-5 space-y-6 animate-fadeIn">
+          <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl">
+            <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block mb-1">
+              {selectedClip !== null ? "Editing Clip" : "Global Defaults"}
+            </span>
+            <p className="text-xs font-bold text-indigo-900 line-clamp-1">
+              {selectedClip !== null && results?.clips[selectedClip]
+                ? (results.clips[selectedClip].title || "Selected Clip")
+                : "Applies to all clips"}
+            </p>
+          </div>
+
+          <div className="flex-shrink-0 space-y-4">
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-bold text-slate-500">Style Preset</span>
+              <select
+                value={activeSettings.template || ""}
+                onChange={(e) => applyPreset(e.target.value)}
+                className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
+              >
+                <option value="">Custom</option>
+                {Object.entries(STYLE_PRESETS).map(([key, p]) => (
+                  <option key={key} value={key}>{p.label}</option>
+                ))}
+              </select>
+              {activeSettings.template && STYLE_PRESETS[activeSettings.template] && (
+                <p className="text-[10px] text-slate-500 mt-1">{STYLE_PRESETS[activeSettings.template].summary}</p>
+              )}
             </div>
 
-            <div className="flex-shrink-0 space-y-4">
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">UNIFIED TEMPLATE</span>
-                <select
-                  value={getSettings(selectedClip).template || ""}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    updateSetting(selectedClip, "template", val);
-                    if (val === "viral") {
-                      updateSetting(selectedClip, "layout_mode", "box");
-                      updateSetting(selectedClip, "bg_style", "brand");
-                      updateSetting(selectedClip, "caption_style", "Pop");
-                      updateSetting(selectedClip, "title_style", "Impact");
-                      updateSetting(selectedClip, "hook_display", "3s");
-                    } else if (val === "cinematic") {
-                      updateSetting(selectedClip, "layout_mode", "portrait");
-                      updateSetting(selectedClip, "bg_style", "blur");
-                      updateSetting(selectedClip, "caption_style", "CinematicSlate");
-                      updateSetting(selectedClip, "title_style", "None");
-                      updateSetting(selectedClip, "hook_display", "off");
-                    } else if (val === "clean") {
-                      updateSetting(selectedClip, "layout_mode", "box");
-                      updateSetting(selectedClip, "bg_style", "white");
-                      updateSetting(selectedClip, "caption_style", "Classic");
-                      updateSetting(selectedClip, "title_style", "Box");
-                      updateSetting(selectedClip, "hook_display", "full");
-                    } else if (val === "viral-italic") {
-                      updateSetting(selectedClip, "layout_mode", "box");
-                      updateSetting(selectedClip, "bg_style", "brand");
-                      updateSetting(selectedClip, "caption_style", "Pop");
-                      updateSetting(selectedClip, "title_style", "ViralItalic");
-                      updateSetting(selectedClip, "hook_display", "3s");
-                    }
-                  }}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
-                >
-                  <option value="">Choose a style template...</option>
-                  <option value="viral">🔥 Viral Focus (High Retention)</option>
-                  <option value="viral-italic">⚡ Viral Italic (Highlight text)</option>
-                  <option value="cinematic">🎬 Cinematic Immersive</option>
-                  <option value="clean">✨ Clean &amp; Minimal</option>
-                </select>
-                <p className="text-[10px] text-slate-500 mt-1">Overrides global template for this clip only.</p>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Music</span>
-                <select 
-                  value={getSettings(selectedClip).bg_music_genre}
-                  onChange={(e) => updateSetting(selectedClip, "bg_music_genre", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  <option value="None">None</option>
-                  {(catalogData.bgm_genres || []).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Caption Position</span>
-                <select 
-                  value={getSettings(selectedClip).caption_pos}
-                  onChange={(e) => updateSetting(selectedClip, "caption_pos", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  <option value="bottom">Inside Bottom</option>
-                  <option value="top">Inside Top</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Header Text Style</span>
-                <select
-                  value={getSettings(selectedClip).title_style || "Impact"}
-                  onChange={(e) => updateSetting(selectedClip, "title_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="Impact">Classic White with Outline</option>
-                  <option value="Box">White on Black Box</option>
-                  <option value="Yellow">Bold Yellow</option>
-                  <option value="Neon">Neon Purple Glow</option>
-                  <option value="Orange">Bold Orange</option>
-                  <option value="Suits">Clean Title Case</option>
-                  <option value="Meme">Black Text</option>
-                  <option value="ViralItalic">Bold Italic White</option>
-                  <option value="None">No Header</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Hook Text Style</span>
-                <select
-                  value={getSettings(selectedClip).hook_style || "BlackOnWhiteBox"}
-                  onChange={(e) => updateSetting(selectedClip, "hook_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="BlackOnWhiteBox">Black text on White box</option>
-                  <option value="YellowOnBlackBox">Yellow text on Black box</option>
-                  <option value="BoldWhite">Bold White Text</option>
-                  <option value="BrightYellow">Bright Yellow Text</option>
-                  <option value="None">Disabled</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Hook Display Duration</span>
-                <select
-                  value={getSettings(selectedClip).hook_display || "3s"}
-                  onChange={(e) => updateSetting(selectedClip, "hook_display", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="3s">First 3 Seconds</option>
-                  <option value="5s">First 5 Seconds</option>
-                  <option value="full">Entire Video</option>
-                  <option value="off">Off</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Background Style</span>
-                <select 
-                  value={getSettings(selectedClip).bg_style || "black"}
-                  onChange={(e) => updateSetting(selectedClip, "bg_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="black">Black</option>
-                  <option value="brand">Brand Slate-900</option>
-                  <option value="blur">Blur</option>
-                  <option value="white">White</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Header Font</span>
-                <select 
-                  value={getSettings(selectedClip).header_font || "bebas"}
-                  onChange={(e) => updateSetting(selectedClip, "header_font", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="bebas">Bebas Neue</option>
-                  <option value="montserrat">Montserrat</option>
-                  <option value="montserrat-black">Montserrat Black</option>
-                  <option value="inter">Inter</option>
-                  <option value="roboto">Roboto</option>
-                  <option value="poppins">Poppins</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Caption Font</span>
-                <select 
-                  value={getSettings(selectedClip).caption_font || "bebas"}
-                  onChange={(e) => updateSetting(selectedClip, "caption_font", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="bebas">Bebas Neue</option>
-                  <option value="montserrat">Montserrat</option>
-                  <option value="montserrat-black">Montserrat Black</option>
-                  <option value="inter">Inter</option>
-                  <option value="roboto">Roboto</option>
-                  <option value="poppins">Poppins</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Hook Font</span>
-                <select 
-                  value={getSettings(selectedClip).hook_font || "bebas"}
-                  onChange={(e) => updateSetting(selectedClip, "hook_font", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="bebas">Bebas Neue</option>
-                  <option value="montserrat">Montserrat</option>
-                  <option value="montserrat-black">Montserrat Black</option>
-                  <option value="inter">Inter</option>
-                  <option value="roboto">Roboto</option>
-                  <option value="poppins">Poppins</option>
-                </select>
-              </div>
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-500">Caption Style</span>
+              <select
+                value={activeSettings.caption_style}
+                onChange={(e) => applySetting("caption_style", e.target.value)}
+                className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+              >
+                <option value="Pop">Pop — white + magenta</option>
+                <option value="Classic">Classic — white + yellow</option>
+                <option value="Fire">Fire — yellow + orange</option>
+                <option value="Glow">Glow</option>
+                <option value="CinematicSlate">Cinematic</option>
+                <option value="Minimal">Minimal</option>
+                <option value="None">No captions</option>
+              </select>
             </div>
 
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Magic Hook
-                  </span>
-                </div>
-                <label className="setting-toggle">
-                  <input type="checkbox" checked={getSettings(selectedClip).magic_hook} onChange={(e) => updateSetting(selectedClip, "magic_hook", e.target.checked)} />
-                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                </label>
-              </div>
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Silences
-                  </span>
-                </div>
-                <label className="setting-toggle">
-                  <input type="checkbox" checked={getSettings(selectedClip).remove_silence} onChange={(e) => updateSetting(selectedClip, "remove_silence", e.target.checked)} />
-                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                </label>
-              </div>
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <p className="text-xs font-bold text-slate-800">Outro CTA</p>
-                  <p className="text-[9px] text-slate-500 font-semibold">Append call-to-action card</p>
-                </div>
-                <label className="setting-toggle">
-                  <input
-                    type="checkbox"
-                    checked={getSettings(selectedClip).show_outro ?? false}
-                    onChange={(e) => updateSetting(selectedClip, "show_outro", e.target.checked)}
-                  />
-                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                </label>
-              </div>
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-500">Caption Position</span>
+              <select
+                value={activeSettings.caption_pos}
+                onChange={(e) => applySetting("caption_pos", e.target.value)}
+                className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+              >
+                <option value="bottom">Inside Bottom</option>
+                <option value="top">Inside Top</option>
+              </select>
             </div>
 
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-500">Music</span>
+              <select
+                value={activeSettings.bg_music_genre}
+                onChange={(e) => applySetting("bg_music_genre", e.target.value)}
+                className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
+              >
+                <option value="None">None</option>
+                {(catalogData.bgm_genres || []).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Show Hook Header
+              </span>
+              <label className="setting-toggle">
+                <input
+                  type="checkbox"
+                  checked={(activeSettings.hook_display || "off") !== "off"}
+                  onChange={(e) => applySetting("hook_display", e.target.checked ? "3s" : "off")}
+                />
+                <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+              </label>
+            </div>
+            <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Silences
+              </span>
+              <label className="setting-toggle">
+                <input
+                  type="checkbox"
+                  checked={activeSettings.remove_silence}
+                  onChange={(e) => applySetting("remove_silence", e.target.checked)}
+                />
+                <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
+              </label>
+            </div>
+          </div>
+
+          {selectedClip !== null && results?.clips[selectedClip] && (
             <div className="pt-4 border-t border-slate-200">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <Type className="w-3.5 h-3.5 text-indigo-500" /> Transcript Cuts
                 </span>
-                <button 
-                  onClick={() => setExcludedSentences(prev => ({...prev, [selectedClip]: []}))} 
+                <button
+                  onClick={() => setExcludedSentences(prev => ({...prev, [selectedClip]: []}))}
                   className="text-[9px] text-indigo-500 hover:text-indigo-600 font-bold uppercase transition-colors"
                 >
                   Reset
@@ -1454,8 +1368,8 @@ export default function Dashboard() {
                       key={si}
                       onClick={() => toggleSentence(selectedClip, s)}
                       className={`text-left text-xs px-3 py-2 rounded-lg border transition-all ${
-                        isExcluded 
-                          ? "bg-rose-50 text-rose-500 border-rose-200 line-through opacity-75" 
+                        isExcluded
+                          ? "bg-rose-50 text-rose-500 border-rose-200 line-through opacity-75"
                           : "bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:shadow-sm"
                       }`}
                     >
@@ -1465,248 +1379,27 @@ export default function Dashboard() {
                 })}
               </div>
             </div>
+          )}
 
-            <button 
-              onClick={() => renderClip(selectedClip)} 
+          {selectedClip !== null ? (
+            <button
+              onClick={() => renderClip(selectedClip)}
               className="w-full mt-4 py-3.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 active:scale-[0.98]"
             >
               <Zap className="w-4 h-4 fill-white" />
               Render This Clip
             </button>
-          </div>
-        ) : (
-          /* GLOBAL RENDER DEFAULTS SIDEBAR PANEL */
-          <div className="p-5 space-y-6 animate-fadeIn">
-            <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mb-2">
-              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block mb-1">Global Configuration</span>
-              <p className="text-xs font-bold text-indigo-900">Bulk Render Defaults</p>
-            </div>
-
-            <div className="flex-shrink-0 space-y-4">
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500">UNIFIED TEMPLATE</span>
-                <select 
-                  value={globalSettings.template || ""}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    updateGlobalSetting("template", val);
-                    if (val === "viral") {
-                      updateGlobalSetting("layout_mode", "box");
-                      updateGlobalSetting("bg_style", "brand");
-                      updateGlobalSetting("caption_style", "Pop");
-                      updateGlobalSetting("title_style", "Impact");
-                      updateGlobalSetting("hook_display", "3s");
-                    } else if (val === "cinematic") {
-                      updateGlobalSetting("layout_mode", "portrait");
-                      updateGlobalSetting("bg_style", "blur");
-                      updateGlobalSetting("caption_style", "CinematicSlate");
-                      updateGlobalSetting("title_style", "None");
-                      updateGlobalSetting("hook_display", "off");
-                    } else if (val === "clean") {
-                      updateGlobalSetting("layout_mode", "box");
-                      updateGlobalSetting("bg_style", "white");
-                      updateGlobalSetting("caption_style", "Classic");
-                      updateGlobalSetting("title_style", "Box");
-                      updateGlobalSetting("hook_display", "full");
-                    } else if (val === "viral-italic") {
-                      updateGlobalSetting("layout_mode", "box");
-                      updateGlobalSetting("bg_style", "brand");
-                      updateGlobalSetting("caption_style", "Pop");
-                      updateGlobalSetting("title_style", "ViralItalic");
-                      updateGlobalSetting("hook_display", "3s");
-                    }
-                  }}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-bold"
-                >
-                  <option value="">Choose a style template...</option>
-                  <option value="viral">🔥 Viral Focus (High Retention)</option>
-                  <option value="cinematic">🎬 Cinematic Immersive</option>
-                  <option value="clean">✨ Clean & Minimal</option>
-                </select>
-                <p className="text-[10px] text-slate-500 mt-1">Automatically configures layout, background, fonts, and hook display to work perfectly together.</p>
-              </div>
-
-
-
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Music</span>
-                <select 
-                  value={globalSettings.bg_music_genre}
-                  onChange={(e) => updateGlobalSetting("bg_music_genre", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  <option value="None">None</option>
-                  {(catalogData.bgm_genres || []).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Caption Position</span>
-                <select 
-                  value={globalSettings.caption_pos}
-                  onChange={(e) => updateGlobalSetting("caption_pos", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none"
-                >
-                  <option value="bottom">Inside Bottom</option>
-                  <option value="top">Inside Top</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Header Text Style</span>
-                <select
-                  value={globalSettings.title_style || "Impact"}
-                  onChange={(e) => updateGlobalSetting("title_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="Impact">Classic White with Outline</option>
-                  <option value="Box">White on Black Box</option>
-                  <option value="Yellow">Bold Yellow</option>
-                  <option value="Neon">Neon Purple Glow</option>
-                  <option value="Orange">Bold Orange</option>
-                  <option value="Suits">Clean Title Case</option>
-                  <option value="Meme">Black Text</option>
-                  <option value="ViralItalic">Bold Italic White</option>
-                  <option value="None">No Header</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Hook Text Style</span>
-                <select
-                  value={globalSettings.hook_style || "BlackOnWhiteBox"}
-                  onChange={(e) => updateGlobalSetting("hook_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="BlackOnWhiteBox">Black text on White box</option>
-                  <option value="YellowOnBlackBox">Yellow text on Black box</option>
-                  <option value="BoldWhite">Bold White Text</option>
-                  <option value="BrightYellow">Bright Yellow Text</option>
-                  <option value="None">Disabled</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Hook Display Duration</span>
-                <select
-                  value={globalSettings.hook_display || "3s"}
-                  onChange={(e) => updateGlobalSetting("hook_display", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="3s">First 3 Seconds</option>
-                  <option value="5s">First 5 Seconds</option>
-                  <option value="full">Entire Video</option>
-                  <option value="off">Off</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Background Style</span>
-                <select 
-                  value={globalSettings.bg_style || "black"}
-                  onChange={(e) => updateGlobalSetting("bg_style", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="black">Black</option>
-                  <option value="brand">Brand Slate-900</option>
-                  <option value="blur">Blur</option>
-                  <option value="white">White</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Header Font</span>
-                <select 
-                  value={globalSettings.header_font || "bebas"}
-                  onChange={(e) => updateGlobalSetting("header_font", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="bebas">Bebas Neue</option>
-                  <option value="montserrat">Montserrat</option>
-                  <option value="montserrat-black">Montserrat Black</option>
-                  <option value="inter">Inter</option>
-                  <option value="roboto">Roboto</option>
-                  <option value="poppins">Poppins</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Caption Font</span>
-                <select 
-                  value={globalSettings.caption_font || "bebas"}
-                  onChange={(e) => updateGlobalSetting("caption_font", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="bebas">Bebas Neue</option>
-                  <option value="montserrat">Montserrat</option>
-                  <option value="montserrat-black">Montserrat Black</option>
-                  <option value="inter">Inter</option>
-                  <option value="roboto">Roboto</option>
-                  <option value="poppins">Poppins</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-500">Hook Font</span>
-                <select 
-                  value={globalSettings.hook_font || "bebas"}
-                  onChange={(e) => updateGlobalSetting("hook_font", e.target.value)}
-                  className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
-                >
-                  <option value="bebas">Bebas Neue</option>
-                  <option value="montserrat">Montserrat</option>
-                  <option value="montserrat-black">Montserrat Black</option>
-                  <option value="inter">Inter</option>
-                  <option value="roboto">Roboto</option>
-                  <option value="poppins">Poppins</option>
-                </select>
-              </div>
-            </div>
-            
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Magic Hook
-                  </span>
-                </div>
-                <label className="setting-toggle">
-                  <input type="checkbox" checked={globalSettings.magic_hook} onChange={(e) => updateGlobalSetting("magic_hook", e.target.checked)} />
-                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                </label>
-              </div>
-              {/* Hook display removed, controlled by template */}
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-indigo-500" /> Remove Silences
-                  </span>
-                </div>
-                <label className="setting-toggle">
-                  <input type="checkbox" checked={globalSettings.remove_silence} onChange={(e) => updateGlobalSetting("remove_silence", e.target.checked)} />
-                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                </label>
-              </div>
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <p className="text-xs font-bold text-slate-800">Outro CTA</p>
-                  <p className="text-[9px] text-slate-500 font-semibold">Append call-to-action card</p>
-                </div>
-                <label className="setting-toggle">
-                  <input
-                    type="checkbox"
-                    checked={globalSettings.show_outro ?? false}
-                    onChange={(e) => updateGlobalSetting("show_outro", e.target.checked)}
-                  />
-                  <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-                </label>
-              </div>
-            </div>
-
-            {results?.clips?.length > 0 && (
-              <button 
-                onClick={renderAllClips} 
-                disabled={status === "rendering" || status === "strategizing"}
-                className="w-full mt-4 py-3.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:bg-slate-300 transition-colors shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 active:scale-[0.98]"
-              >
-                <Sparkles className="w-4 h-4 fill-white" />
-                Render All Clips
-              </button>
-            )}
-          </div>
-        )}
+          ) : (results?.clips?.length > 0 && (
+            <button
+              onClick={renderAllClips}
+              disabled={status === "rendering" || status === "strategizing"}
+              className="w-full mt-4 py-3.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:bg-slate-300 transition-colors shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 active:scale-[0.98]"
+            >
+              <Sparkles className="w-4 h-4 fill-white" />
+              Render All Clips
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* PREMIUM GOOGLE DRIVE SESSION RESTORE MODAL */}

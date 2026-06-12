@@ -174,7 +174,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
                 reasoning = response_text.split("<reasoning>")[1].split("</reasoning>")[0].strip()
             except:
                 pass
-        logger.log_llm_interaction(
+        logger.log_llm(
             model=model_used,
             prompt=prompt,
             response=response_text or "",

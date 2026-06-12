@@ -46,8 +46,34 @@ class UIStreamLogger:
         }
         self._entries.append(entry)
         safe_print(f"[{timestamp}] {message}")
-        
-        payload = {"type": "log", "level": level, "message": message, "time": datetime.utcnow().isoformat()}
+
+        # Build a *typed* websocket payload the frontend can route.
+        # The pipeline emits progress as a plain string "PROGRESS|<pct>|<msg>[|<eta>]";
+        # everything else is a status/error line. Previously every payload was sent as
+        # type "log", which the dashboard ignored — that's why the progress bar and the
+        # in-app log both went silent.
+        msg = message.strip()
+        if msg.startswith("PROGRESS|"):
+            # Format: PROGRESS|<pct>|<message>[|<eta>]. The message itself may contain
+            # "|", and eta (if present) is always the trailing numeric field — so parse
+            # the percent off the front and the eta off the back, message is the middle.
+            parts = msg.split("|")
+            percent = int(parts[1]) if len(parts) > 1 and parts[1].strip().lstrip("-").isdigit() else 0
+            rest = parts[2:]
+            eta = None
+            if len(rest) > 1 and rest[-1].strip().isdigit():
+                eta = int(rest[-1].strip())
+                rest = rest[:-1]
+            payload = {
+                "type": "progress",
+                "percent": percent,
+                "message": "|".join(rest),
+                "eta": eta,
+            }
+        elif level == "error":
+            payload = {"type": "error", "message": message}
+        else:
+            payload = {"type": "status", "level": level, "message": message, "time": datetime.utcnow().isoformat()}
         for ws in self.clients[:]:
             try:
                 asyncio.create_task(ws.send_json(payload))
