@@ -1,91 +1,99 @@
-# ClipFactory.ai — v2.5-PRO-STRATEGY AI Video Director
+# ClipFactory.ai
 
-> Turn long-form YouTube videos into viral 9:16 Shorts, Reels & TikToks — **Free, Local or Cloud AI, no watermarks, no subscription fees.**
+Turn long-form YouTube videos (podcasts, interviews, debates) into vertical 9:16 short-form
+clips for TikTok, Reels, and YouTube Shorts. It downloads a video, transcribes it, finds the most
+engaging moments with an LLM, and renders captioned clips — designed to run on **Google Colab**
+with a GPU.
 
-ClipFactory.ai is a production-grade, self-hosted AI video repurposing platform custom-built for high-volume creator clipping. It features a dual-server architecture with a **FastAPI** backend and a premium **Next.js** dashboard dashboard interface.
-
----
-
-## ✨ Features
-
-| Feature | Description |
-|---|---|
-| ♊ **Gemini & Local LLM** | Google Gemini 2.5 Flash as preferred director with active API key validation, falling back to local LLaMA 3 & Gemma 2 to prevent any failure. |
-| 📊 **Sub-Score Decomposition** | Decomposes clip potential into Hook (H), Engagement (En), Value (Va), and Shareability (Sh) sub-scores in prompt and UI. |
-| 🗂️ **Hook-Strength Sorting** | Sort results instantly by composite Virality Score, Energy Score, Duration, or Hook Score. |
-| 🎨 **1:1 Center-Cropped Layout** | Center-crops horizontal videos to 1:1 and displays them over beautiful customizable backgrounds (Black, Brand Slate-900, Blur, or dark smooth Gradient). |
-| 🪝 **Opaque Magic Hooks** | Top-center aligned, viral Opus/CapCut-style scroll-stopper hooks with thick strokes and drop shadows wrapped to 32 characters. |
-| ⏱️ **Zero-Collision Timing** | Mutual exclusivity timing: Magic Hook displays for the first 3s (fading out), then hands off to the Header title at 3.5s to prevent any overlaps. |
-| 📝 **Transcript Cuts Editor** | Precise word-level cutting UI — click sentence chips to exclude words or phrases from the final rendering pass. |
-| ⚡ **Librosa Energy Peaks** | Audio amplitude energy scoring combining RMS peak analysis (40%) and LLM virality (60%) into a composite score. |
-| 🎚️ **Dynamic Silence Cuts** | Dynamically evaluates relative RMS sound energy to compute the perfect noise threshold decibel value in FFmpeg `silencedetect` for jump-cuts. |
-| 🚀 **Hardware GPU Acceleration** | Automatic startup probes to prioritize NVENC, AMF, or QSV GPU rendering with quality rate parameters matching libx264 CRF 16 parity. |
-| 💾 **Drive Auto-Detect** | Launcher auto-detects Drive native browser mount or defaults to ephemeral storage without Python popup authorization popups. |
-
----
-# ClipFactory.ai — v2.5-PRO-STRATEGY AI Video Director
-
-> Turn long-form YouTube videos into viral 9:16 Shorts, Reels & TikToks — **Free, Local or Cloud AI, no watermarks, no subscription fees.**
-
-ClipFactory.ai is a production-grade, self-hosted AI video repurposing platform custom-built for high-volume creator clipping. It features a dual-server architecture with a **FastAPI** backend and a premium **Next.js** dashboard interface.
+> **Status:** personal single-operator tool, actively being stabilized. It is not a polished SaaS;
+> expect rough edges. The honest, code-verified status notes live in the project's context folder
+> (`AUDIT.md`), not in this repo.
 
 ---
 
-## ✨ Features
+## How it works (pipeline)
 
-| Feature | Description |
-|---|---|
-| ♊ **Gemini & Local LLM** | Google Gemini 2.5 Flash as preferred director with active API key validation, falling back to local LLaMA 3 & Gemma 2 to prevent any failure. |
-| 📊 **Sub-Score Decomposition** | Decomposes clip potential into Hook (H), Engagement (En), Value (Va), and Shareability (Sh) sub-scores in prompt and UI. |
-| 🗂️ **Hook-Strength Sorting** | Sort results instantly by composite Virality Score, Energy Score, Duration, or Hook Score. |
-| 🎨 **1:1 Center-Cropped Layout** | Center-crops horizontal videos to 1:1 and displays them over beautiful customizable backgrounds (Black, Brand Slate-900, Blur, or dark smooth Gradient). |
-| 🪝 **Opaque Magic Hooks** | Top-center aligned, viral Opus/CapCut-style scroll-stopper hooks with thick strokes and drop shadows wrapped to 32 characters. |
-| ⏱️ **Zero-Collision Timing** | Mutual exclusivity timing: Magic Hook displays for the first 3s (fading out), then hands off to the Header title at 3.5s to prevent any overlaps. |
-| 📝 **Transcript Cuts Editor** | Precise word-level cutting UI — click sentence chips to exclude words or phrases from the final rendering pass. |
-| ⚡ **Librosa Energy Peaks** | Audio amplitude energy scoring combining RMS peak analysis (40%) and LLM virality (60%) into a composite score. |
-| 🎚️ **Dynamic Silence Cuts** | Dynamically evaluates relative RMS sound energy to compute the perfect noise threshold decibel value in FFmpeg `silencedetect` for jump-cuts. |
-| 🚀 **Hardware GPU Acceleration** | Automatic startup probes to prioritize NVENC, AMF, or QSV GPU rendering with quality rate parameters matching libx264 CRF 16 parity. |
-| 💾 **Drive Auto-Detect** | Launcher auto-detects Drive native browser mount or defaults to ephemeral storage without Python popup authorization popups. |
+1. **Download** — `yt-dlp` pulls the source video (uses `cookies.txt` for authenticated access).
+2. **Transcribe** — `faster-whisper` produces word-level timestamps.
+3. **Energy analysis** — `librosa` finds high-energy audio peaks (laughter, excitement).
+4. **Extract (3 passes)** — an LLM detects persona → topics → clips. Uses **Google Gemini** by
+   default and automatically **falls back to a local LLM** (LLaMA via `llama-cpp-python`) when no
+   API key is set. Other providers (Groq, OpenRouter, GLM, Ollama) are supported as fallbacks.
+5. **Render** — `ffmpeg` center-crops to a 1:1 frame on a styled background, burns in ASS captions
+   and a hook header, removes dead-air silences, and mixes optional royalty-free background music.
+
+The frontend is a **Next.js dashboard** exported as static files and served by the FastAPI backend.
 
 ---
 
-## 🚀 Quick Start (Google Colab)
+## Quick start (Google Colab)
 
-1. Open `colab_launcher.ipynb` in Google Colab.
-2. Set Runtime to **T4 GPU** (Runtime > Change runtime type > T4 GPU).
-3. **CELL 0 (Drive Mount)**: Mount Google Drive securely inside the Colab browser UI (click the Folder icon on the far left, then click the Google Drive logo) to avoid python authorization popup prompts. 
-4. **CELL 1 (Setup)**: Click to execute. Installs JS runtime, Montserrat fonts, Python dependencies, and builds the static Next.js export (~3 min).
-5. **CELL 2 (Launch)**: Starts the backend and dashboard, maps the Localtunnel automatically, and prints your dashboard URL.
-6. Open the printed **Dashboard URL** and start clipping!
+1. Open **`colab_launcher.ipynb`** in Google Colab.
+2. Set the runtime to a **GPU** (Runtime → Change runtime type → T4 GPU).
+3. **Cell 0** — mount Google Drive (for persistent models/projects).
+4. **Cell 1** — setup: installs Node + Deno, clones this repo (`main` branch), downloads fonts,
+   installs Python deps and `llama-cpp-python`, and builds the dashboard (~3 min).
+5. **Cell 2** — launch: starts the FastAPI backend and opens a public **Localtunnel** URL.
+6. Open the printed **Dashboard URL** and paste a YouTube link.
+
+**API keys are optional.** Add `GEMINI_API_KEY` (or others) as a Colab Secret or in Cell 2 for the
+best extraction quality; otherwise the local LLM is used.
 
 ---
 
-## 🛠️ Architecture
+## Project structure
 
 ```
-server/
-  main.py                       ← FastAPI backend (WebSocket logging, Media serving, GPU probes)
-frontend/
-  src/app/page.tsx              ← Next.js Dashboard UI (Workspace + Netflix Gallery)
-shorts_generator/
-  highlights.py                 ← Three-pass extraction, persona detection, sub-scores
-  clipper.py                    ← FFmpeg engine (1:1 crop, ASS dynamic subtitles, SFX, BGM)
-  enhancer.py                   ← royalty-free background music sidechain swelling
-  audio_analyzer.py             ← Librosa-based RMS sound energy extraction
-  config.py                     ← Global paths and model catalogs
+clip-factory/
+├── colab_launcher.ipynb     # Entry point: sets up and launches the app on Colab
+├── requirements.txt         # Python dependencies (ffmpeg is a system dep, not pip)
+├── .env.example             # Copy to .env; all vars optional
+├── cookies.txt              # YouTube cookies for yt-dlp (throwaway account)
+│
+├── server/
+│   └── main.py              # FastAPI backend: API routes, WebSocket logs, serves frontend
+│
+├── shorts_generator/        # The pipeline (imported by server/main.py)
+│   ├── config.py            # Paths, model catalog, font map
+│   ├── downloader.py        # yt-dlp video/subtitle download
+│   ├── transcriber.py       # faster-whisper transcription
+│   ├── audio_analyzer.py    # librosa RMS energy peaks
+│   ├── highlights.py        # 3-pass LLM extraction (persona → topics → clips)
+│   ├── clipper.py           # ffmpeg render: crop, captions, silence removal
+│   ├── enhancer.py          # background-music mixing
+│   ├── music_fetcher.py     # royalty-free BGM fetch
+│   ├── media.py             # optional B-roll image fetch
+│   ├── cache.py             # per-video JSON cache
+│   └── logger.py            # WebSocket + file logging
+│
+└── frontend/                # Next.js dashboard (static export -> served by FastAPI)
+    └── src/app/page.tsx     # Main dashboard UI
 ```
 
 ---
 
-## ⚠️ Requirements
+## Requirements
 
-- **Python 3.9+** (Fully compatible with Python 3.9.5)
-- **Node.js 20+** (for building the dashboard)
-- **FFmpeg** (installed by default in Colab)
-- **Localtunnel** (automatically handled in launcher, zero-setup required)
+- **Python 3.9+**
+- **Node.js 20+** (to build the dashboard)
+- **ffmpeg** (pre-installed on Colab; required for all rendering)
+- A **GPU** is strongly recommended (Whisper + local LLM + encoding are slow on CPU)
+
+## Local development (not the primary path)
+
+The app targets Colab, but you can import-check it locally:
+
+```bash
+cd clip-factory
+pip install -r requirements.txt        # heavy GPU deps may be skipped locally
+cd frontend && npm install && npm run build   # builds the dashboard
+cd .. && uvicorn server.main:app --port 8000  # starts the backend
+```
 
 ---
 
-## 🤝 Acknowledgements
+## Configuration
 
-Designed for creators who need high-volume, professional-grade output without the monthly SaaS subscription fees. Built with ❤️ using Next.js, FastAPI, Llama 3, Whisper, and Gemini.
+Copy `.env.example` to `.env` and fill in any LLM API keys you have (all optional). See that file
+for the full list. On Colab, prefer Colab Secrets — the launcher wires `GEMINI_API_KEY` into `.env`
+for you.

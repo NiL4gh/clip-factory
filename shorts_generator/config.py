@@ -17,7 +17,10 @@ if IN_COLAB:
         BASE_DIR = os.getenv("BASE_DIR", f"{DRIVE_ROOT}/clip_factory")
     else:
         BASE_DIR = os.getenv("BASE_DIR", "/content/clip_factory")
-    WORK_DIR     = os.getenv("WORK_DIR",     "/content/work")
+    # Keep work/ INSIDE the cloned repo so it matches where the Colab launcher
+    # downloads fonts (work/fonts) and writes logs (work/logs). A mismatch here
+    # makes every caption font "missing" at render time.
+    WORK_DIR     = os.getenv("WORK_DIR",     os.path.join(REPO_ROOT, "work"))
 else:
     BASE_DIR = os.getenv("BASE_DIR", REPO_ROOT)
     WORK_DIR     = os.getenv("WORK_DIR",     os.path.join(REPO_ROOT, "work"))

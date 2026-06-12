@@ -1,31 +1,39 @@
-# Core
-requests>=2.31
-python-dotenv>=1.0
-yt-dlp
-curl-cffi>=0.5.10
-huggingface-hub>=0.20
+# ClipFactory.ai — Python dependencies
+# Target: Python 3.9+ on Google Colab (T4/A100 GPU).
+# Only packages actually imported by the code are listed here.
+# (Verified against the source — no gradio/mediapipe/requests: they are not used.)
 
-# UI
-gradio>=4.0
-
-# Video
-opencv-python-headless>=4.8
-
-# Transcription (GPU-accelerated)
-faster-whisper>=1.0
-torch>=2.0
-
-# Media fetching (B-Roll images via DuckDuckGo)
-duckduckgo-search>=5.0
-
-# Face tracking (replaces legacy Haar Cascades)
-mediapipe>=0.10
-
-# LLM — installed separately in setup.sh with CUDA flags
-# llama-cpp-python
-# Audio Analysis
-librosa>=0.10
-
-# Backend API
+# ── Backend API ──────────────────────────────────────────────
 fastapi>=0.100.0
 uvicorn>=0.23.0
+pydantic>=2.0            # request/response models in server/main.py
+python-dotenv>=1.0       # loads .env (config.py)
+
+# ── Download (YouTube) ───────────────────────────────────────
+yt-dlp                   # invoked as a CLI by shorts_generator/downloader.py
+curl-cffi>=0.5.10        # browser impersonation backend used by yt-dlp
+
+# ── Transcription (GPU) ──────────────────────────────────────
+faster-whisper>=1.0      # word-level timestamps (transcriber.py)
+torch>=2.0               # CUDA backend for faster-whisper
+
+# ── Audio + video processing ─────────────────────────────────
+librosa>=0.10            # RMS energy analysis (audio_analyzer.py, clipper.py)
+numpy>=1.24              # used directly by audio_analyzer.py and clipper.py
+opencv-python-headless>=4.8   # cv2 — frame/probe work in clipper.py
+
+# ── Models / assets ──────────────────────────────────────────
+huggingface-hub>=0.20    # downloads Whisper + GGUF LLM weights (server/main.py)
+
+# ── Optional: B-roll image search (lazy import in media.py) ──
+# Safe to omit if you don't use B-roll; media.py imports it inside a try block.
+duckduckgo-search>=5.0
+
+# ── Local LLM (install SEPARATELY with CUDA wheels) ──────────
+# The Colab launcher installs this with the right CUDA build:
+#   pip install llama-cpp-python --prefer-binary \
+#       --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+# Do NOT add a plain `llama-cpp-python` line here — it would build from source on CPU.
+
+# ── System dependency (NOT pip-installable) ─────────────────
+# ffmpeg  — required for all rendering. Pre-installed on Colab.
