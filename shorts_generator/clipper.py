@@ -616,132 +616,20 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Main,{caption_font_name},{font_size},{p['main']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
         f"Style: Highlight,{caption_font_name},{font_size},{p['high']},&H000000FF,&H00000000,{back_color},{bold},0,0,0,100,100,1,0,{border_style},{outline},{shadow},{align},40,40,{margin_v},1",
-        f"Style: Header,{header_font_name},130,{ts['PrimaryColour']}&,&H000000FF,{ts['OutlineColour']}&,{ts['BackColour']}&,{bold},{h_italic},0,0,100,100,0,0,{ts['BorderStyle']},{ts['Outline']},{ts['Shadow']},8,40,40,240,1"
     ]
-    
-    if kwargs.get("magic_hook_text") and hook_style != "None":
-        hook_pos = kwargs.get("hook_position", "top").lower()
-        if hook_pos == "bottom":
-            hook_align = 2
-            hook_margin = 60
-        else:
-            hook_align = 8
-            hook_margin = 120
-        hs = HOOK_STYLE_PRESETS.get(hook_style, HOOK_STYLE_PRESETS["BlackOnWhiteBox"])
-        lines.append(f"Style: MagicHook,{hook_font_name},100,{hs['PrimaryColour']}&,&H000000FF,{hs['OutlineColour']}&,{hs['BackColour']}&,1,0,0,0,100,100,0,0,{hs['BorderStyle']},{hs['Outline']},{hs['Shadow']},{hook_align},40,40,{hook_margin},1")
+    # Header and MagicHook removed from ASS — they are now Pillow PNG overlays
 
     lines.extend([
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
     ])
-    
+
     def fmt_time(secs):
         h = int(secs // 3600); m = int((secs % 3600) // 60); s = int(secs % 60); cs = int((secs - int(secs)) * 100)
         return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
     seg_duration = max(0, words[-1]['end'] - time_offset) if words else 0.0
-
-    if kwargs.get("magic_hook_text") and hook_style != "None":
-        hook_display = kwargs.get("hook_display", "3s")
-        if hook_display != "off":
-            hook_text = kwargs['magic_hook_text']
-            words_list = hook_text.split()
-            current_line = ""
-            wrapped_lines = []
-            for word in words_list:
-                if len(current_line) + len(word) + (1 if current_line else 0) > 16:
-                    wrapped_lines.append(current_line)
-                    current_line = word
-                else:
-                    if current_line:
-                        current_line += " " + word
-                    else:
-                        current_line = word
-            if current_line:
-                wrapped_lines.append(current_line)
-            wrapped_text = "\\N".join(wrapped_lines).upper()
-            
-            if hook_display == "3s":
-                hook_end_time = min(3.0, seg_duration)
-                wrapped_text_tagged = r"{\fad(0,500)}" + wrapped_text
-                lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(hook_end_time + 0.5)},MagicHook,,0,0,0,,{wrapped_text_tagged}")
-            elif hook_display == "5s":
-                hook_end_time = min(5.0, seg_duration)
-                wrapped_text_tagged = r"{\fad(0,500)}" + wrapped_text
-                lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(hook_end_time + 0.5)},MagicHook,,0,0,0,,{wrapped_text_tagged}")
-            else:  # "full"
-                lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},MagicHook,,0,0,0,,{wrapped_text}")
-    if title_style != "None" and kwargs.get("header_text") and seg_duration > 0:
-        if ts.get("casing", "upper") == "title":
-            header_text = kwargs["header_text"].strip().title()
-        else:
-            header_text = kwargs["header_text"].strip().upper()
-        # Wrap header text to 2 lines if it is too long (e.g. > 14 characters)
-        words_list = header_text.split()
-        current_line = []
-        current_len = 0
-        wrapped_lines_words = []
-        for word in words_list:
-            if current_len + len(word) + (1 if current_line else 0) > 14:
-                wrapped_lines_words.append(current_line)
-                current_line = [word]
-                current_len = len(word)
-            else:
-                current_line.append(word)
-                current_len += len(word) + (1 if len(current_line) > 1 else 0)
-        if current_line:
-            wrapped_lines_words.append(current_line)
-            
-        default_color = ts['PrimaryColour'].replace("&", "")
-        if default_color.endswith(";"):  # safety cleanup
-            default_color = default_color.rstrip(";")
-
-        wrapped_lines = []
-        global_idx = 0
-        active_color = default_color
-        for line_words in wrapped_lines_words:
-            line_colorized = []
-            for word in line_words:
-                if title_style == "Suits":
-                    if global_idx in [0, 1]:
-                        target_color = "&HFFFFFF"
-                    elif global_idx in [2, 3]:
-                        target_color = "&H33FF33"
-                    elif global_idx == 4:
-                        target_color = "&HFFFFFF"
-                    else:
-                        target_color = "&H00FFFF"
-                elif _is_header_highlight_target(word):
-                    target_color = "&H00FFFF"  # gold/yellow
-                else:
-                    target_color = default_color
-
-                if target_color != active_color:
-                    line_colorized.append(f"{{\\c{target_color}&}}{word}")
-                    active_color = target_color
-                else:
-                    line_colorized.append(word)
-                global_idx += 1
-            wrapped_lines.append(" ".join(line_colorized))
-        wrapped_header = "\\N".join(wrapped_lines)
-        
-        # Avoid overlapping: delay header start if 3s/5s magic hook is active, or omit if full duration
-        if kwargs.get("magic_hook_text") and hook_style != "None":
-            hook_display = kwargs.get("hook_display", "full")
-            if hook_display == "3s":
-                header_start = 3.5
-                if seg_duration > header_start:
-                    lines.append(f"Dialogue: 0,{fmt_time(header_start)},{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
-            elif hook_display == "5s":
-                header_start = 5.5
-                if seg_duration > header_start:
-                    lines.append(f"Dialogue: 0,{fmt_time(header_start)},{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
-            elif hook_display == "off":
-                lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
-            # If hook_display == "full", we completely hide the Header so it never competes for the same top space
-        else:
-            lines.append(f"Dialogue: 0,0:00:00.00,{fmt_time(seg_duration)},Header,,0,0,0,,{wrapped_header}")
 
     chunks = []
     curr = []
