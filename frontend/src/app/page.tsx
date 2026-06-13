@@ -1294,6 +1294,28 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-500">Font</span>
+              <select
+                value={activeSettings.caption_font || "bebas"}
+                onChange={(e) => {
+                  // One picker drives all three text elements (header, captions, hook)
+                  // so the whole clip uses a consistent typeface.
+                  applySetting("header_font", e.target.value);
+                  applySetting("caption_font", e.target.value);
+                  applySetting("hook_font", e.target.value);
+                }}
+                className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+              >
+                <option value="bebas">Bebas Neue — tall condensed (default)</option>
+                <option value="montserrat">Montserrat — clean bold</option>
+                <option value="montserrat-black">Montserrat Black — heavy</option>
+                <option value="inter">Inter — modern sans</option>
+                <option value="poppins">Poppins — rounded geometric</option>
+                <option value="roboto">Roboto — neutral sans</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
               <span className="text-xs font-bold text-slate-500">Caption Position</span>
               <select
                 value={activeSettings.caption_pos}

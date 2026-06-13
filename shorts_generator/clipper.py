@@ -1044,7 +1044,10 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                           header_font=header_font, caption_font=caption_font, hook_font=hook_font)
             safe_ass = ass_path.replace("\\", "/").replace(":", "\\:")
             next_v = f"v{input_idx}_ass"
-            safe_fonts_dir = FONT_DIR.replace("\\", "/").replace(":", "\\:")
+            # FONT_DIR is a pathlib.Path (config.py); Path.replace() means "move file",
+            # not string replace — calling it with 2 args crashed every captioned render.
+            # Cast to str first, exactly like _FONT_DIR above.
+            safe_fonts_dir = str(FONT_DIR).replace("\\", "/").replace(":", "\\:")
             filter_complex += f"[{current_v}]ass='{safe_ass}':fontsdir='{safe_fonts_dir}'[{next_v}];"
             current_v = next_v
             input_idx += 1
@@ -1115,6 +1118,18 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         ])
 
         ui_logger.log(f"PROGRESS|0|Rendering segment {idx+1}...")
+        # Persist this composition step to the on-disk logs. Previously this raw
+        # Popen call only streamed to the WebSocket, so when it failed the real
+        # ffmpeg error never reached the Drive logs — the render looked like it
+        # "vanished" mid-run. Now every failure is captured for diagnosis.
+        seg_logger = get_logger(session_id)
+        seg_logger.log_app_event(
+            'segment_render', 'ffmpeg_started',
+            {'command': ' '.join(cmd), 'clip': out_id, 'segment': idx,
+             'duration_sec': round(seg_et - seg_st, 2)}
+        )
+        import time as _t_render
+        _seg_start = _t_render.time()
         try:
             proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True)
             import re as _re_ffmpeg
@@ -1132,10 +1147,21 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                         ui_logger.log(f"PROGRESS|{pct}|Rendering {pct}%...")
                         last_pct = pct
             proc.wait()
+            full_stderr = "".join(stderr_lines)
+            seg_logger.log_ffmpeg(
+                command=' '.join(cmd), return_code=proc.returncode,
+                stdout="", stderr=full_stderr,
+                duration_sec=_t_render.time() - _seg_start
+            )
             if proc.returncode != 0:
                 err_msg = "".join(stderr_lines[-20:])  # last 20 lines of stderr
+                seg_logger.log_app_event(
+                    'segment_render', 'failed', {'clip': out_id, 'segment': idx},
+                    error=full_stderr[-1500:]
+                )
                 ui_logger.log(f"FFmpeg error details:\n{err_msg}")
                 raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=err_msg)
+            seg_logger.log_app_event('segment_render', 'completed', {'clip': out_id, 'segment': idx})
             ui_logger.log(f"PROGRESS|100|Rendering 100%...")
         except subprocess.CalledProcessError as e:
             ui_logger.log(f"FFmpeg error: {e.stderr[-500:] if hasattr(e, 'stderr') and e.stderr else 'unknown'}")

@@ -920,7 +920,17 @@ def _run_bulk_render(req: BulkRenderRequest):
                 
             except Exception as e:
                 import traceback
+                tb = traceback.format_exc()
                 traceback.print_exc()
+                # Persist the failure to the on-disk logs (not just stdout/WebSocket)
+                # so a crashed render can be diagnosed from the Drive logs afterward.
+                try:
+                    sid = locals().get("settings", {}).get("session_id", "global") if "settings" in locals() else "global"
+                    get_logger(sid).log_app_event(
+                        "render_clip", "failed", {"clip_index": idx}, error=tb[-1500:]
+                    )
+                except Exception:
+                    pass
                 ui_logger.log(f"ERROR rendering clip {idx}: {str(e)}")
                 ui_logger.log(f"RENDER_STATUS|{idx}|error")
                 
