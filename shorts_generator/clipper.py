@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from shorts_generator.config import FONT_PATH, AVAILABLE_FONTS, FONT_DIR
 from shorts_generator.media import get_broll_image, get_twemoji, get_sfx
+from shorts_generator import overlays as _overlays
 from .logger import ui_logger, get_logger
 
 def get_font_path(element_type: str, font_choice: str) -> str:
@@ -716,6 +717,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False, title_style: str = "Impact",
                  layout_mode: str = "box", hook_style: str = "BlackOnWhiteBox",
                  header_font: str = "bebas", caption_font: str = "bebas", hook_font: str = "bebas",
+                 header_style: str = "card",
                  session_id: str = "global"):
 
     ui_logger.log("Initializing render pipeline...")
@@ -938,7 +940,43 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             filter_complex += f"[{current_v}]ass='{safe_ass}':fontsdir='{safe_fonts_dir}'[{next_v}];"
             current_v = next_v
             input_idx += 1
-            
+
+        # ── Designed header + magic-hook as PNG overlays (top zone) ──
+        # Re-sync input_idx: ASS pseudo-incremented it without adding a real -i;
+        # SFX audio inputs were added before sfx_start_idx without incrementing.
+        input_idx = sfx_start_idx + len(sfx_delays)
+        header_path = get_font_path("header", header_font)
+        hook_on = bool(magic_hook and idx == 0 and clip_data.get("hook_text") and hook_display != "off")
+        if hook_on and hook_display in ("3s", "5s"):
+            header_from = 3.0 if hook_display == "3s" else 5.0
+        elif hook_on and hook_display == "full":
+            header_from = None  # hook owns the top zone for the whole clip
+        else:
+            header_from = 0.0
+
+        if clip_data.get("title") and header_from is not None:
+            hdr_png = os.path.join(work_dir, f"hdr_{out_id}_{idx}.png")
+            _overlays.render_overlay_png(clip_data["title"], header_style, header_path, out_path=hdr_png)
+            inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hdr_png])
+            hy = 0 if layout_mode == "box" else 40
+            next_v = f"v{input_idx}_hdr"
+            filter_complex += (f"[{current_v}][{input_idx}:v]"
+                               f"overlay=0:{hy}:enable='gte(t,{header_from})'[{next_v}];")
+            current_v = next_v
+            input_idx += 1
+
+        if hook_on:
+            hook_until = clip_duration if hook_display == "full" else (3.0 if hook_display == "3s" else 5.0)
+            hk_png = os.path.join(work_dir, f"hook_{out_id}_{idx}.png")
+            _overlays.render_overlay_png(clip_data["hook_text"], header_style, header_path, out_path=hk_png)
+            inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hk_png])
+            hy = 0 if layout_mode == "box" else 40
+            next_v = f"v{input_idx}_hook"
+            filter_complex += (f"[{current_v}][{input_idx}:v]"
+                               f"overlay=0:{hy}:enable='lt(t,{hook_until})'[{next_v}];")
+            current_v = next_v
+            input_idx += 1
+
         if idx > 0:
             next_v = f"v{input_idx}_flash"
             filter_complex += f"[{current_v}]drawbox=w=iw:h=ih:color=white:t=fill:enable='between(t,0,0.10)'[{next_v}];"
