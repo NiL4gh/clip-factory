@@ -30,20 +30,19 @@ def get_font_path(element_type: str, font_choice: str) -> str:
         raise FileNotFoundError(f"Font {font_choice} not found at {font_file}. Place .ttf files in work/fonts/")
     return str(font_file)
 
+def _family_name_from_file(path: str) -> str:
+    """Read a TTF's real internal family name so libass always matches it.
+    Falls back to 'Bebas Neue' (the always-present shipped font) on any error."""
+    try:
+        from PIL import ImageFont
+        return ImageFont.truetype(str(path)).getname()[0]
+    except Exception:
+        return "Bebas Neue"
+
 def get_font_family(font_choice: str) -> str:
-    choice = font_choice.lower().strip() if font_choice else 'bebas'
-    mapping = {
-        'montserrat': 'Montserrat',
-        'montserrat-black': 'Montserrat Black',
-        'bebas': 'Bebas Neue',
-        'inter': 'Inter',
-        'roboto': 'Roboto',
-        'poppins': 'Poppins',
-    }
-    font_file = AVAILABLE_FONTS.get(choice)
-    if not font_file or not os.path.exists(font_file):
-        choice = 'bebas'
-    return mapping.get(choice, 'Bebas Neue')
+    # get_font_path already falls back to bebas if the requested file is missing
+    path = get_font_path("caption", font_choice)
+    return _family_name_from_file(path)
 
 def validate_input_quality(video_path: str, session_id: str = "global") -> dict:
     """Check input resolution and warn if below 1080p using ffprobe"""
