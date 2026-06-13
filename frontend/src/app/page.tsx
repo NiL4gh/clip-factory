@@ -85,8 +85,9 @@ const DEFAULT_SETTINGS = {
   title_style: "Impact",
   template: "viral",
   header_font: "bebas",
-  caption_font: "bebas",
-  hook_font: "bebas",
+  caption_font: "montserrat",
+  hook_font: "montserrat",
+  header_style: "card",
 };
 
 // Proven style combinations. Picking a preset writes the individual fields below
@@ -97,17 +98,17 @@ const STYLE_PRESETS: Record<string, { label: string; summary: string; changes: R
   viral: {
     label: "🔥 Viral",
     summary: "Bold Pop captions, brand background, hook header for the first 3s. Best for talking-head clips.",
-    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "3s" },
+    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "3s", header_style: "stroke" },
   },
   clean: {
     label: "✨ Clean",
     summary: "Classic captions on a white background, simple boxed header, no hook timer.",
-    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "off" },
+    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "off", header_style: "card" },
   },
   cinematic: {
     label: "🎬 Cinematic",
     summary: "Full-frame blurred background, cinematic captions, no header. Best for visual content.",
-    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off" },
+    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off", header_style: "bar" },
   },
 };
 
@@ -1293,25 +1294,61 @@ export default function Dashboard() {
               </select>
             </div>
 
+            {/* Header style — visual thumbnail picker */}
             <div className="space-y-1">
-              <span className="text-xs font-bold text-slate-500">Font</span>
+              <span className="text-xs font-bold text-slate-500">Header Style</span>
+              <div className="grid grid-cols-3 gap-2">
+                {(["card", "stroke", "bar"] as const).map((s) => (
+                  <button key={s} type="button" onClick={() => applySetting("header_style", s)}
+                    className={`rounded-lg overflow-hidden border-2 transition-colors ${(activeSettings as any).header_style === s ? "border-indigo-500" : "border-slate-200"}`}>
+                    <img src={`/headers/${s}.png`} alt={s} className="w-full h-auto block" />
+                    <span className="block text-[10px] font-bold text-slate-600 py-0.5 capitalize">{s}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Header font — expressive / display typefaces */}
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-500">Header Font</span>
               <select
-                value={activeSettings.caption_font || "bebas"}
-                onChange={(e) => {
-                  // One picker drives all three text elements (header, captions, hook)
-                  // so the whole clip uses a consistent typeface.
-                  applySetting("header_font", e.target.value);
-                  applySetting("caption_font", e.target.value);
-                  applySetting("hook_font", e.target.value);
-                }}
+                value={activeSettings.header_font || "bebas"}
+                onChange={(e) => applySetting("header_font", e.target.value)}
                 className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
               >
-                <option value="bebas">Bebas Neue — tall condensed (default)</option>
-                <option value="montserrat">Montserrat — clean bold</option>
+                <option value="bebas">Bebas Neue — tall condensed</option>
                 <option value="montserrat-black">Montserrat Black — heavy</option>
-                <option value="inter">Inter — modern sans</option>
+                <option value="poppins">Poppins — rounded</option>
+              </select>
+            </div>
+
+            {/* Caption font — readable body typefaces only */}
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-500">Caption Font</span>
+              <select
+                value={activeSettings.caption_font || "montserrat"}
+                onChange={(e) => { applySetting("caption_font", e.target.value); applySetting("hook_font", e.target.value); }}
+                className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+              >
+                <option value="montserrat">Montserrat — clean bold</option>
                 <option value="poppins">Poppins — rounded geometric</option>
                 <option value="roboto">Roboto — neutral sans</option>
+                <option value="bebas">Bebas Neue — condensed</option>
+              </select>
+            </div>
+
+            {/* Background */}
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-500">Background</span>
+              <select
+                value={activeSettings.bg_style || "brand"}
+                onChange={(e) => applySetting("bg_style", e.target.value)}
+                className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
+              >
+                <option value="brand">Brand color</option>
+                <option value="blur">Blurred video</option>
+                <option value="black">Black</option>
+                <option value="white">White</option>
               </select>
             </div>
 
