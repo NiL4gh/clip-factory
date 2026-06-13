@@ -48,7 +48,11 @@ render_header_png(text: str, preset: str, font_path: str, video_w: int,
 render_hook_png(text: str, preset: str, font_path: str, video_w: int,
                 out_path: str) -> str   # may share impl with header
 ```
-- Wraps text to ≤2 lines, all-caps.
+- All-caps. **Auto-fit:** wrap to a **max of 2 lines** and shrink the font size until the text fits the
+  top zone width — so long titles/hooks are never cut off (the test run chopped "...OUT OF CONTROL" to
+  "CONTRO") and never spill onto faces.
+- **Safe zones:** keep the text within horizontal safe margins and clear of the top-right corner (where
+  TikTok/Reels overlay the profile + action buttons).
 - Auto-detects the keyword to accent (reuse the existing `_is_header_highlight_target` trigger-word logic,
   or last salient word) and colors it per preset.
 - Renders onto a transparent RGBA canvas sized `video_w` × (top zone height), returns the PNG path.
@@ -61,15 +65,21 @@ A dict; each preset fully specifies the look. Initial set:
 | Preset  | Container                    | Text fill | Keyword     | Notes |
 |---------|------------------------------|-----------|-------------|-------|
 | `card`  | white rounded rect, ~64px margin | near-black (#111) | red (#D62626) | **default** — readable on any bg |
-| `stroke`| none (over video)            | white     | yellow (#FFD100) | thick black stroke (~14px) |
+| `stroke`| **faint dark top scrim** (gradient) | white | yellow (#FFD100) | thick black stroke (~14px); scrim guarantees legibility on bright/busy shots |
 | `bar`   | full-width accent bar (#FFC400) | near-black | (same as fill) | loud / broadcast |
 
 Font weight: heavy/display (Bebas Neue, Montserrat Black, or Impact-class). Default header font = Bebas Neue
 (already shipped) unless owner picks another.
 
+Each preset also ships a **baked-in example thumbnail PNG** (generated once) for the UI picker — see §5.
+
 ### 3. `clipper.py` composition changes
 - Generate `header.png` (from `clip_data["title"]`) and, for `idx == 0` with magic hook on, `hook.png`
   (from `clip_data["hook_text"]`).
+- **The magic hook is a first-class element, not an afterthought.** Confirmed from the test run: the big
+  top text for the first ~2–3s *is* the hook (e.g. "PARENTS ARE CRAZY"), i.e. the **opening frame** — the
+  most important frame for stopping the scroll. It gets the **same design quality** as the header (same
+  presets, auto-fit, scrim, safe zones).
 - Add each as `-loop 1 -t <clip_duration> -i <png>` and `overlay` at the top zone with `enable=` timing:
   - Preserve current timing rules: if hook shows 3s/5s, header starts after (3.5s/5.5s); if hook is "full",
     header is hidden; otherwise header shows the whole clip.
@@ -84,13 +94,18 @@ Make libass always use the chosen caption font:
 
 ### 5. Fonts split (frontend `page.tsx` + backend already supports it)
 Backend already accepts separate `header_font` / `caption_font` / `hook_font`. Change the UI:
-- **Header**: a "Header Style" dropdown (card/stroke/bar) **+** a "Header Font" dropdown (expressive set).
+- **Header**: a "Header Style" picker (card/stroke/bar) that shows a **baked-in example thumbnail next to
+  each option** (owner's choice — picks by sight, no render wait) **+** a "Header Font" dropdown (expressive set).
 - **Caption font**: dropdown limited to the readable set (Montserrat / Poppins / Roboto).
 - **Hook**: uses the same font as the caption (no separate picker). Keep it simple.
 
 ### 6. Background control (frontend `page.tsx`)
 Re-add a visible "Background" control sending `bg_style` ∈ {`black`, `white`, `blur`, `gradient`, `brand`}.
 Backend path already exists (`_build_layout_filtergraph`); no backend change expected.
+
+## Future hooks (noted, not built now — YAGNI)
+- Per-campaign **brand color / creator handle / logo** on the header — useful later for Whop clipping.
+- Additional header presets — trivial to add once the first 3 are proven on real renders.
 
 ## Out of scope (parked, logged in BACKLOG)
 - Double-ZIP on "download session zip" (clip-only + clip+transcript) — bug round.
@@ -99,8 +114,9 @@ Backend path already exists (`_build_layout_filtergraph`); no backend change exp
 - Progress bar still missing, video sharpness, confusing Drive folders — bug round.
 
 ## Testing / verification (honesty mandate)
-- **Local, before Colab:** unit-call `overlays.render_header_png` for each preset and each font; save PNGs;
-  eyeball them (the PNG *is* exactly what gets composited — no GPU needed to validate the look).
+- **Local, before Colab — owner sign-off gate:** generate a **contact sheet** of every preset × a couple of
+  the owner's real frames and show it to the owner. The owner approves the *look* with **zero GPU time spent**
+  before anything is wired into the app (the PNG *is* exactly what gets composited).
 - **Local:** `py_compile` clipper.py + overlays.py; `next build` for the frontend.
 - **Colab (owner run):** confirm a real clip shows the designed header, the chosen background, split fonts,
   and no font fallback. Only then mark Verified in STATUS/BACKLOG. Do **not** write "works" before this.
@@ -112,3 +128,5 @@ Backend path already exists (`_build_layout_filtergraph`); no backend change exp
 4. Background control is visible and changes the rendered background.
 5. Header font is independent; caption/hook use the readable set.
 6. Caption rendering is unchanged from the version the owner already approved.
+7. Header/hook text is never cut off and never covers a face or the platform UI corners.
+8. The magic hook (opening 2–3s) is designed to the same standard as the header.
