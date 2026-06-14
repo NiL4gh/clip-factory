@@ -49,9 +49,6 @@ HEADER_PRESETS = {
     # no box, white text + thick black stroke + faint top scrim, yellow keyword
     "stroke": {"container": "scrim", "text": (255, 255, 255),
                "keyword": (255, 209, 0), "stroke": 12},
-    # full-width gold bar, dark text
-    "bar":    {"container": "bar",   "bar_fill": (255, 196, 0),
-               "text": (15, 15, 15), "keyword": (15, 15, 15), "stroke": 0},
 }
 
 # trigger words worth accenting (mirrors clipper._is_header_highlight_target intent)
@@ -106,9 +103,6 @@ def render_overlay_png(text, preset="card", font_path=None, width=ZONE_W,
         x0 = cx - cw / 2; y0 = (height - ch) / 2
         d.rounded_rectangle([x0, y0, x0 + cw, y0 + ch], radius=34, fill=spec["card_fill"])
         _draw_centered(d, lines, font, cx, y0 + pad_y, spec["text"], kw, spec["keyword"])
-    elif spec["container"] == "bar":
-        d.rectangle([0, 0, width, height], fill=spec["bar_fill"])
-        _draw_centered(d, lines, font, cx, (height - block_h) / 2, spec["text"], kw, spec["keyword"])
     else:  # scrim (stroke style): faint dark fade behind text for legibility
         scrim = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         sd = ImageDraw.Draw(scrim)

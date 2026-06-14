@@ -108,7 +108,7 @@ const STYLE_PRESETS: Record<string, { label: string; summary: string; changes: R
   cinematic: {
     label: "🎬 Cinematic",
     summary: "Full-frame blurred background, cinematic captions, no header. Best for visual content.",
-    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off", header_style: "bar" },
+    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off", header_style: "card" },
   },
 };
 
@@ -1297,8 +1297,8 @@ export default function Dashboard() {
             {/* Header style — visual thumbnail picker */}
             <div className="space-y-1">
               <span className="text-xs font-bold text-slate-500">Header Style</span>
-              <div className="grid grid-cols-3 gap-2">
-                {(["card", "stroke", "bar"] as const).map((s) => (
+              <div className="grid grid-cols-2 gap-2">
+                {(["card", "stroke"] as const).map((s) => (
                   <button key={s} type="button" onClick={() => applySetting("header_style", s)}
                     className={`rounded-lg overflow-hidden border-2 transition-colors ${(activeSettings as any).header_style === s ? "border-indigo-500" : "border-slate-200"}`}>
                     <img src={`/headers/${s}.png`} alt={s} className="w-full h-auto block" />

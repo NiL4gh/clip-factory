@@ -594,8 +594,8 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
     caption_pos = position.lower() if position else "bottom"
     if caption_pos == "top":
         align = 8
-        margin_v = 360
-    else:  # bottom
+        margin_v = 360  # 40px below the header zone into the video area
+    else:  # bottom — owner-approved on-video position
         align = 2
         margin_v = 560
 
@@ -675,10 +675,19 @@ def _generate_ass(words, out_path, video_w, video_h, time_offset=0, theme="Story
                 if casing == "upper": txt = txt.upper()
                 elif casing == "lower": txt = txt.lower()
 
+                # Whisper splits hyphenated/contraction tokens as "-word" or "'s" —
+                # join them to the previous word without a space so display is correct.
+                needs_join = txt and txt[0] in ("-", "'")
+
                 if x_idx == active_idx:
-                    styled += f"{{\\c{p['high']}}}{txt}{{\\c{p['main']}}} "
+                    token = f"{{\\c{p['high']}}}{txt}{{\\c{p['main']}}}"
                 else:
-                    styled += f"{txt} "
+                    token = txt
+
+                if needs_join and styled:
+                    styled = styled.rstrip(" ") + token + " "
+                else:
+                    styled += token + " "
 
             lines.append(f"Dialogue: 0,{fmt_time(event_st)},{fmt_time(event_et)},Main,,0,0,0,,{styled.strip()}")
 
@@ -941,39 +950,34 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             current_v = next_v
             input_idx += 1
 
-        # ── Designed header + magic-hook as PNG overlays (top zone) ──
+        # ── Header (top, persistent) + magic-hook (center screen, timed) ──
         # Re-sync input_idx: ASS pseudo-incremented it without adding a real -i;
         # SFX audio inputs were added before sfx_start_idx without incrementing.
         input_idx = sfx_start_idx + len(sfx_delays)
         header_path = get_font_path("header", header_font)
         hook_on = bool(magic_hook and idx == 0 and clip_data.get("hook_text") and hook_display != "off")
-        if hook_on and hook_display in ("3s", "5s"):
-            header_from = 3.0 if hook_display == "3s" else 5.0
-        elif hook_on and hook_display == "full":
-            header_from = None  # hook owns the top zone for the whole clip
-        else:
-            header_from = 0.0
 
-        if clip_data.get("title") and header_from is not None:
+        # Header: topic reminder pinned at top, visible the whole clip
+        if clip_data.get("title"):
             hdr_png = os.path.join(work_dir, f"hdr_{out_id}_{idx}.png")
             _overlays.render_overlay_png(clip_data["title"], header_style, header_path, out_path=hdr_png)
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hdr_png])
             hy = 0 if layout_mode == "box" else 40
             next_v = f"v{input_idx}_hdr"
             filter_complex += (f"[{current_v}][{input_idx}:v]"
-                               f"overlay=0:{hy}:enable='gte(t,{header_from})'[{next_v}];")
+                               f"overlay=0:{hy}:enable='gte(t,0)'[{next_v}];")
             current_v = next_v
             input_idx += 1
 
+        # Hook: punchy phrase centered on canvas (Y=800), first N seconds only
         if hook_on:
-            hook_until = clip_duration if hook_display == "full" else (3.0 if hook_display == "3s" else 5.0)
+            hook_until = 5.0 if hook_display == "full" else (3.0 if hook_display == "3s" else 5.0)
             hk_png = os.path.join(work_dir, f"hook_{out_id}_{idx}.png")
             _overlays.render_overlay_png(clip_data["hook_text"], header_style, header_path, out_path=hk_png)
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hk_png])
-            hy = 0 if layout_mode == "box" else 40
             next_v = f"v{input_idx}_hook"
             filter_complex += (f"[{current_v}][{input_idx}:v]"
-                               f"overlay=0:{hy}:enable='lt(t,{hook_until})'[{next_v}];")
+                               f"overlay=0:800:enable='lt(t,{hook_until})'[{next_v}];")
             current_v = next_v
             input_idx += 1
 
