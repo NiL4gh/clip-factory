@@ -58,10 +58,10 @@ A viral clip has three parts:
 
 EXTRACTION RULES:
 - Extract EVERY moment that follows this structure.
-- You can stitch multiple non-contiguous segments together to skip filler and keep the pace fast.
-- Ensure the local conversational subject is clear to the viewer (e.g., replace "it" with what they are talking about).
+- You can stitch multiple non-contiguous segments together to skip filler and keep the pace fast. When a strong moment contains off-topic tangents or drift, include ONLY the on-topic segments and exclude the drifting span. Each clip must stay on ONE core point — prefer 2-4 tight segments over a single long rambling span.
+- The viewer has NOT seen the rest of the video. The clip must make sense on its own from the very first second: replace "it" / "they" / "that" with the actual subject so the viewer is never lost.
 - End clips strongly on a clear resolution, never mid-thought.
-- Write punchy, non-repetitive hooks for `hook_sentence` and `hook_text`.
+- Write punchy, non-repetitive hooks for `hook_sentence` and `hook_text`. hook_text MUST reflect what the clip ACTUALLY says — do not invent stakes or overstate content the clip does not deliver.
 - Make sure it is highly punchy, clear, and natural.
 
 NEVER EXTRACT any of the following regardless of how interesting the
@@ -544,9 +544,18 @@ def _sanitize_hook_text(raw_hook_text: str, fallback_hook_sentence: str) -> str:
     return text
 
 
+_INTRO_OUTRO_PHRASES = re.compile(
+    r"\b(welcome to|welcome back|today on|in today'?s episode|i'?m your host|"
+    r"on this podcast|this week we'?re|joining me today|thank you for (listening|watching)|"
+    r"don'?t forget to subscribe|hit the subscribe|follow us|see you next|"
+    r"that'?s all for today|until next time|this episode is sponsored|"
+    r"brought to you by|use code |link in (the |my )?bio|check out our|"
+    r"promo code|discount code)\b",
+    re.IGNORECASE,
+)
+
 def _validate_clips(clips: list, raw_words: list) -> list:
     valid = []
-    import re
     for clip in clips:
         segments = clip.get("segments", [])
         if not segments:
@@ -554,8 +563,14 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
         total_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in segments)
 
-        if total_dur < 15 or total_dur > 180:
+        if total_dur < 15 or total_dur > 240:
             ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
+            continue
+
+        # Content-based intro/outro/sponsor guard (defense-in-depth; prompt rule alone isn't enough)
+        check_text = f"{clip.get('title', '')} {clip.get('ideal_transcript', '')[:200]}"
+        if _INTRO_OUTRO_PHRASES.search(check_text):
+            ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': matches intro/outro/sponsor phrase")
             continue
 
         clip["duration"] = total_dur
@@ -807,10 +822,6 @@ def get_highlights(
         '    "title": "ULTRA-SHORT TOPIC HOOK (2-5 words max). MUST be punchy, curiosity-inducing, and extremely short to fit on screen (e.g. \\"THE TRUTH ABOUT X\\", \\"STOP DOING THIS\\"). NO long sentences.",\n'
         '    "ideal_transcript": "Copy the exact spoken words from the transcript that make up this clip. Include the full text from start to end.",\n'
         '    "virality_score": 85,\n'
-        '    "hook_score": 20, // integer 0-25 — how scroll-stopping is the opening moment\n'
-        '    "engagement_score": 20, // integer 0-25 — how compelling is the middle content\n'
-        '    "value_score": 20, // integer 0-25 — educational or entertainment value\n'
-        '    "shareability_score": 20, // integer 0-25 — would someone actively share this\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
         '    "segments": [\n'
@@ -825,7 +836,7 @@ def get_highlights(
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
         '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
-        '    "hook_text": "Write 3-8 words: a punchy headline about THIS clip. Example for a clip about first jobs: YOUR FIRST JOB WAS A LIE. Example for a friendship clip: MEN NEED BETTER FRIENDS. Must be specific to the clip content.",\n'
+        '    "hook_text": "Write 3-8 words: a punchy headline that ACCURATELY reflects the clip\'s core point. Example for a clip about first jobs: YOUR FIRST JOB WAS A LIE. Example for a friendship clip: MEN NEED BETTER FRIENDS. Must match what the clip actually says — do not invent stakes or overstate the content.",\n'
         '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12-18 words) authored for social media — NOT copied from the transcript. Write an original hook tailored to the specific content of the clip. DO NOT copy the template examples from the prompt. It must be highly specific, punchy, and original. Max 18 words.",\n'
         '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\" | \\"opinion_bomb\\""\n'
         '  }\n'
@@ -883,15 +894,13 @@ If any check fails, fix the output before returning. Do not explain the
 fix. Simply return the corrected JSON.
 
 □ Every clip has all required fields: title, ideal_transcript, segments,
-  virality_score, hook_score, engagement_score, value_score, shareability_score,
-  start_timestamp, end_timestamp, hook_sentence, hook_text, hook_type,
-  virality_reason, theme, music_query, broll_keywords, emoji_moments,
-  source_topic
+  virality_score, start_timestamp, end_timestamp, hook_sentence, hook_text,
+  hook_type, virality_reason, theme, music_query, broll_keywords,
+  emoji_moments, source_topic
 □ hook_type is exactly one of: curiosity_gap | loss_aversion |
   self_identification | pattern_interrupt | open_loop | opinion_bomb
 □ hook_text is 8 words or fewer — if longer, trim it
 □ virality_score is an integer between 0 and 100 — not a string, not a float
-□ hook_score, engagement_score, value_score, shareability_score are each integers between 0 and 25
 □ broll_keywords is a list of strings, not a single string
 □ emoji_moments is a list of strings
 □ segments is a list of objects each with start_quote (string) and end_quote (string) — exact words from the transcript
@@ -1093,11 +1102,6 @@ fix. Simply return the corrected JSON.
             hook_sentence = h.get("hook_sentence", "").strip()
             if not hook_sentence:
                 hook_sentence = sentences[0] if sentences else ""
-            hook_score = int(h.get("hook_score", 0) or 0)
-            engagement_score = int(h.get("engagement_score", 0) or 0)
-            value_score = int(h.get("value_score", 0) or 0)
-            shareability_score = int(h.get("shareability_score", 0) or 0)
-
             normalized.append({
                 "title": h.get("title", "Untitled Clip"),
                 "ideal_transcript": ideal_transcript,
@@ -1107,10 +1111,6 @@ fix. Simply return the corrected JSON.
                 "score": composite_score,
                 "virality_score": score,
                 "energy_score": energy_score,
-                "hook_score": hook_score,
-                "engagement_score": engagement_score,
-                "value_score": value_score,
-                "shareability_score": shareability_score,
                 "hook_sentence": hook_sentence,
                 "hook_text": _sanitize_hook_text(h.get("hook_text", ""), hook_sentence),
                 "hook_type": hook_type,

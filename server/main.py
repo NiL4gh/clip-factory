@@ -245,6 +245,7 @@ class RenderRequest(BaseModel):
     header_font: Optional[str] = "bebas"
     caption_font: Optional[str] = "bebas"
     hook_font: Optional[str] = "bebas"
+    header_style: str = "card"
     session_id: Optional[str] = "global"
 
 class BulkRenderRequest(BaseModel):
@@ -268,6 +269,7 @@ class BulkRenderRequest(BaseModel):
     header_font: Optional[str] = "bebas"
     caption_font: Optional[str] = "bebas"
     hook_font: Optional[str] = "bebas"
+    header_style: str = "card"
     session_id: Optional[str] = "global"
 
 class SessionRequest(BaseModel):
@@ -753,6 +755,7 @@ def _run_render(req: RenderRequest, task_id: str):
             header_font=req.header_font,
             caption_font=req.caption_font,
             hook_font=req.hook_font,
+            header_style=getattr(req, "header_style", "card"),
             session_id=req.session_id
         )
         
@@ -889,6 +892,7 @@ def _run_bulk_render(req: BulkRenderRequest):
                     header_font=settings.get("header_font", "bebas"),
                     caption_font=settings.get("caption_font", "bebas"),
                     hook_font=settings.get("hook_font", "bebas"),
+                    header_style=settings.get("header_style", "card"),
                     session_id=settings.get("session_id", "global")
                 )
 
