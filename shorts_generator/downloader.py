@@ -43,6 +43,24 @@ def download_video(url, work_dir, cookie_path=None):
     ui_logger.log("Download complete.")
     return output_mp4
 
+def get_video_title(url: str, cookie_path: str = None) -> str:
+    """Return the video title from yt-dlp without downloading. Empty string on failure."""
+    cmd = [
+        'yt-dlp', '--print', 'title', '--skip-download', '--no-warnings',
+        '--extractor-args', 'youtube:player_client=web',
+    ]
+    if cookie_path and os.path.exists(cookie_path):
+        cmd += ['--cookies', str(cookie_path)]
+    cmd.append(url)
+    env = os.environ.copy()
+    env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
 def download_srt(video_url: str, output_dir: str, video_id: str) -> typing.Optional[str]:
     try:
         from shorts_generator.config import BASE_DIR

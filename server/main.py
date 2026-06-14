@@ -27,7 +27,7 @@ from shorts_generator.config import (
     BASE_DIR, WORK_DIR, OUTPUT_DIR, LLM_DIR, WHISPER_DIR,
     COOKIE_PATH, LLM_CATALOG, WHISPER_CATALOG, PROJECTS_DIR, SESSIONS_DIR, AVAILABLE_FONTS,
 )
-from shorts_generator.downloader import download_video, download_srt
+from shorts_generator.downloader import download_video, download_srt, get_video_title
 from shorts_generator.transcriber import transcribe_audio, parse_srt_to_word_timestamps
 from shorts_generator.highlights import get_highlights, get_topic_index, detect_video_persona, estimate_clip_potential
 from shorts_generator.clipper import render_short
@@ -208,6 +208,7 @@ _state = {
     "topics": [],
     "estimated_clips": 0,
     "video_duration": 0,
+    "video_title": "",
     "is_strategizing": False,
     "is_rendering": False,
     "is_cancelled": False,
@@ -490,6 +491,9 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, angle: str = "
                 log_progress(0, "Failed.")
                 return
 
+            # Fetch human-readable title from yt-dlp (fast, skip-download call)
+            _state["video_title"] = get_video_title(url.strip(), cookie_path=COOKIE_PATH)
+
             if _state["is_cancelled"]: return
             log = ui_logger.log
 
@@ -514,7 +518,7 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, angle: str = "
         try:
             import subprocess as _sp
             _sp.run(
-                ["ffmpeg", "-y", "-i", source_mp4, "-t", "900",
+                ["ffmpeg", "-y", "-i", source_mp4,
                  "-ar", "16000", "-ac", "1", energy_wav],
                 capture_output=True, check=True
             )
@@ -583,7 +587,8 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, angle: str = "
             ui_logger.log(f"ERROR: No viral moments found in this video.")
             _state["clips"] = []
             cache.save_highlights(url.strip(), _state["clips"])
-            cache.save_metadata(url.strip())
+            cache.save_metadata(url.strip(), title=_state.get("video_title", ""),
+                                duration=_state.get("video_duration", 0))
             log_progress(100, "Strategy Complete. No clips found.")
             return
 
@@ -625,7 +630,8 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, angle: str = "
 
         _state["clips"] = clips
         cache.save_highlights(url.strip(), _state["clips"])
-        cache.save_metadata(url.strip())
+        cache.save_metadata(url.strip(), title=_state.get("video_title", ""),
+                            duration=_state.get("video_duration", 0))
         _save_session(url.strip())
         log_progress(100, f"Strategy Complete. Found {len(clips)} clips (estimated potential: ~{_state['estimated_clips']}).")
         
@@ -666,6 +672,7 @@ async def reset_state():
     _state["topics"] = []
     _state["estimated_clips"] = 0
     _state["video_duration"] = 0
+    _state["video_title"] = ""
     _state["energy_peaks"] = []
     _state["is_strategizing"] = False
     _state["is_rendering"] = False
@@ -772,6 +779,11 @@ def _run_render(req: RenderRequest, task_id: str):
         import shutil
         session_output_dir = os.path.join(OUTPUT_DIR, video_id) if video_id else OUTPUT_DIR
         os.makedirs(session_output_dir, exist_ok=True)
+        # Write a human-readable info file so this folder is identifiable on Drive
+        _info_txt = os.path.join(session_output_dir, "_INFO.txt")
+        if not os.path.exists(_info_txt) and _state.get("video_title"):
+            with open(_info_txt, "w", encoding="utf-8") as _f:
+                _f.write(f"Video: {_state['video_title']}\nURL:   {_state.get('current_url','')}\n")
         dst = os.path.join(session_output_dir, os.path.basename(out))
         if out != dst: shutil.copy2(out, dst)
         ui_logger.log(f"Rendered successfully: {os.path.basename(out)}")
@@ -910,6 +922,10 @@ def _run_bulk_render(req: BulkRenderRequest):
                 import shutil
                 session_output_dir = os.path.join(OUTPUT_DIR, video_id) if video_id else OUTPUT_DIR
                 os.makedirs(session_output_dir, exist_ok=True)
+                _info_txt = os.path.join(session_output_dir, "_INFO.txt")
+                if not os.path.exists(_info_txt) and _state.get("video_title"):
+                    with open(_info_txt, "w", encoding="utf-8") as _f:
+                        _f.write(f"Video: {_state['video_title']}\nURL:   {_state.get('current_url','')}\n")
                 dst = os.path.join(session_output_dir, os.path.basename(out))
                 if out != dst:
                     shutil.copy2(out, dst)

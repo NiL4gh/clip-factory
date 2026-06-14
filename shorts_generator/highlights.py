@@ -1089,12 +1089,17 @@ fix. Simply return the corrected JSON.
 
             # Composite Scoring (P3)
             clip_peaks = [p["energy"] for p in (energy_peaks or []) if overall_st - 2 <= p["time"] <= overall_et + 2]
-            energy_val = max(clip_peaks) if clip_peaks else 0.0
-            energy_score = int(energy_val * 100)
-            
             hook_type = h.get("hook_type", "curiosity_gap")
             opinion_bonus = 8 if hook_type == "opinion_bomb" else 0
-            composite_score = int((score * 0.6) + (energy_score * 0.4)) + opinion_bonus
+            if clip_peaks:
+                # Energy data available — blend virality + energy
+                energy_score = int(max(clip_peaks) * 100)
+                composite_score = int((score * 0.6) + (energy_score * 0.4)) + opinion_bonus
+            else:
+                # No energy coverage for this timestamp — rank on virality alone.
+                # Do NOT penalize with energy_score=0 (that collapses everything to 51).
+                energy_score = 0
+                composite_score = score + opinion_bonus
             composite_score = min(100, composite_score)
 
             sentences = re.split(r'(?<=[.!?।|])\s+', ideal_transcript.strip())

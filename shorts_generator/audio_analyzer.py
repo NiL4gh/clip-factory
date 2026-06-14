@@ -21,9 +21,12 @@ def analyze_audio_energy(wav_path: str) -> list:
 
         peaks = [{"time": float(times[i]), "energy": float(rms_norm[i])} for i in selected_indices]
 
-        peaks.sort(key=lambda x: x["energy"], reverse=True)
+        # Keep all peaks — no hard cap. For long videos the top-30 limit
+        # meant only the loudest early-video moments were kept; clips beyond
+        # ~15 min always got energy_score=0. Sort by time for fast range lookup.
+        peaks.sort(key=lambda x: x["time"])
 
-        return peaks[:30]
+        return peaks
 
     except Exception as e:
         print(f"Error in analyze_audio_energy: {e}")

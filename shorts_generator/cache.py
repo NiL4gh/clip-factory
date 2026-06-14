@@ -1,6 +1,6 @@
 """
 Drive-backed project cache.
-Each processed video gets a folder: projects/{video_id}/
+Each processed video gets a folder: projects/{readable_name}/
 Contains metadata, transcript, highlights, and rendered clips.
 """
 import json
@@ -26,16 +26,60 @@ def video_id(url: str) -> str:
 _video_id = video_id
 
 
-def project_dir(url: str) -> str:
+def _index_path() -> str:
+    return os.path.join(PROJECTS_DIR, "_index.json")
+
+
+def _read_index() -> dict:
+    p = _index_path()
+    if os.path.exists(p):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _write_index(data: dict):
+    os.makedirs(PROJECTS_DIR, exist_ok=True)
+    with open(_index_path(), "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def _make_readable_name(title: str, vid: str) -> str:
+    """Build a human-readable folder name: sanitized title + video id."""
+    safe = re.sub(r'[^\w\s\-]', '', title, flags=re.UNICODE)
+    safe = re.sub(r'\s+', ' ', safe).strip()[:40]
+    return f"{safe} ({vid})" if safe else vid
+
+
+def project_dir(url: str, title: str = "") -> str:
+    """Return (creating if needed) the project folder for this video.
+    Uses a human-readable name when title is known, with an index for lookups."""
     vid = _video_id(url)
-    d = os.path.join(PROJECTS_DIR, vid)
+    index = _read_index()
+
+    if vid in index:
+        folder_name = index[vid]
+    elif title:
+        folder_name = _make_readable_name(title, vid)
+        index[vid] = folder_name
+        _write_index(index)
+    else:
+        # No title yet — check if any existing folder has a video_id.txt match
+        # or just fall back to the bare video_id (backwards-compatible)
+        folder_name = vid
+
+    d = os.path.join(PROJECTS_DIR, folder_name)
     os.makedirs(d, exist_ok=True)
     os.makedirs(os.path.join(d, "clips"), exist_ok=True)
     return d
 
 
 def save_metadata(url: str, title: str = "", duration: float = 0, language: str = ""):
-    d = project_dir(url)
+    # Register the readable folder name on first call with a real title
+    d = project_dir(url, title=title)
     data = {
         "url": url,
         "video_id": _video_id(url),
@@ -45,7 +89,7 @@ def save_metadata(url: str, title: str = "", duration: float = 0, language: str 
         "processed_at": datetime.now().isoformat(),
     }
     with open(os.path.join(d, "metadata.json"), "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
     return data
 
 
