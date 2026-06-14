@@ -95,6 +95,9 @@ from pathlib import Path
 FONT_DIR = Path(WORK_DIR) / "fonts"
 AVAILABLE_FONTS = {
     'montserrat': FONT_DIR / 'Montserrat-Bold.ttf',
+    'montserrat bold': FONT_DIR / 'Montserrat-Bold.ttf',
+    'montserrat semibold': FONT_DIR / 'Montserrat-SemiBold.ttf',
+    'montserrat-semibold': FONT_DIR / 'Montserrat-SemiBold.ttf',
     'montserrat black': FONT_DIR / 'Montserrat-Black.ttf',
     'montserrat-black': FONT_DIR / 'Montserrat-Black.ttf',
     'bebas': FONT_DIR / 'BebasNeue-Regular.ttf',
@@ -106,6 +109,7 @@ AVAILABLE_FONTS = {
 # Retain original case keys for backwards-compatibility and references
 AVAILABLE_FONTS.update({
     'Montserrat': AVAILABLE_FONTS['montserrat'],
+    'Montserrat SemiBold': AVAILABLE_FONTS['montserrat semibold'],
     'Montserrat Black': AVAILABLE_FONTS['montserrat-black'],
     'Bebas Neue': AVAILABLE_FONTS['bebas neue'],
     'Inter': AVAILABLE_FONTS['inter'],

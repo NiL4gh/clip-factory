@@ -12,12 +12,12 @@ MAX_FONT = 110
 MIN_FONT = 44
 
 def fit_lines(draw, text, font_path, max_w=SAFE_W, max_h=240, max_lines=2,
-              stroke=12):
+              stroke=12, max_font_size=MAX_FONT):
     """Return (lines, font) that fit text into max_w x max_h in <= max_lines,
     shrinking the font until it fits. All-caps, greedy word wrap."""
     text = " ".join(text.upper().split())
     words = text.split(" ")
-    for size in range(MAX_FONT, MIN_FONT - 1, -2):
+    for size in range(min(max_font_size, MAX_FONT), MIN_FONT - 1, -2):
         font = ImageFont.truetype(font_path, size)
         lines, cur = [], ""
         for w in words:
@@ -84,13 +84,16 @@ def _draw_centered(draw, lines, font, cx, top_y, fill, keyword_idx, keyword_fill
         y += line_h
 
 def render_overlay_png(text, preset="card", font_path=None, width=ZONE_W,
-                       height=ZONE_H, out_path="overlay.png"):
-    """Render a transparent PNG of the header/hook in the given preset."""
+                       height=ZONE_H, out_path="overlay.png",
+                       max_font_size=MAX_FONT, opacity=1.0):
+    """Render a transparent PNG of the header/hook in the given preset.
+    opacity: 0.0–1.0, applied to the whole layer (use <1.0 for the magic hook)."""
     spec = HEADER_PRESETS.get(preset, HEADER_PRESETS["card"])
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     stroke = spec.get("stroke", 0)
-    lines, font = fit_lines(d, text, font_path, max_w=SAFE_W, max_h=height - 80, stroke=stroke)
+    lines, font = fit_lines(d, text, font_path, max_w=SAFE_W, max_h=height - 80,
+                            stroke=stroke, max_font_size=max_font_size)
     kw = pick_keyword(" ".join(lines).split(" "))
     block_h = (font.size + 14) * len(lines)
     cx = width // 2
@@ -114,5 +117,9 @@ def render_overlay_png(text, preset="card", font_path=None, width=ZONE_W,
         _draw_centered(d, lines, font, cx, (height - block_h) / 2, spec["text"], kw,
                        spec["keyword"], stroke=stroke, stroke_fill=(0, 0, 0))
 
+    if opacity < 1.0:
+        r, g, b, a = img.split()
+        a = a.point(lambda x: int(x * opacity))
+        img = Image.merge("RGBA", (r, g, b, a))
     img.save(out_path)
     return out_path

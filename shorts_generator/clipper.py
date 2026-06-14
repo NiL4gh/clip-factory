@@ -725,7 +725,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
                  magic_hook=False, remove_silence=True, broll_intensity="Medium",
                  all_sentences=None, padding=3.0, bg_style="black", hook_position="top", hook_display="full", show_outro: bool = False, title_style: str = "Impact",
                  layout_mode: str = "box", hook_style: str = "BlackOnWhiteBox",
-                 header_font: str = "bebas", caption_font: str = "bebas", hook_font: str = "bebas",
+                 header_font: str = "bebas", caption_font: str = "montserrat semibold", hook_font: str = "montserrat semibold",
                  header_style: str = "card",
                  session_id: str = "global"):
 
@@ -955,12 +955,14 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         # SFX audio inputs were added before sfx_start_idx without incrementing.
         input_idx = sfx_start_idx + len(sfx_delays)
         header_path = get_font_path("header", header_font)
+        hook_path = get_font_path("hook", hook_font)
         hook_on = bool(magic_hook and idx == 0 and clip_data.get("hook_text") and hook_display != "off")
 
         # Header: topic reminder pinned at top, visible the whole clip
         if clip_data.get("title"):
             hdr_png = os.path.join(work_dir, f"hdr_{out_id}_{idx}.png")
-            _overlays.render_overlay_png(clip_data["title"], header_style, header_path, out_path=hdr_png)
+            _overlays.render_overlay_png(clip_data["title"], header_style, header_path,
+                                         out_path=hdr_png, max_font_size=90)
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hdr_png])
             hy = 0 if layout_mode == "box" else 40
             next_v = f"v{input_idx}_hdr"
@@ -973,7 +975,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         if hook_on:
             hook_until = 5.0 if hook_display == "full" else (3.0 if hook_display == "3s" else 5.0)
             hk_png = os.path.join(work_dir, f"hook_{out_id}_{idx}.png")
-            _overlays.render_overlay_png(clip_data["hook_text"], header_style, header_path, out_path=hk_png)
+            _overlays.render_overlay_png(clip_data["hook_text"], header_style, hook_path,
+                                         out_path=hk_png, max_font_size=72, opacity=0.5)
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hk_png])
             next_v = f"v{input_idx}_hook"
             filter_complex += (f"[{current_v}][{input_idx}:v]"
