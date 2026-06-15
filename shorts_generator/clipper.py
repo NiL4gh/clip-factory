@@ -184,11 +184,11 @@ def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: fl
     # VIDEO LAYER
     if layout_mode == "box":
         video_layer = (
-            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1[video_graded]"
+            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1,unsharp=5:5:0.6:5:5:0.0[video_graded]"
         )
     else:
         video_layer = (
-            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
+            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,unsharp=5:5:0.6:5:5:0.0[video_graded]"
         )
 
     # BACKGROUND LAYER — five branches on bg_style
@@ -962,7 +962,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         if clip_data.get("title"):
             hdr_png = os.path.join(work_dir, f"hdr_{out_id}_{idx}.png")
             _overlays.render_overlay_png(clip_data["title"], header_style, header_path,
-                                         out_path=hdr_png, max_font_size=90)
+                                         out_path=hdr_png, max_font_size=80, min_font_size=48)
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hdr_png])
             hy = 0 if layout_mode == "box" else 40
             next_v = f"v{input_idx}_hdr"
@@ -978,9 +978,15 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             _overlays.render_overlay_png(clip_data["hook_text"], header_style, hook_path,
                                          out_path=hk_png, max_font_size=72, opacity=0.5)
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hk_png])
+            # Gentle 0.3s fade-in, 0.4s fade-out so the hook is transient, not a hard pop.
+            fade_out_st = max(0.0, hook_until - 0.4)
             next_v = f"v{input_idx}_hook"
-            filter_complex += (f"[{current_v}][{input_idx}:v]"
-                               f"overlay=0:800:enable='lt(t,{hook_until})'[{next_v}];")
+            filter_complex += (
+                f"[{input_idx}:v]fade=t=in:st=0:d=0.3:alpha=1,"
+                f"fade=t=out:st={fade_out_st}:d=0.4:alpha=1[hookfx{input_idx}];"
+                f"[{current_v}][hookfx{input_idx}]"
+                f"overlay=0:800:enable='lt(t,{hook_until})'[{next_v}];"
+            )
             current_v = next_v
             input_idx += 1
 
