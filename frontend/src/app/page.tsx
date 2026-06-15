@@ -400,7 +400,15 @@ export default function Dashboard() {
       };
       const init: Record<number, typeof DEFAULT_SETTINGS> = {};
       results.clips.forEach((_: any, idx: number) => { init[idx] = { ...base }; });
+
+      // Auto-assign a distinct seed style to every clip
+      const seedAssignment = assignSeedsToClips(results.clips.length);
+      results.clips.forEach((_: any, idx: number) => {
+        const seed = STYLE_SEEDS.find(s => s.id === seedAssignment[idx]);
+        if (seed) init[idx] = { ...init[idx], ...(seed.changes as any) };
+      });
       setRenderSettings(init);
+      setClipSeedIds(seedAssignment);
 
       // Pre-select top 5 clips by composite score (clip.score or clip.virality_score)
       const sortedIdxs = results.clips
