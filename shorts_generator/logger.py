@@ -45,25 +45,14 @@ class UIStreamLogger:
     def log(self, message: str, level: str = "info"):
         import asyncio
         timestamp = datetime.now().strftime("%H:%M:%S")
-        entry = {
-            "type": "status",
-            "message": f"[{timestamp}] {message.strip()}",
-            "ts": timestamp,
-            "level": level
-        }
-        self._entries.append(entry)
         safe_print(f"[{timestamp}] {message}")
 
-        # Build a *typed* websocket payload the frontend can route.
-        # The pipeline emits progress as a plain string "PROGRESS|<pct>|<msg>[|<eta>]";
-        # everything else is a status/error line. Previously every payload was sent as
-        # type "log", which the dashboard ignored — that's why the progress bar and the
-        # in-app log both went silent.
+        # Build a typed payload first — the WebSocket polling loop in main.py reads
+        # _entries directly and sends whatever is there, so the entry itself must carry
+        # the right type. Previously this always wrote type="status", which meant
+        # PROGRESS| messages were never routed correctly on the frontend.
         msg = message.strip()
         if msg.startswith("PROGRESS|"):
-            # Format: PROGRESS|<pct>|<message>[|<eta>]. The message itself may contain
-            # "|", and eta (if present) is always the trailing numeric field — so parse
-            # the percent off the front and the eta off the back, message is the middle.
             parts = msg.split("|")
             percent = int(parts[1]) if len(parts) > 1 and parts[1].strip().lstrip("-").isdigit() else 0
             rest = parts[2:]
@@ -78,9 +67,14 @@ class UIStreamLogger:
                 "eta": eta,
             }
         elif level == "error":
-            payload = {"type": "error", "message": message}
+            payload = {"type": "error", "message": f"[{timestamp}] {msg}", "time": datetime.utcnow().isoformat()}
         else:
-            payload = {"type": "status", "level": level, "message": message, "time": datetime.utcnow().isoformat()}
+            payload = {"type": "status", "level": level,
+                       "message": f"[{timestamp}] {msg}", "ts": timestamp,
+                       "time": datetime.utcnow().isoformat()}
+
+        self._entries.append(payload)
+
         for ws in self.clients[:]:
             try:
                 asyncio.create_task(ws.send_json(payload))
