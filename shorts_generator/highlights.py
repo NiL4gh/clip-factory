@@ -563,8 +563,8 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
         total_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in segments)
 
-        if total_dur < 15 or total_dur > 240:
-            ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds")
+        if total_dur < 15 or total_dur > 90:
+            ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds (limit 15–90s)")
             continue
 
         # Content-based intro/outro/sponsor guard (defense-in-depth; prompt rule alone isn't enough)
