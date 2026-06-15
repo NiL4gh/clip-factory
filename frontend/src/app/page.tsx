@@ -1113,6 +1113,15 @@ export default function Dashboard() {
                                 {editedTitles[clipIdx] || clip.title || "Untitled Clip"}
                               </div>
                             )}
+                            {/* SEED STYLE BADGE */}
+                            {clipSeedIds[clipIdx] && (() => {
+                              const seed = STYLE_SEEDS.find(s => s.id === clipSeedIds[clipIdx]);
+                              return seed ? (
+                                <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${seed.badgeColor}`}>
+                                  {seed.label}
+                                </span>
+                              ) : null;
+                            })()}
                           </div>
 
                           {/* HOOK DESCRIPTION */}
@@ -1167,6 +1176,14 @@ export default function Dashboard() {
                             ) : null}
                           </div>
 
+                          {/* PER-CLIP DICE — re-roll this clip's style */}
+                          <button
+                            onClick={(e) => randomizeClipSeed(clipIdx, e)}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg border border-slate-200 text-slate-400 hover:text-indigo-600 transition-colors shrink-0"
+                            title="Re-roll style for this clip"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
                           {/* RENDER BUTTON */}
                           <button
                             onClick={(e) => { e.stopPropagation(); renderClip(clipIdx); }}
