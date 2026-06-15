@@ -76,3 +76,28 @@ def test_card_text_stays_opaque_when_background_is_transparent(tmp_path):
     im = Image.open(out)
     max_alpha = im.getextrema()[3][1]
     assert max_alpha == 255
+
+
+# ── casing option ─────────────────────────────────────────────────────────────
+
+def test_fit_lines_defaults_to_upper():
+    img = Image.new("RGBA", (1080, 320))
+    draw = ImageDraw.Draw(img)
+    lines, _font = overlays.fit_lines(draw, "stay hungry", FONT)
+    assert " ".join(lines) == "STAY HUNGRY"
+
+
+def test_fit_lines_title_case():
+    img = Image.new("RGBA", (1080, 320))
+    draw = ImageDraw.Draw(img)
+    lines, _font = overlays.fit_lines(draw, "when you surprise your girlfriend",
+                                      FONT, casing="title")
+    assert " ".join(lines) == "When You Surprise Your Girlfriend"
+
+
+def test_fit_lines_title_case_keeps_apostrophes():
+    img = Image.new("RGBA", (1080, 320))
+    draw = ImageDraw.Draw(img)
+    lines, _font = overlays.fit_lines(draw, "don't quit your job", FONT,
+                                      casing="title")
+    assert " ".join(lines) == "Don't Quit Your Job"
