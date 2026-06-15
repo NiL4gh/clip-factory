@@ -250,6 +250,7 @@ export default function Dashboard() {
   const [editingTitleIdx, setEditingTitleIdx] = useState<number | null>(null);
   const [tempTitle, setTempTitle] = useState("");
   const [galleryFilter, setGalleryFilter] = useState<"all" | "today" | "over30" | "under30">("all");
+  const [clipSeedIds, setClipSeedIds] = useState<Record<number, string>>({});
 
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"api" | "storage">("api");
