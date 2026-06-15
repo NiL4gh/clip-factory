@@ -819,7 +819,7 @@ def get_highlights(
     schema = (
         '[\n'
         '  {\n'
-        '    "title": "SHORT CURIOSITY HEADLINE (5-8 words). A punchy, curiosity-inducing phrase or question that teases the clip WITHOUT giving away the payoff (e.g. \\"THE MONEY RULE NOBODY TELLS YOU\\", \\"WHY YOUR FIRST JOB WAS A LIE\\"). ONE line of thought only — no two sentences, no rambling.",\n'
+        '    "title": "SHORT TOPIC TAG (3-5 words max). A punchy label for the clip topic that reads as a quick banner, NOT a full sentence (e.g. \\"THE MONEY TRAP\\", \\"FIRST JOB MISTAKES\\", \\"BETTER MALE FRIENDSHIPS\\"). Keep it extremely short — the contextual setup lives in hook_text, not here.",\n'
         '    "ideal_transcript": "Copy the exact spoken words from the transcript that make up this clip. Include the full text from start to end.",\n'
         '    "virality_score": 85,\n'
         '    "start_timestamp": 12.4,\n'
