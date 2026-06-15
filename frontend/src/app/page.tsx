@@ -976,6 +976,17 @@ export default function Dashboard() {
                   </select>
                 </div>
 
+                {/* RANDOMIZE ALL STYLES BUTTON */}
+                <button
+                  onClick={randomizeAllSeeds}
+                  disabled={!results?.clips?.length}
+                  className="bg-white hover:bg-slate-50 disabled:opacity-40 border border-slate-200 text-slate-700 text-xs font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+                  title="Shuffle a unique visual style onto every clip"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Randomize Styles
+                </button>
+
                 {/* BULK RENDER ALL BUTTON */}
                 <button
                   onClick={renderAllClips}
