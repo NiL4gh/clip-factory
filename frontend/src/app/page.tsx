@@ -767,6 +767,32 @@ export default function Dashboard() {
     Object.entries(preset.changes).forEach(([k, v]) => applySetting(k, v));
   };
 
+  const randomizeAllSeeds = () => {
+    if (!results?.clips?.length) return;
+    const seedAssignment = assignSeedsToClips(results.clips.length);
+    setClipSeedIds(seedAssignment);
+    setRenderSettings(prev => {
+      const updated = { ...prev };
+      results.clips.forEach((_: any, idx: number) => {
+        const seed = STYLE_SEEDS.find(s => s.id === seedAssignment[idx]);
+        if (seed) updated[idx] = { ...(updated[idx] || DEFAULT_SETTINGS), ...(seed.changes as any) };
+      });
+      return updated;
+    });
+  };
+
+  const randomizeClipSeed = (clipIdx: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentId = clipSeedIds[clipIdx];
+    const others = STYLE_SEEDS.filter(s => s.id !== currentId);
+    const newSeed = others[Math.floor(Math.random() * others.length)];
+    setClipSeedIds(prev => ({ ...prev, [clipIdx]: newSeed.id }));
+    setRenderSettings(prev => ({
+      ...prev,
+      [clipIdx]: { ...(prev[clipIdx] || DEFAULT_SETTINGS), ...(newSeed.changes as any) },
+    }));
+  };
+
   return (
     <ErrorBoundary>
       <div className="flex flex-col h-screen overflow-hidden bg-slate-50 text-slate-900">
