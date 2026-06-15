@@ -819,7 +819,7 @@ def get_highlights(
     schema = (
         '[\n'
         '  {\n'
-        '    "title": "SHORT TOPIC TAG (3-5 words max). A punchy label for the clip topic that reads as a quick banner, NOT a full sentence (e.g. \\"THE MONEY TRAP\\", \\"FIRST JOB MISTAKES\\", \\"BETTER MALE FRIENDSHIPS\\"). Keep it extremely short — the contextual setup lives in hook_text, not here.",\n'
+        '    "title": "SHORT TOPIC TAG (4-7 words). A punchy ALL-CAPS banner label for the clip — readable as a fast scan, NOT a full sentence (e.g. \\"THE MONEY TRAP\\", \\"FIRST JOB MISTAKES\\", \\"WHY YOUR SAVINGS PLAN IS BROKEN\\"). Keep it tight; the viewer hook lives in hook_text.",\n'
         '    "ideal_transcript": "Copy the exact spoken words from the transcript that make up this clip. Include the full text from start to end.",\n'
         '    "virality_score": 85,\n'
         '    "start_timestamp": 12.4,\n'
@@ -836,7 +836,7 @@ def get_highlights(
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
         '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
-        '    "hook_text": "Write a SHORT CONTEXTUAL SETUP LINE (about 6-12 words) that instantly tells a scroller what is happening in this clip, the way a relatable caption frames a scene. Give the full premise, not a vague tease. Examples: \\"When a millionaire explains why saving money is a trap\\", \\"How this guy turned one bad job into a business\\". Must accurately reflect what the clip actually says — do not invent stakes or overstate the content.",\n'
+        '    "hook_text": "Write a 3-7 word scroll-stopping VIEWER HOOK — a reaction, revelation, or tease that makes someone psychologically compelled to watch. Think of it as the overlay text on a viral TikTok: short, punchy, creates curiosity or emotion. Examples: \\"Nobody talks about this\\", \\"This changed everything\\", \\"He\'s actually right\\", \\"Wait, seriously?\\", \\"This should be illegal\\". Do NOT describe what happens in the clip — hook the viewer, do not summarize the content. Must be grounded in what the clip actually delivers so it does not feel like clickbait after watching.",\n'
         '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12-18 words) authored for social media — NOT copied from the transcript. Write an original hook tailored to the specific content of the clip. DO NOT copy the template examples from the prompt. It must be highly specific, punchy, and original. Max 18 words.",\n'
         '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\" | \\"opinion_bomb\\""\n'
         '  }\n'
@@ -899,7 +899,7 @@ fix. Simply return the corrected JSON.
   emoji_moments, source_topic
 □ hook_type is exactly one of: curiosity_gap | loss_aversion |
   self_identification | pattern_interrupt | open_loop | opinion_bomb
-□ hook_text is a contextual setup line of roughly 6-12 words — if it is a bare 1-3 word tag, expand it to give the full premise; if it rambles past ~14 words, tighten it
+□ hook_text is a 3-7 word VIEWER HOOK (reaction/revelation/tease) — NOT a description of what happens; if it describes the clip content instead of psychologically hooking the viewer, rewrite it as a short punchy trigger (e.g. "Nobody talks about this", "This changed everything")
 □ virality_score is an integer between 0 and 100 — not a string, not a float
 □ broll_keywords is a list of strings, not a single string
 □ emoji_moments is a list of strings

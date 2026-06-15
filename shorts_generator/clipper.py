@@ -184,11 +184,11 @@ def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: fl
     # VIDEO LAYER
     if layout_mode == "box":
         video_layer = (
-            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1,unsharp=5:5:0.6:5:5:0.0[video_graded]"
+            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1[video_graded]"
         )
     else:
         video_layer = (
-            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,unsharp=5:5:0.6:5:5:0.0[video_graded]"
+            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
         )
 
     # BACKGROUND LAYER — five branches on bg_style
@@ -962,7 +962,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         if clip_data.get("title"):
             hdr_png = os.path.join(work_dir, f"hdr_{out_id}_{idx}.png")
             _overlays.render_overlay_png(clip_data["title"], header_style, header_path,
-                                         out_path=hdr_png, max_font_size=80, min_font_size=48)
+                                         out_path=hdr_png, max_font_size=65, min_font_size=44)
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hdr_png])
             hy = 0 if layout_mode == "box" else 40
             next_v = f"v{input_idx}_hdr"
