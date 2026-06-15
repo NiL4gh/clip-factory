@@ -11,12 +11,28 @@ SAFE_W = 960           # horizontal safe width (keeps text off the edges / UI)
 MAX_FONT = 110
 MIN_FONT = 44
 
+def _apply_casing(text, casing):
+    """Collapse whitespace and apply the requested casing.
+    'upper' -> ALL CAPS (default; the top header uses this).
+    'title' -> Title Case, first letter of each word capitalised, rest lower.
+               Implemented per-word so "don't" stays "Don't".
+    'none'  -> leave text as-is (only whitespace collapsed)."""
+    text = " ".join(text.split())
+    if casing == "upper":
+        return text.upper()
+    if casing == "title":
+        return " ".join(w[:1].upper() + w[1:].lower() if w else w
+                        for w in text.split(" "))
+    return text
+
+
 def fit_lines(draw, text, font_path, max_w=SAFE_W, max_h=240, max_lines=2,
-              stroke=12, max_font_size=MAX_FONT, min_font_size=MIN_FONT):
+              stroke=12, max_font_size=MAX_FONT, min_font_size=MIN_FONT,
+              casing="upper"):
     """Return (lines, font) that fit text into max_w x max_h in <= max_lines,
     shrinking the font until it fits. All-caps, greedy word wrap.
     min_font_size floors the shrink so long text stays legible (e.g. 48 for headers)."""
-    text = " ".join(text.upper().split())
+    text = _apply_casing(text, casing)
     words = text.split(" ")
     effective_min = max(min_font_size, MIN_FONT)
     for size in range(min(max_font_size, MAX_FONT), effective_min - 1, -2):
@@ -87,7 +103,8 @@ def _draw_centered(draw, lines, font, cx, top_y, fill, keyword_idx, keyword_fill
 
 def render_overlay_png(text, preset="card", font_path=None, width=ZONE_W,
                        height=ZONE_H, out_path="overlay.png",
-                       max_font_size=MAX_FONT, min_font_size=MIN_FONT, opacity=1.0):
+                       max_font_size=MAX_FONT, min_font_size=MIN_FONT, opacity=1.0,
+                       casing="upper"):
     """Render a transparent PNG of the header/hook in the given preset.
     opacity: 0.0-1.0, applied to the BACKGROUND ONLY (card fill / scrim).
     The text always renders at full alpha so it stays crisp and readable."""
@@ -97,7 +114,7 @@ def render_overlay_png(text, preset="card", font_path=None, width=ZONE_W,
     stroke = spec.get("stroke", 0)
     lines, font = fit_lines(d, text, font_path, max_w=SAFE_W, max_h=height - 80,
                             stroke=stroke, max_font_size=max_font_size,
-                            min_font_size=min_font_size)
+                            min_font_size=min_font_size, casing=casing)
     kw = pick_keyword(" ".join(lines).split(" "))
     block_h = (font.size + 14) * len(lines)
     cx = width // 2

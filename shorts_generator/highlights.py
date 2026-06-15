@@ -819,7 +819,7 @@ def get_highlights(
     schema = (
         '[\n'
         '  {\n'
-        '    "title": "SHORT CURIOSITY HEADLINE (5-8 words). A punchy, curiosity-inducing phrase or question that teases the clip WITHOUT giving away the payoff (e.g. \\"THE MONEY RULE NOBODY TELLS YOU\\", \\"WHY YOUR FIRST JOB WAS A LIE\\"). ONE line of thought only — no two sentences, no rambling.",\n'
+        '    "title": "SHORT TOPIC TAG (3-5 words max). A punchy label for the clip topic that reads as a quick banner, NOT a full sentence (e.g. \\"THE MONEY TRAP\\", \\"FIRST JOB MISTAKES\\", \\"BETTER MALE FRIENDSHIPS\\"). Keep it extremely short — the contextual setup lives in hook_text, not here.",\n'
         '    "ideal_transcript": "Copy the exact spoken words from the transcript that make up this clip. Include the full text from start to end.",\n'
         '    "virality_score": 85,\n'
         '    "start_timestamp": 12.4,\n'
@@ -836,7 +836,7 @@ def get_highlights(
         '    "music_query": "A 3-4 word search term for no-copyright background music (e.g., upbeat phonk, calm lofi, dark suspense)",\n'
         '    "broll_keywords": ["2-3 concrete visual nouns that match the clip content, e.g., money, laptop, crowd"],\n'
         '    "emoji_moments": ["1-3 single emoji characters that match emotional peaks in the clip, e.g., 🔥, 💡, 😂"],\n'
-        '    "hook_text": "Write 3-8 words: a punchy headline that ACCURATELY reflects the clip\'s core point. Example for a clip about first jobs: YOUR FIRST JOB WAS A LIE. Example for a friendship clip: MEN NEED BETTER FRIENDS. Must match what the clip actually says — do not invent stakes or overstate the content.",\n'
+        '    "hook_text": "Write a SHORT CONTEXTUAL SETUP LINE (about 6-12 words) that instantly tells a scroller what is happening in this clip, the way a relatable caption frames a scene. Give the full premise, not a vague tease. Examples: \\"When a millionaire explains why saving money is a trap\\", \\"How this guy turned one bad job into a business\\". Must accurately reflect what the clip actually says — do not invent stakes or overstate the content.",\n'
         '    "hook_sentence": "A REWRITTEN scroll-stopping opening line (12-18 words) authored for social media — NOT copied from the transcript. Write an original hook tailored to the specific content of the clip. DO NOT copy the template examples from the prompt. It must be highly specific, punchy, and original. Max 18 words.",\n'
         '    "hook_type": "one of exactly: \\"curiosity_gap\\" | \\"loss_aversion\\" | \\"self_identification\\" | \\"pattern_interrupt\\" | \\"open_loop\\" | \\"opinion_bomb\\""\n'
         '  }\n'
@@ -899,7 +899,7 @@ fix. Simply return the corrected JSON.
   emoji_moments, source_topic
 □ hook_type is exactly one of: curiosity_gap | loss_aversion |
   self_identification | pattern_interrupt | open_loop | opinion_bomb
-□ hook_text is 8 words or fewer — if longer, trim it
+□ hook_text is a contextual setup line of roughly 6-12 words — if it is a bare 1-3 word tag, expand it to give the full premise; if it rambles past ~14 words, tighten it
 □ virality_score is an integer between 0 and 100 — not a string, not a float
 □ broll_keywords is a list of strings, not a single string
 □ emoji_moments is a list of strings

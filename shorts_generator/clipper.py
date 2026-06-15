@@ -976,7 +976,8 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             hook_until = 5.0 if hook_display == "full" else (3.0 if hook_display == "3s" else 5.0)
             hk_png = os.path.join(work_dir, f"hook_{out_id}_{idx}.png")
             _overlays.render_overlay_png(clip_data["hook_text"], header_style, hook_path,
-                                         out_path=hk_png, max_font_size=72, opacity=0.5)
+                                         out_path=hk_png, max_font_size=72, opacity=1.0,
+                                         casing="title")
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hk_png])
             # Gentle 0.3s fade-in, 0.4s fade-out so the hook is transient, not a hard pop.
             fade_out_st = max(0.0, hook_until - 0.4)
