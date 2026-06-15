@@ -122,6 +122,80 @@ const FONT_MAP: Record<string, string> = {
   'poppins': 'Poppins'
 };
 
+/* ------------------------------------------------------------------ */
+/*  Style Seeds — curated combinations for per-clip randomisation     */
+/* ------------------------------------------------------------------ */
+type StyleSeed = {
+  id: string;
+  label: string;
+  badgeColor: string; // Tailwind classes for badge background + text + border
+  changes: Record<string, string>;
+};
+
+const STYLE_SEEDS: StyleSeed[] = [
+  {
+    id: "viral_stroke",
+    label: "🔥 Viral",
+    badgeColor: "bg-orange-100 text-orange-700 border-orange-200",
+    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "3s", header_style: "stroke", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
+  },
+  {
+    id: "viral_dark",
+    label: "🌑 Dark Pop",
+    badgeColor: "bg-slate-800 text-slate-100 border-slate-700",
+    changes: { layout_mode: "box", bg_style: "black", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "card", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
+  },
+  {
+    id: "clean_white",
+    label: "✨ Clean",
+    badgeColor: "bg-slate-100 text-slate-700 border-slate-300",
+    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "off", header_style: "card", header_font: "montserrat-black", caption_font: "poppins", hook_font: "poppins" },
+  },
+  {
+    id: "brand_minimal",
+    label: "🎯 Minimal",
+    badgeColor: "bg-blue-100 text-blue-700 border-blue-200",
+    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Classic", title_style: "None", hook_display: "3s", header_style: "card", header_font: "inter", caption_font: "roboto", hook_font: "roboto" },
+  },
+  {
+    id: "blur_punch",
+    label: "💥 Punch",
+    badgeColor: "bg-purple-100 text-purple-700 border-purple-200",
+    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "Pop", title_style: "Impact", hook_display: "3s", header_style: "stroke", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
+  },
+  {
+    id: "cinematic",
+    label: "🎬 Cinematic",
+    badgeColor: "bg-rose-100 text-rose-700 border-rose-200",
+    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off", header_style: "card", header_font: "inter", caption_font: "poppins", hook_font: "poppins" },
+  },
+];
+
+/** Shuffle 6 seeds into a no-adjacent-duplicate assignment for `count` clips. */
+function assignSeedsToClips(count: number): Record<number, string> {
+  const ids = STYLE_SEEDS.map(s => s.id);
+  const shuffle = (arr: string[]) => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+  // Build pool: repeated shuffles, fixing seam duplicates between cycles
+  let pool: string[] = [];
+  while (pool.length < count) {
+    let next = shuffle(ids);
+    if (pool.length > 0 && next[0] === pool[pool.length - 1]) {
+      [next[0], next[1]] = [next[1], next[0]];
+    }
+    pool = pool.concat(next);
+  }
+  const result: Record<number, string> = {};
+  for (let i = 0; i < count; i++) result[i] = pool[i];
+  return result;
+}
+
 export default function Dashboard() {
   const [url, setUrl] = useState("");
   const sessionId = useMemo(() => crypto.randomUUID(), []);
