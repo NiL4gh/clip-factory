@@ -37,13 +37,16 @@ else:
     BASE_DIR = os.getenv("BASE_DIR", REPO_ROOT)
     WORK_DIR = os.getenv("WORK_DIR", os.path.join(REPO_ROOT, "work"))
 
+# Create a hidden system directory for internal data
+SYSTEM_DIR = os.getenv("SYSTEM_DIR", os.path.join(BASE_DIR, ".system"))
+
 # Persistent, large — must NOT move or models re-download (slow). Keep these paths stable.
-LLM_DIR      = os.getenv("LLM_DIR",      os.path.join(BASE_DIR, "models", "llm"))
-WHISPER_DIR  = os.getenv("WHISPER_DIR",  os.path.join(BASE_DIR, "models", "whisper"))
+LLM_DIR      = os.getenv("LLM_DIR",      os.path.join(SYSTEM_DIR, "models", "llm"))
+WHISPER_DIR  = os.getenv("WHISPER_DIR",  os.path.join(SYSTEM_DIR, "models", "whisper"))
 # Per-video data, outputs, resumable sessions, and diagnosis logs.
-PROJECTS_DIR = os.getenv("PROJECTS_DIR", os.path.join(BASE_DIR, "projects"))
+PROJECTS_DIR = os.getenv("PROJECTS_DIR", os.path.join(SYSTEM_DIR, "projects"))
+SESSIONS_DIR = os.getenv("SESSIONS_DIR", os.path.join(SYSTEM_DIR, "sessions"))
 OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   os.path.join(BASE_DIR, "output"))
-SESSIONS_DIR = os.getenv("SESSIONS_DIR", os.path.join(BASE_DIR, "sessions"))
 LOGS_DIR     = os.getenv("LOGS_DIR",     os.path.join(BASE_DIR, "logs"))
 COOKIE_PATH  = os.getenv("COOKIE_PATH",  os.path.join(BASE_DIR, "cookies.txt"))
 
