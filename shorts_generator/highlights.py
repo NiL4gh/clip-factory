@@ -101,8 +101,7 @@ PSYCHOLOGICAL HOOK TYPE — you must classify each clip's hook into exactly
 one of these six types and set the hook_type field accordingly:
 
 1. "curiosity_gap" — Information asymmetry. Imply knowledge the viewer
-   lacks. Example hook: "Nobody talks about this, but it explains
-   everything."
+   lacks. Template: "The hidden cost of [SPECIFIC TOPIC]" or "Why [COMMON BELIEF] is wrong about [TOPIC]"
 2. "loss_aversion" — Trigger fear of losing something or missing out.
    Example hook: "Stop wasting time on X before it's too late."
 3. "self_identification" — Directly address a specific identity or
@@ -188,7 +187,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
         try:
             resp = llm.create_chat_completion(
                 messages=[{"role": "user", "content": content}],
-                temperature=0.40,
+                temperature=0.55,
                 max_tokens=max_tokens,
             )
             raw = resp["choices"][0]["message"]["content"].strip()
@@ -219,7 +218,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
             "url_func": lambda model, key: f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
             "format_payload": lambda model, sys, pr, mx: {
                 "contents": [{"parts": [{"text": f"System Instructions:\n{sys}\n\nUser Request:\n{pr}"}]}],
-                "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4, "maxOutputTokens": mx}
+                "generationConfig": {"responseMimeType": "application/json", "temperature": 0.55, "maxOutputTokens": mx}
             },
             "extract_response": lambda res: res["candidates"][0]["content"]["parts"][0]["text"],
             "fallback_model": "gemini-2.5-flash",
@@ -231,7 +230,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
             "format_payload": lambda model, sys, pr, mx: {
                 "model": model,
                 "messages": [{"role": "system", "content": sys}, {"role": "user", "content": pr}],
-                "temperature": 0.4,
+                "temperature": 0.55,
                 "max_tokens": mx,
                 "response_format": {"type": "json_object"}
             },
@@ -245,7 +244,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
             "format_payload": lambda model, sys, pr, mx: {
                 "model": model,
                 "messages": [{"role": "system", "content": sys}, {"role": "user", "content": pr}],
-                "temperature": 0.4,
+                "temperature": 0.55,
                 "max_tokens": mx
             },
             "extract_response": lambda res: res["choices"][0]["message"]["content"],
@@ -258,7 +257,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
             "format_payload": lambda model, sys, pr, mx: {
                 "model": model,
                 "messages": [{"role": "system", "content": sys}, {"role": "user", "content": pr}],
-                "temperature": 0.4,
+                "temperature": 0.55,
                 "max_tokens": mx
             },
             "extract_response": lambda res: res["choices"][0]["message"]["content"],
@@ -274,7 +273,7 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
                 "prompt": pr,
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0.4, "num_predict": mx}
+                "options": {"temperature": 0.55, "num_predict": mx}
             },
             "extract_response": lambda res: res["response"],
             "fallback_model": "llama3.1",
@@ -899,7 +898,7 @@ fix. Simply return the corrected JSON.
   emoji_moments, source_topic
 □ hook_type is exactly one of: curiosity_gap | loss_aversion |
   self_identification | pattern_interrupt | open_loop | opinion_bomb
-□ hook_text is a 3-7 word VIEWER HOOK (reaction/revelation/tease) — NOT a description of what happens; if it describes the clip content instead of psychologically hooking the viewer, rewrite it as a short punchy trigger (e.g. "Nobody talks about this", "This changed everything")
+□ hook_text is a 3-7 word VIEWER HOOK specific to THIS clip's subject. Generic filler ("Nobody talks about this", "This changed everything", "Wait, seriously?") is BANNED — these exact phrases are forbidden output. The hook must be a phrase only someone who watched THIS specific clip would recognize as true. If it could apply to any clip, rewrite it.
 □ virality_score is an integer between 0 and 100 — not a string, not a float
 □ broll_keywords is a list of strings, not a single string
 □ emoji_moments is a list of strings
