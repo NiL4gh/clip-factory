@@ -137,7 +137,7 @@ const STYLE_SEEDS: StyleSeed[] = [
     id: "viral_stroke",
     label: "🔥 Viral",
     badgeColor: "bg-orange-100 text-orange-700 border-orange-200",
-    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "3s", header_style: "stroke", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
+    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "stroke", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
   },
   {
     id: "viral_dark",
@@ -155,19 +155,19 @@ const STYLE_SEEDS: StyleSeed[] = [
     id: "brand_minimal",
     label: "🎯 Minimal",
     badgeColor: "bg-blue-100 text-blue-700 border-blue-200",
-    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Classic", title_style: "None", hook_display: "3s", header_style: "card", header_font: "inter", caption_font: "roboto", hook_font: "roboto" },
+    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Classic", title_style: "None", hook_display: "5s", header_style: "card", header_font: "inter", caption_font: "roboto", hook_font: "roboto" },
   },
   {
     id: "blur_punch",
     label: "💥 Punch",
     badgeColor: "bg-purple-100 text-purple-700 border-purple-200",
-    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "Pop", title_style: "Impact", hook_display: "3s", header_style: "stroke", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "stroke", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
   },
   {
     id: "cinematic",
     label: "🎬 Cinematic",
     badgeColor: "bg-rose-100 text-rose-700 border-rose-200",
-    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off", header_style: "card", header_font: "inter", caption_font: "poppins", hook_font: "poppins" },
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off", header_style: "card", header_font: "inter", caption_font: "poppins", hook_font: "poppins" },
   },
 ];
 
