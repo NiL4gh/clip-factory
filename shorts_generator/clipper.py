@@ -973,7 +973,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         # Hook: punchy phrase centered on canvas (Y=800), first N seconds only
         if hook_on:
-            hook_until = 5.0 if hook_display == "full" else (3.0 if hook_display == "3s" else 5.0)
+            hook_until = 7.0 if hook_display == "full" else (5.0 if hook_display == "5s" else (3.0 if hook_display == "3s" else 7.0))
             hk_png = os.path.join(work_dir, f"hook_{out_id}_{idx}.png")
             _overlays.render_overlay_png(clip_data["hook_text"], header_style, hook_path,
                                          out_path=hk_png, max_font_size=72, opacity=1.0,
