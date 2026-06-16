@@ -798,7 +798,10 @@ export default function Dashboard() {
     const clip = results?.clips?.[clipIdx];
     if (!clip?.rendered_filename) return;
     const parts = (clip.rendered_filename as string).split("/");
-    if (parts.length < 2) return;
+    if (parts.length < 2) {
+      alert("Cannot delete: clip path is missing video ID.");
+      return;
+    }
     const videoId = parts[parts.length - 2];
     const filename = parts[parts.length - 1];
     if (!confirm(`Delete "${filename}"?\nThis removes it from Drive and cannot be undone.`)) return;

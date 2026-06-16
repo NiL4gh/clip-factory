@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import uuid
 import time
@@ -1304,7 +1305,6 @@ async def clear_gallery(project_only: bool = False, video_id: Optional[str] = No
 
 @app.delete("/api/clips/{video_id}/{filename}")
 async def delete_clip(video_id: str, filename: str):
-    import re
     if not re.match(r'^[\w\-. ]+\.mp4$', filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
     if not re.match(r'^[\w\-]+$', video_id):
@@ -1316,7 +1316,7 @@ async def delete_clip(video_id: str, filename: str):
         os.remove(file_path)
         for clip in _state.get("clips", []):
             rf = clip.get("rendered_filename", "")
-            if rf and (rf == filename or rf.endswith("/" + filename)):
+            if rf and (rf == f"{video_id}/{filename}" or rf.endswith("/" + filename)):
                 clip.pop("rendered_filename", None)
         if _state.get("current_url"):
             _save_session(_state["current_url"])
