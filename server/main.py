@@ -1302,6 +1302,26 @@ async def clear_gallery(project_only: bool = False, video_id: Optional[str] = No
                 
     return {"status": "success", "message": f"Deleted {deleted_count} rendered clips."}
 
+@app.delete("/api/clips/{video_id}/{filename}")
+async def delete_clip(video_id: str, filename: str):
+    import re
+    if not re.match(r'^[\w\-. ]+\.mp4$', filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    file_path = os.path.join(OUTPUT_DIR, video_id, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Clip not found")
+    try:
+        os.remove(file_path)
+        for clip in _state.get("clips", []):
+            rf = clip.get("rendered_filename", "")
+            if rf and rf.endswith(filename):
+                clip.pop("rendered_filename", None)
+        if _state.get("current_url"):
+            _save_session(_state["current_url"])
+        return {"status": "deleted", "filename": filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/settings")
 async def get_settings():
     env_file = os.path.join(BASE_DIR, ".env")

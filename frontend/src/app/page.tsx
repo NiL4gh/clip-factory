@@ -793,6 +793,30 @@ export default function Dashboard() {
     }));
   };
 
+  const deleteRenderedClip = async (clipIdx: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const clip = results?.clips?.[clipIdx];
+    if (!clip?.rendered_filename) return;
+    const parts = (clip.rendered_filename as string).split("/");
+    if (parts.length < 2) return;
+    const videoId = parts[parts.length - 2];
+    const filename = parts[parts.length - 1];
+    if (!confirm(`Delete "${filename}"?\nThis removes it from Drive and cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/clips/${videoId}/${encodeURIComponent(filename)}`, { method: "DELETE" });
+      if (!res.ok) { alert("Delete failed — check Drive connection."); return; }
+      setResults((prev: any) => {
+        if (!prev) return prev;
+        const clips = prev.clips.map((c: any, i: number) =>
+          i === clipIdx ? { ...c, rendered_filename: undefined } : c
+        );
+        return { ...prev, clips };
+      });
+    } catch {
+      alert("Delete failed — check Drive connection.");
+    }
+  };
+
   return (
     <ErrorBoundary>
       <div className="flex flex-col h-screen overflow-hidden bg-slate-50 text-slate-900">
@@ -1184,6 +1208,16 @@ export default function Dashboard() {
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
+                          {/* DELETE RENDERED CLIP */}
+                          {results?.clips?.[clipIdx]?.rendered_filename && (
+                            <button
+                              onClick={(e) => deleteRenderedClip(clipIdx, e)}
+                              className="p-1.5 hover:bg-rose-50 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 transition-colors shrink-0"
+                              title="Delete this rendered clip from Drive"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           {/* RENDER BUTTON */}
                           <button
                             onClick={(e) => { e.stopPropagation(); renderClip(clipIdx); }}
