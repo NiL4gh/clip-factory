@@ -124,6 +124,8 @@ class AppLogger:
         self.ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         if video_title:
             safe = "".join(c for c in video_title if c.isalnum() or c in " _-")[:60].strip()
+            if not safe:
+                safe = session_id
         else:
             safe = session_id
         log_subdir = LOG_DIR / safe
