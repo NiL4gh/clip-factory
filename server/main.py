@@ -1307,6 +1307,8 @@ async def delete_clip(video_id: str, filename: str):
     import re
     if not re.match(r'^[\w\-. ]+\.mp4$', filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
+    if not re.match(r'^[\w\-]+$', video_id):
+        raise HTTPException(status_code=400, detail="Invalid video_id")
     file_path = os.path.join(OUTPUT_DIR, video_id, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Clip not found")
@@ -1314,7 +1316,7 @@ async def delete_clip(video_id: str, filename: str):
         os.remove(file_path)
         for clip in _state.get("clips", []):
             rf = clip.get("rendered_filename", "")
-            if rf and rf.endswith(filename):
+            if rf and (rf == filename or rf.endswith("/" + filename)):
                 clip.pop("rendered_filename", None)
         if _state.get("current_url"):
             _save_session(_state["current_url"])
