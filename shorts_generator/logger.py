@@ -118,13 +118,19 @@ ui_logger = UIStreamLogger()
 # ── NEW: AppLogger with human-readable summaries ──
 class AppLogger:
     """Structured logger that writes both machine-readable JSONL and human-friendly text summaries."""
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, video_title: str = ""):
         self.session_id = session_id
         self.logger = logging.getLogger(f"AppLogger.{session_id}")
         self.ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.jsonl_path = LOG_DIR / f'session_{session_id}_{self.ts}.jsonl'
-        self.text_path = LOG_DIR / f'session_{session_id}.log'
-        
+        if video_title:
+            safe = "".join(c for c in video_title if c.isalnum() or c in " _-")[:60].strip()
+        else:
+            safe = session_id
+        log_subdir = LOG_DIR / safe
+        log_subdir.mkdir(parents=True, exist_ok=True)
+        self.jsonl_path = log_subdir / f'session log {safe}.jsonl'
+        self.text_path  = log_subdir / f'llm log {safe}.log'
+
         self._file = open(self.text_path, 'a', encoding='utf-8')
         self._entries: List[Dict[str, Any]] = []
         self._write_header()
@@ -257,7 +263,7 @@ class AppLogger:
 
 _loggers: Dict[str, AppLogger] = {}
 
-def get_logger(session_id: str) -> AppLogger:
+def get_logger(session_id: str, video_title: str = "") -> AppLogger:
     if session_id not in _loggers:
-        _loggers[session_id] = AppLogger(session_id)
+        _loggers[session_id] = AppLogger(session_id, video_title=video_title)
     return _loggers[session_id]

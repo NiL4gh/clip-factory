@@ -336,12 +336,12 @@ async def list_fonts():
 # ── Log Endpoints ──
 @app.get('/api/logs/{session_id}')
 async def get_logs(session_id: str, type: Optional[str] = Query(None), limit: int = 200):
-    logger = get_logger(session_id)
+    logger = get_logger(session_id, video_title=_state.get("video_title", ""))
     return {'entries': logger.get_entries(log_type=type, limit=limit)}
 
 @app.get('/api/logs/{session_id}/stream')
 async def stream_logs(session_id: str):
-    logger = get_logger(session_id)
+    logger = get_logger(session_id, video_title=_state.get("video_title", ""))
     last_idx = 0
     
     async def event_generator():
@@ -946,7 +946,7 @@ def _run_bulk_render(req: BulkRenderRequest):
                 # so a crashed render can be diagnosed from the Drive logs afterward.
                 try:
                     sid = locals().get("settings", {}).get("session_id", "global") if "settings" in locals() else "global"
-                    get_logger(sid).log_app_event(
+                    get_logger(sid, video_title=_state.get("video_title", "")).log_app_event(
                         "render_clip", "failed", {"clip_index": idx}, error=tb[-1500:]
                     )
                 except Exception:
