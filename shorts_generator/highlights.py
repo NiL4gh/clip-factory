@@ -283,10 +283,23 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
             "extract_response": lambda res: res["response"],
             "fallback_model": "llama3.1",
             "auth_header": False
+        },
+        "nvidia": {
+            "keys": get_keys("NVIDIA_API_KEY"),
+            "url_func": lambda model, key: "https://integrate.api.nvidia.com/v1/chat/completions",
+            "format_payload": lambda model, sys, pr, mx: {
+                "model": model,
+                "messages": [{"role": "system", "content": sys}, {"role": "user", "content": pr}],
+                "temperature": 0.55,
+                "max_tokens": mx
+            },
+            "extract_response": lambda res: res["choices"][0]["message"]["content"],
+            "fallback_model": "meta/llama-3.1-70b-instruct",
+            "auth_header": True
         }
     }
     
-    fallback_order = ["gemini", "groq", "openrouter", "glm", "ollama"]
+    fallback_order = ["nvidia", "gemini", "groq", "openrouter", "glm", "ollama"]
     if selected_provider in fallback_order:
         fallback_order.remove(selected_provider)
     fallback_order.insert(0, selected_provider)
