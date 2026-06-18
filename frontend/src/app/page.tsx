@@ -26,7 +26,8 @@ function wsUrl(): string {
   return `${proto}://${base.replace(/^https?:\/\//, "")}/api/logs`;
 }
 
-// Ensure API calls bypass the ngrok free-tier warning page
+// Bypass tunnel warning pages (localtunnel + ngrok)
+axios.defaults.headers.common["Bypass-Tunnel-Reminder"] = "true";
 axios.defaults.headers.common["ngrok-skip-browser-warning"] = "true";
 
 /* ------------------------------------------------------------------ */

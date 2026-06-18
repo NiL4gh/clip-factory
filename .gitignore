@@ -8,7 +8,9 @@ output/
 .DS_Store
 
 # Runtime / build artifacts (should never be committed)
-work/
+work/*
+!work/fonts/
+!work/fonts/*.ttf
 *.tsbuildinfo
 *.log
 .remember/

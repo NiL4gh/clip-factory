@@ -10,7 +10,7 @@ import re
 from .logger import ui_logger, get_logger
 
 _llm_cache = {}
-CHUNK_CHARS = 3000  # More granular chunks to ensure we identify 5-10+ topics for 15-20 clips
+CHUNK_CHARS = 8000
 
 
 def analyze_past_performance(session_logs: list) -> dict:
@@ -82,18 +82,23 @@ words sound:
 """
 
 _TRIGGER_WORDS = """
-VIRAL TRIGGER WORD REFERENCE (use these to sharpen hook_text):
-- Insider Words (create exclusivity): "secret", "nobody tells you",
-  "they don't want you to know", "behind the scenes", "what they hide",
-  "industry secret"
+CONTEXTUAL HOOK GUIDANCE (use these to sharpen hook_text):
+- Specificity Words (ground the hook in THIS clip): name the actual person,
+  topic, claim, or moment from the transcript — never generic placeholders
 - Helper Words (promise value): "how to", "the fix", "what actually works",
   "step by step", "the solution", "here's how"
-- Thinker Words (spark curiosity): "why", "the real reason", "the truth
-  about", "what actually happened", "the root cause"
-- Amplifier Words (raise stakes): "brutal", "shocking", "raw", "honest",
-  "unpopular opinion", "controversial", "most people don't"
+- Thinker Words (spark curiosity): "why", "what actually happened",
+  "the root cause", "the part everyone skips"
+- Tension Words (raise stakes without clickbait): "unpopular opinion",
+  "controversial", "most people don't", "the part nobody mentions"
 - FOMO Words (create urgency): "before it's too late", "stop missing out",
   "everyone else already knows", "you're behind", "the window is closing"
+
+FORBIDDEN WORDS & PHRASES (DO NOT USE THESE):
+"secret", "shocking", "truth", "surprising", "nobody tells you", "what they hide",
+"the secret to", "the harsh truth", "the dark secret", "the shocking truth".
+Instead, write natural, highly contextual curiosity gaps that sound like a real
+person talking, not a clickbait generator.
 """
 
 _HOOK_TYPES = """
@@ -429,6 +434,24 @@ def _map_quotes_to_segments(llm_segments: list, raw_words: list) -> list:
         st = raw_words[start_idx]["start"]
         et = raw_words[end_idx]["end"]
 
+        # Walk-backward sentence-boundary cuts for the start
+        best_extended_st = st
+        for prev_idx in range(start_idx - 1, -1, -1):
+            prev_w = raw_words[prev_idx]
+            if st - prev_w["end"] > 6.0:
+                break
+
+            has_punc = any(p in prev_w["word"] for p in [".", "!", "?", "।", "|"])
+            pause_before = False
+            if prev_idx + 1 < len(raw_words):
+                pause_before = (raw_words[prev_idx + 1]["start"] - prev_w["end"]) > 0.4
+
+            if has_punc or pause_before:
+                best_extended_st = raw_words[prev_idx + 1]["start"]
+                break
+
+        st = best_extended_st
+
         # B4: Walk-forward sentence-boundary cuts
         best_extended_et = et
         for next_idx in range(end_idx + 1, len(raw_words)):
@@ -562,8 +585,8 @@ def _validate_clips(clips: list, raw_words: list) -> list:
 
         total_dur = sum(max(0, seg.get("end_time", 0) - seg.get("start_time", 0)) for seg in segments)
 
-        if total_dur < 15 or total_dur > 90:
-            ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds (limit 15–90s)")
+        if total_dur < 15 or total_dur > 240:
+            ui_logger.log(f"  Discarded clip '{clip.get('title', '?')}': duration {total_dur:.0f}s out of bounds (limit 15–240s)")
             continue
 
         # Content-based intro/outro/sponsor guard (defense-in-depth; prompt rule alone isn't enough)
@@ -747,11 +770,9 @@ def get_topic_index(transcript_data, llm_path: str, gpu_layers: int = 35, langua
 # 5 one-shot viral hook examples labeled by persona type (L1)
 _VIRAL_HOOKS_EXAMPLES = """
 VIRAL HOOK ONE-SHOT EXAMPLES BY PERSONA TYPE:
-- DEBATE: "Everyone is lying to you about X... here is the real reason why."
-- DEBATE: "They want you to believe X, but the data completely contradicts them."
-- INTERVIEW: "This single question completely broke his brain..."
-- INTERVIEW: "The moment he said X, I knew the interview was over."
-- MONOLOGUE: "I spent 10 years learning X so you can learn it in 30 seconds."
+- DEBATE: Highlight the exact intellectual clash. Example: "Why [Specific Person]'s theory on [Topic] completely falls apart."
+- INTERVIEW: Highlight the specific emotional revelation. Example: "The moment [Guest] realized their entire strategy was backward."
+- MONOLOGUE: Promise a specific transformation. Example: "How a 10-minute daily habit replaced my entire [Topic] routine."
 """
 
 _DEBATE_PROMPT_ADDITION = """
@@ -898,7 +919,7 @@ fix. Simply return the corrected JSON.
   emoji_moments, source_topic
 □ hook_type is exactly one of: curiosity_gap | loss_aversion |
   self_identification | pattern_interrupt | open_loop | opinion_bomb
-□ hook_text is a 3-7 word VIEWER HOOK specific to THIS clip's subject. Generic filler ("Nobody talks about this", "This changed everything", "Wait, seriously?") is BANNED — these exact phrases are forbidden output. The hook must be a phrase only someone who watched THIS specific clip would recognize as true. If it could apply to any clip, rewrite it.
+□ hook_text is a 3-7 word VIEWER HOOK specific to THIS clip's subject. Generic filler ("Nobody talks about this", "This changed everything", "Wait, seriously?") is BANNED — these exact phrases are forbidden output. Also BANNED: any hook containing "secret", "shocking", "truth", "surprising", "harsh truth", "dark secret", or "nobody tells you". The hook must be a phrase only someone who watched THIS specific clip would recognize as true. If it could apply to any clip, rewrite it.
 □ virality_score is an integer between 0 and 100 — not a string, not a float
 □ broll_keywords is a list of strings, not a single string
 □ emoji_moments is a list of strings
@@ -940,7 +961,7 @@ fix. Simply return the corrected JSON.
                 f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                 f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
                 f"Extract the most engaging moments from this section. ALWAYS try to return at least 1-2 good clips unless the section is completely silent or unusable.\n"
-                f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
+                f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-180s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                 f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                 f"Transcript:\n{topic_text}\n\n"
                 f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -988,8 +1009,8 @@ fix. Simply return the corrected JSON.
                     f"{virality_prompt}\n\n"
                     f"You are analyzing a specific section of a video about: \"{topic['topic']}\"\n"
                     f"Time range: {topic['start_time']:.0f}s to {topic['end_time']:.0f}s\n\n"
-                    f"Extract the most engaging and interesting moments from this section. ALWAYS try to return at least 1-2 good clips (30-90s) even if it's an educational or slower-paced video.\n"
-                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
+                    f"Extract the most engaging and interesting moments from this section. ALWAYS try to return at least 1-2 good clips (30-180s) even if it's an educational or slower-paced video.\n"
+                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-180s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                     f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.{energy_hint}\n\n"
                     f"Transcript:\n{topic_text}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
@@ -1024,7 +1045,7 @@ fix. Simply return the corrected JSON.
                 prompt = (
                     f"{virality_prompt}\n\n"
                     f"Extract the most engaging moments from this chunk. Try to return at least 1-2 good clips.\n"
-                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-90s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
+                    f"CRITICAL: Do NOT extract multiple overlapping clips from the same moment. If you find a great moment, extract ONE cohesive, fully-fleshed out clip (30-180s) rather than multiple overlapping fragments. Do NOT create duplicate variations of the same dialogue.\n"
                     f"CRITICAL: Do NOT include timestamp brackets (e.g., [12.4s]) inside start_quote or end_quote. Only output the raw spoken words. However, you MUST output the start_timestamp and end_timestamp floating-point keys in the JSON object itself.\n\n"
                     f"Transcript (Part {idx+1}/{len(fallback_chunks)}):\n{f_chunk}\n\n"
                     f"Respond ONLY with a JSON array of clips:\n{schema}"
