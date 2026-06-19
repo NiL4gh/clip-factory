@@ -518,6 +518,17 @@ export default function Dashboard() {
     wsRef.current?.close();
     const ws = new WebSocket(wsUrl());
     ws.onmessage = handleWsMessage;
+    ws.onclose = () => {
+      // Tunnel WebSocket drops are common during long renders. If this is still
+      // the active socket and a job is being tracked, reconnect so the live
+      // progress/log stream resumes instead of silently freezing.
+      const jobActive = !!(strategizePollRef.current || renderPollRef.current);
+      if (wsRef.current === ws && jobActive) {
+        setTimeout(() => {
+          if (strategizePollRef.current || renderPollRef.current) connectWebSocket();
+        }, 1500);
+      }
+    };
     wsRef.current = ws;
   };
 
@@ -534,11 +545,27 @@ export default function Dashboard() {
       persistSessionUrl(data.current_url);
     }
     if (banner) setRecoveryBanner(banner);
+    // The heavy word-level transcript is no longer in /api/results (it stalled
+    // the tunnel on long videos). Fetch it once, on demand, and merge it in so
+    // the sentence-exclusion panel keeps working.
+    if (data.clips?.length) {
+      axios.get(`${API_BASE}/word_timestamps`)
+        .then(res => {
+          setResults((prev: any) => prev ? { ...prev, word_timestamps: res.data.word_timestamps } : prev);
+        })
+        .catch(() => { /* sentence-exclusion degrades to empty; not fatal */ });
+    }
   };
 
   const startStrategizePolling = () => {
     if (strategizePollRef.current) clearInterval(strategizePollRef.current);
+    let inFlight = false;
     strategizePollRef.current = setInterval(async () => {
+      // Skip this tick if the previous poll hasn't returned yet. Without this,
+      // a slow response lets requests pile up faster than they complete and
+      // stampede the tunnel into a stall.
+      if (inFlight) return;
+      inFlight = true;
       try {
         const [statusRes, resultsRes] = await Promise.all([
           axios.get(`${API_BASE}/status`),
@@ -562,13 +589,18 @@ export default function Dashboard() {
         }
       } catch {
         /* poll again */
+      } finally {
+        inFlight = false;
       }
     }, 2000);
   };
 
   const startRenderPolling = () => {
     if (renderPollRef.current) clearInterval(renderPollRef.current);
+    let inFlight = false;
     renderPollRef.current = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const statusRes = await axios.get(`${API_BASE}/status`);
         setBackendJobRunning({
@@ -591,6 +623,8 @@ export default function Dashboard() {
         }
       } catch {
         /* poll again */
+      } finally {
+        inFlight = false;
       }
     }, 2000);
   };

@@ -699,8 +699,21 @@ async def get_results():
         "topics": _state["topics"],
         "estimated_clips": _state["estimated_clips"],
         "video_duration": _state["video_duration"],
-        "word_timestamps": _state["word_timestamps"]
+        # word_timestamps is intentionally OMITTED here. For long videos it is
+        # 1-2 MB (~30x the clip data) and this endpoint is polled every 2s; the
+        # bloat stampeded the tunnel into a total stall after strategy completed.
+        # The sentence-exclusion UI fetches it once on demand via /api/word_timestamps.
     }
+
+
+@app.get("/api/word_timestamps")
+async def get_word_timestamps():
+    """Serve the heavy word-level transcript on demand (sentence-exclusion UI).
+
+    Kept out of the frequently-polled /api/results payload on purpose — see the
+    note there. Fetched once by the frontend after results load.
+    """
+    return {"word_timestamps": _state.get("word_timestamps", [])}
 
 @app.get("/api/render_status")
 async def get_render_status(task_id: str):
