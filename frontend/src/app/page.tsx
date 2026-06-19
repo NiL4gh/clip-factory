@@ -30,6 +30,8 @@ function wsUrl(): string {
 axios.defaults.headers.common["Bypass-Tunnel-Reminder"] = "true";
 axios.defaults.headers.common["ngrok-skip-browser-warning"] = "true";
 
+const SESSION_URL_KEY = "cf_last_url";
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -85,7 +87,7 @@ const DEFAULT_SETTINGS = {
   show_outro: false,
   title_style: "Impact",
   template: "viral",
-  header_font: "bebas",
+  header_font: "montserrat-black",
   caption_font: "montserrat",
   hook_font: "montserrat",
   header_style: "card",
@@ -103,13 +105,13 @@ const STYLE_PRESETS: Record<string, { label: string; summary: string; changes: R
   },
   clean: {
     label: "✨ Clean",
-    summary: "Classic captions on a white background, simple boxed header, no hook timer.",
-    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "off", header_style: "card" },
+    summary: "Classic captions on a white background, simple boxed header, hook for 3s.",
+    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "3s", header_style: "card" },
   },
   cinematic: {
     label: "🎬 Cinematic",
-    summary: "Full-frame blurred background, cinematic captions, no header. Best for visual content.",
-    changes: { layout_mode: "portrait", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off", header_style: "card" },
+    summary: "Full-frame blurred background, cinematic captions, hook for 3s.",
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "3s", header_style: "card" },
   },
 };
 
@@ -138,19 +140,19 @@ const STYLE_SEEDS: StyleSeed[] = [
     id: "viral_stroke",
     label: "🔥 Viral",
     badgeColor: "bg-orange-100 text-orange-700 border-orange-200",
-    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "stroke", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
+    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "stroke", header_font: "montserrat-black", caption_font: "montserrat", hook_font: "montserrat" },
   },
   {
     id: "viral_dark",
     label: "🌑 Dark Pop",
     badgeColor: "bg-slate-800 text-slate-100 border-slate-700",
-    changes: { layout_mode: "box", bg_style: "black", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "card", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
+    changes: { layout_mode: "box", bg_style: "black", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "card", header_font: "montserrat-black", caption_font: "montserrat", hook_font: "montserrat" },
   },
   {
     id: "clean_white",
     label: "✨ Clean",
     badgeColor: "bg-slate-100 text-slate-700 border-slate-300",
-    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "off", header_style: "card", header_font: "montserrat-black", caption_font: "poppins", hook_font: "poppins" },
+    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "3s", header_style: "card", header_font: "montserrat-black", caption_font: "poppins", hook_font: "poppins" },
   },
   {
     id: "brand_minimal",
@@ -162,13 +164,13 @@ const STYLE_SEEDS: StyleSeed[] = [
     id: "blur_punch",
     label: "💥 Punch",
     badgeColor: "bg-purple-100 text-purple-700 border-purple-200",
-    changes: { layout_mode: "box", bg_style: "blur", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "stroke", header_font: "bebas", caption_font: "montserrat", hook_font: "montserrat" },
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "stroke", header_font: "montserrat-black", caption_font: "montserrat", hook_font: "montserrat" },
   },
   {
     id: "cinematic",
     label: "🎬 Cinematic",
     badgeColor: "bg-rose-100 text-rose-700 border-rose-200",
-    changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "off", header_style: "card", header_font: "inter", caption_font: "poppins", hook_font: "poppins" },
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "3s", header_style: "card", header_font: "inter", caption_font: "poppins", hook_font: "poppins" },
   },
 ];
 
@@ -214,6 +216,7 @@ export default function Dashboard() {
       } catch (err) {
         console.warn('Health check failed:', err);
         setBackendStatus('disconnected');
+        bootstrapDoneRef.current = false;
       }
     };
     check();
@@ -231,7 +234,13 @@ export default function Dashboard() {
   const [angle, setAngle] = useState("standard");
   const [gallerySessionMode, setGallerySessionMode] = useState<"current" | "all">("current");
   const logEndRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const strategizePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const renderPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bootstrapDoneRef = useRef(false);
   const [progress, setProgress] = useState<{percent: number; message: string; eta?: number | null} | null>(null);
+  const [recoveryBanner, setRecoveryBanner] = useState<string | null>(null);
+  const [backendJobRunning, setBackendJobRunning] = useState({ is_strategizing: false, is_rendering: false });
   const [showPreview, setShowPreview] = useState(false);
 
   // Model selectors
@@ -256,7 +265,7 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"api" | "storage">("api");
   const [storageInfo, setStorageInfo] = useState<{models: any[], sessions: any[]}>({models: [], sessions: []});
-  const [apiKeys, setApiKeys] = useState({GEMINI_API_KEY: "", GROQ_API_KEY: "", OPENROUTER_API_KEY: "", GLM_API_KEY: ""});
+  const [apiKeys, setApiKeys] = useState({GEMINI_API_KEY: "", GROQ_API_KEY: "", OPENROUTER_API_KEY: "", GLM_API_KEY: "", NVIDIA_API_KEY: ""});
 
   useEffect(() => {
     if (showSettings) {
@@ -464,6 +473,8 @@ export default function Dashboard() {
       await axios.post(`${API_BASE}/cancel_strategize`);
       setStatus("idle");
       setProgress(null);
+      setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+      clearAllConnections();
       addLog("❌ Analysis cancelled by user.");
     } catch {}
   };
@@ -480,8 +491,249 @@ export default function Dashboard() {
       setCardRenderStates({});
       setSelectedForRender({});
       setEditedTitles({});
+      setRecoveryBanner(null);
+      setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+      sessionStorage.removeItem(SESSION_URL_KEY);
+      bootstrapDoneRef.current = false;
+      clearAllConnections();
     } catch {}
   };
+
+  const clearAllConnections = () => {
+    if (strategizePollRef.current) {
+      clearInterval(strategizePollRef.current);
+      strategizePollRef.current = null;
+    }
+    if (renderPollRef.current) {
+      clearInterval(renderPollRef.current);
+      renderPollRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  };
+
+  const connectWebSocket = () => {
+    wsRef.current?.close();
+    const ws = new WebSocket(wsUrl());
+    ws.onmessage = handleWsMessage;
+    wsRef.current = ws;
+  };
+
+  const persistSessionUrl = (targetUrl: string) => {
+    if (targetUrl) sessionStorage.setItem(SESSION_URL_KEY, targetUrl);
+  };
+
+  const applyResults = (data: any, banner?: string | null) => {
+    setResults(data);
+    setStatus("done");
+    setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+    if (data.current_url) {
+      setUrl(data.current_url);
+      persistSessionUrl(data.current_url);
+    }
+    if (banner) setRecoveryBanner(banner);
+  };
+
+  const startStrategizePolling = () => {
+    if (strategizePollRef.current) clearInterval(strategizePollRef.current);
+    strategizePollRef.current = setInterval(async () => {
+      try {
+        const [statusRes, resultsRes] = await Promise.all([
+          axios.get(`${API_BASE}/status`),
+          axios.get(`${API_BASE}/results`),
+        ]);
+        setBackendJobRunning({
+          is_strategizing: !!statusRes.data.is_strategizing,
+          is_rendering: !!statusRes.data.is_rendering,
+        });
+        if (resultsRes.data.status === "done") {
+          if (strategizePollRef.current) clearInterval(strategizePollRef.current);
+          strategizePollRef.current = null;
+          wsRef.current?.close();
+          wsRef.current = null;
+          applyResults(
+            resultsRes.data,
+            resultsRes.data.clips?.length
+              ? `Recovered your session — ${resultsRes.data.clips.length} clips ready`
+              : null
+          );
+        }
+      } catch {
+        /* poll again */
+      }
+    }, 2000);
+  };
+
+  const startRenderPolling = () => {
+    if (renderPollRef.current) clearInterval(renderPollRef.current);
+    renderPollRef.current = setInterval(async () => {
+      try {
+        const statusRes = await axios.get(`${API_BASE}/status`);
+        setBackendJobRunning({
+          is_strategizing: !!statusRes.data.is_strategizing,
+          is_rendering: !!statusRes.data.is_rendering,
+        });
+        if (!statusRes.data.is_rendering) {
+          if (renderPollRef.current) clearInterval(renderPollRef.current);
+          renderPollRef.current = null;
+          wsRef.current?.close();
+          wsRef.current = null;
+          const resultsRes = await axios.get(`${API_BASE}/results`);
+          if (resultsRes.data.status === "done") {
+            applyResults(resultsRes.data);
+          } else {
+            setStatus("done");
+          }
+          setProgress(null);
+          fetchGallery();
+        }
+      } catch {
+        /* poll again */
+      }
+    }, 2000);
+  };
+
+  const beginStrategizeTracking = (targetUrl: string, options?: { clearLogs?: boolean; reconnected?: boolean }) => {
+    const clearLogs = options?.clearLogs !== false;
+    const reconnected = options?.reconnected === true;
+    if (clearLogs) {
+      setLogs([]);
+      addLog("Initializing AI Director Pipeline...");
+    } else if (reconnected) {
+      addLog("Reconnected to running strategize job after page refresh...");
+    }
+    setStatus("strategizing");
+    setSelectedClip(null);
+    if (!reconnected) setProgress(null);
+    setShowRestoreModal(false);
+    if (targetUrl) {
+      setUrl(targetUrl);
+      persistSessionUrl(targetUrl);
+    }
+    setBackendJobRunning({ is_strategizing: true, is_rendering: false });
+    connectWebSocket();
+    startStrategizePolling();
+  };
+
+  const beginRenderTracking = (options?: { clearLogs?: boolean; reconnected?: boolean }) => {
+    if (options?.clearLogs) setLogs([]);
+    else if (options?.reconnected) addLog("Reconnected to running render job after page refresh...");
+    setStatus("rendering");
+    setBackendJobRunning(prev => ({ ...prev, is_rendering: true }));
+    connectWebSocket();
+    startRenderPolling();
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      try {
+        const [statusRes, resultsRes] = await Promise.all([
+          axios.get(`${API_BASE}/status`),
+          axios.get(`${API_BASE}/results`),
+        ]);
+        if (cancelled) return;
+
+        const isStrategizing = !!statusRes.data.is_strategizing;
+        const isRendering = !!statusRes.data.is_rendering;
+        const currentUrl =
+          statusRes.data.current_url ||
+          resultsRes.data.current_url ||
+          sessionStorage.getItem(SESSION_URL_KEY) ||
+          "";
+        setBackendJobRunning({ is_strategizing: isStrategizing, is_rendering: isRendering });
+
+        if (isStrategizing) {
+          beginStrategizeTracking(currentUrl, { clearLogs: false, reconnected: true });
+          setRecoveryBanner("Job still running — reconnected after refresh");
+          bootstrapDoneRef.current = true;
+          return;
+        }
+
+        if (isRendering) {
+          if (currentUrl) {
+            setUrl(currentUrl);
+            persistSessionUrl(currentUrl);
+          }
+          beginRenderTracking({ clearLogs: false, reconnected: true });
+          setRecoveryBanner("Render in progress — reconnected after refresh");
+          bootstrapDoneRef.current = true;
+          return;
+        }
+
+        if (resultsRes.data.status === "done" && resultsRes.data.clips?.length > 0) {
+          applyResults(
+            resultsRes.data,
+            `Recovered your session — ${resultsRes.data.clips.length} clips ready`
+          );
+          addLog("Session recovered automatically after page refresh.");
+          bootstrapDoneRef.current = true;
+          return;
+        }
+
+        const savedUrl = sessionStorage.getItem(SESSION_URL_KEY);
+        if (savedUrl) {
+          setUrl(savedUrl);
+          try {
+            const checkRes = await axios.post(`${API_BASE}/check_session`, { url: savedUrl });
+            if (!cancelled && checkRes.data.exists) {
+              setPendingRestoreUrl(savedUrl);
+              setShowRestoreModal(true);
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        bootstrapDoneRef.current = true;
+      } catch {
+        /* backend unreachable — disconnect banner handles it; retry when connected */
+      }
+    };
+
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-bootstrap when backend comes back after a tunnel reconnect (502 → connected)
+  useEffect(() => {
+    if (backendStatus !== "connected" || bootstrapDoneRef.current) return;
+    const retry = async () => {
+      try {
+        const [statusRes, resultsRes] = await Promise.all([
+          axios.get(`${API_BASE}/status`),
+          axios.get(`${API_BASE}/results`),
+        ]);
+        const isStrategizing = !!statusRes.data.is_strategizing;
+        const isRendering = !!statusRes.data.is_rendering;
+        if (isStrategizing) {
+          beginStrategizeTracking(statusRes.data.current_url || url, { clearLogs: false, reconnected: true });
+          setRecoveryBanner("Job still running — reconnected after refresh");
+        } else if (isRendering) {
+          beginRenderTracking({ clearLogs: false, reconnected: true });
+          setRecoveryBanner("Render in progress — reconnected after refresh");
+        } else if (resultsRes.data.status === "done" && resultsRes.data.clips?.length > 0) {
+          applyResults(
+            resultsRes.data,
+            `Recovered your session — ${resultsRes.data.clips.length} clips ready`
+          );
+          addLog("Session recovered after backend reconnected.");
+        }
+        bootstrapDoneRef.current = true;
+      } catch {
+        /* ignore */
+      }
+    };
+    retry();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendStatus]);
+
+  useEffect(() => () => clearAllConnections(), []);
 
   // Blocklist regex — reject raw backend noise from the log console
   const LOG_BLOCKLIST = /DEBUG|ffmpeg|whisper|model_load|frame=|bitrate=|speed=|Lsize=|muxing overhead|Stream #|libx26|matroska|ggml|llama_|llm_load|VRAM|size=\s*\d|cublas|metal|cuda|opengl|vulkan/i;
@@ -509,14 +761,7 @@ export default function Dashboard() {
   };
 
   const startStrategize = async (targetUrl: string) => {
-    setStatus("strategizing");
-    setLogs([]);
-    addLog("Initializing AI Director Pipeline...");
-    setSelectedClip(null);
-    setProgress(null);
-    setShowRestoreModal(false);
-
-    let ws: WebSocket | null = null;
+    beginStrategizeTracking(targetUrl);
     try {
       await axios.post(`${API_BASE}/strategize`, { 
         url: targetUrl, 
@@ -525,24 +770,13 @@ export default function Dashboard() {
         angle: angle,
         session_id: sessionId
       });
-      
-      ws = new WebSocket(wsUrl());
-      ws.onmessage = handleWsMessage;
-      const poll = setInterval(async () => {
-        const res = await axios.get(`${API_BASE}/results`);
-        if (res.data.status === "done") {
-          clearInterval(poll);
-          setResults(res.data);
-          setStatus("done");
-          ws?.close();
-        }
-      }, 2000);
     } catch (error: any) {
       const msg = error.response?.data?.detail || error.message || "Unknown error";
       console.error(error);
       addLog(`❌ Error starting strategize phase: ${msg}`);
       setStatus("error");
-      ws?.close();
+      setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+      clearAllConnections();
     }
   };
 
@@ -556,8 +790,7 @@ export default function Dashboard() {
       const res = await axios.post(`${API_BASE}/restore_session`, { url: targetUrl });
       if (res.data.status === "success") {
         const resultsRes = await axios.get(`${API_BASE}/results`);
-        setResults(resultsRes.data);
-        setStatus("done");
+        applyResults(resultsRes.data, `Restored from Google Drive — ${resultsRes.data.clips?.length || 0} clips ready`);
         addLog("✅ Session successfully restored from Google Drive.");
       }
     } catch (error: any) {
@@ -569,6 +802,23 @@ export default function Dashboard() {
 
   const handleStrategize = async () => {
     if (!url) return;
+    try {
+      const statusRes = await axios.get(`${API_BASE}/status`);
+      if (statusRes.data.is_strategizing || statusRes.data.is_rendering) {
+        addLog("A task is already running on the backend — reconnecting...");
+        if (statusRes.data.is_strategizing) {
+          beginStrategizeTracking(statusRes.data.current_url || url.trim(), {
+            clearLogs: false,
+            reconnected: true,
+          });
+        } else {
+          beginRenderTracking({ clearLogs: false, reconnected: true });
+        }
+        return;
+      }
+    } catch {
+      /* proceed */
+    }
     try {
       const checkRes = await axios.post(`${API_BASE}/check_session`, { url: url.trim() });
       if (checkRes.data.exists) {
@@ -583,10 +833,8 @@ export default function Dashboard() {
   };
 
   const renderClip = async (index: number) => {
-    setStatus("rendering");
-    setLogs([]);
+    beginRenderTracking({ clearLogs: true });
 
-    let ws: WebSocket | null = null;
     try {
       const settings = getSettings(index);
       const exSentences = (excludedSentences[index] || []).map(s => `[WID:${s.start_idx}-${s.end_idx}] ${s.text}`);
@@ -598,37 +846,45 @@ export default function Dashboard() {
         title: editedTitles[index] || undefined,
         session_id: sessionId
       });
-      
-      ws = new WebSocket(wsUrl());
-      ws.onmessage = handleWsMessage;
 
       const taskId = res.data.task_id;
-      const poll = setInterval(async () => {
-        const statusRes = await axios.get(`${API_BASE}/render_status?task_id=${taskId}`);
-        if (statusRes.data.status === "done") {
-          clearInterval(poll);
-          setStatus("done");
-          setProgress(null);
-          ws?.close();
-          fetchGallery();
-          setActiveView("gallery");
-          window.location.href = `${API_BASE}/download_all?project_only=true`;
-        } else if (statusRes.data.status === "error") {
-          clearInterval(poll);
-          setStatus("error");
-          addLog(`❌ Render Error: ${statusRes.data.error}`);
-          ws?.close();
+      if (renderPollRef.current) clearInterval(renderPollRef.current);
+      renderPollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await axios.get(`${API_BASE}/render_status?task_id=${taskId}`);
+          if (statusRes.data.status === "done") {
+            if (renderPollRef.current) clearInterval(renderPollRef.current);
+            renderPollRef.current = null;
+            wsRef.current?.close();
+            wsRef.current = null;
+            setStatus("done");
+            setProgress(null);
+            setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+            fetchGallery();
+            setActiveView("gallery");
+            window.location.href = `${API_BASE}/download_all?project_only=true`;
+          } else if (statusRes.data.status === "error") {
+            if (renderPollRef.current) clearInterval(renderPollRef.current);
+            renderPollRef.current = null;
+            wsRef.current?.close();
+            wsRef.current = null;
+            setStatus("error");
+            setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+            addLog(`❌ Render Error: ${statusRes.data.error}`);
+          }
+        } catch {
+          /* poll again */
         }
       }, 2000);
     } catch {
       setStatus("error");
-      ws?.close();
+      setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+      clearAllConnections();
     }
   };
 
   const renderAllClips = async () => {
-    setStatus("rendering");
-    setLogs([]);
+    beginRenderTracking({ clearLogs: true });
 
     const selectedIds = Object.entries(selectedForRender)
       .filter(([_, checked]) => checked)
@@ -640,7 +896,6 @@ export default function Dashboard() {
       clipSettingsMap[id] = getSettings(id);
     });
 
-    let ws: WebSocket | null = null;
     try {
       await axios.post(`${API_BASE}/render_all`, {
         ...globalSettings,
@@ -649,25 +904,34 @@ export default function Dashboard() {
         clip_settings: clipSettingsMap,
         session_id: sessionId
       });
-      
-      ws = new WebSocket(wsUrl());
-      ws.onmessage = handleWsMessage;
-      
-      const poll = setInterval(async () => {
-        const statusRes = await axios.get(`${API_BASE}/status`);
-        if (!statusRes.data.is_rendering) {
-          clearInterval(poll);
-          setStatus("done");
-          setProgress(null);
-          ws?.close();
-          fetchGallery();
-          setActiveView("gallery");
-          window.location.href = `${API_BASE}/download_all?project_only=true`;
+
+      if (renderPollRef.current) clearInterval(renderPollRef.current);
+      renderPollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await axios.get(`${API_BASE}/status`);
+          setBackendJobRunning({
+            is_strategizing: !!statusRes.data.is_strategizing,
+            is_rendering: !!statusRes.data.is_rendering,
+          });
+          if (!statusRes.data.is_rendering) {
+            if (renderPollRef.current) clearInterval(renderPollRef.current);
+            renderPollRef.current = null;
+            wsRef.current?.close();
+            wsRef.current = null;
+            setStatus("done");
+            setProgress(null);
+            fetchGallery();
+            setActiveView("gallery");
+            window.location.href = `${API_BASE}/download_all?project_only=true`;
+          }
+        } catch {
+          /* poll again */
         }
       }, 2000);
     } catch {
       setStatus("error");
-      ws?.close();
+      setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+      clearAllConnections();
     }
   };
 
@@ -839,6 +1103,28 @@ export default function Dashboard() {
           </div>
         </header>
 
+        {backendStatus === "disconnected" && (
+          <div className="bg-rose-50 border-b border-rose-200 px-4 py-3 text-sm text-rose-900 flex-shrink-0">
+            <strong>Cannot reach the Colab backend.</strong>{" "}
+            The tunnel may have expired (502 Bad Gateway). Go to your Colab notebook, re-run{" "}
+            <strong>Cell 2</strong>, and open the <strong>new</strong> Dashboard URL it prints.
+            Do not reuse an old bookmark — Localtunnel URLs die after long runs.
+          </div>
+        )}
+
+        {recoveryBanner && backendStatus === "connected" && (
+          <div className="bg-indigo-50 border-b border-indigo-200 px-4 py-2.5 text-sm text-indigo-900 flex items-center justify-between gap-4 flex-shrink-0">
+            <span>{recoveryBanner}</span>
+            <button
+              type="button"
+              onClick={() => setRecoveryBanner(null)}
+              className="text-indigo-600 hover:text-indigo-800 font-semibold text-xs shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-[320px_1fr_300px] flex-1 overflow-hidden">
           
           {/* ── Left Sidebar ────────────────────────────────── */}
@@ -869,13 +1155,13 @@ export default function Dashboard() {
             <div className="flex gap-2">
               <button
                 onClick={handleStrategize}
-                disabled={status !== "idle" || !url}
+                disabled={status !== "idle" || !url || backendJobRunning.is_strategizing || backendJobRunning.is_rendering}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 disabled:opacity-50 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all text-sm shadow-md active:scale-[0.98]"
               >
                 {status === "strategizing" ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 {status === "strategizing" ? "Strategizing..." : "Generate"}
               </button>
-              {status === "strategizing" && (
+              {(status === "strategizing" || backendJobRunning.is_strategizing) && (
                 <button
                   onClick={handleCancel}
                   className="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-3 px-4 rounded-xl flex items-center justify-center transition-all active:scale-[0.98]"
@@ -1487,12 +1773,12 @@ export default function Dashboard() {
             <div className="space-y-1">
               <span className="text-xs font-bold text-slate-500">Header Font</span>
               <select
-                value={activeSettings.header_font || "bebas"}
+                value={activeSettings.header_font || "montserrat-black"}
                 onChange={(e) => applySetting("header_font", e.target.value)}
                 className="w-full bg-slate-50 text-slate-800 text-sm border border-slate-200 rounded-lg p-2.5 outline-none font-medium"
               >
-                <option value="bebas">Bebas Neue — tall condensed</option>
                 <option value="montserrat-black">Montserrat Black — heavy</option>
+                <option value="inter">Inter — clean modern</option>
                 <option value="poppins">Poppins — rounded</option>
               </select>
             </div>
@@ -1508,7 +1794,6 @@ export default function Dashboard() {
                 <option value="montserrat">Montserrat — clean bold</option>
                 <option value="poppins">Poppins — rounded geometric</option>
                 <option value="roboto">Roboto — neutral sans</option>
-                <option value="bebas">Bebas Neue — condensed</option>
               </select>
             </div>
 
@@ -1721,6 +2006,10 @@ export default function Dashboard() {
                   <div>
                     <label className="text-xs font-bold text-slate-600 uppercase">GLM API Key (Zhipu)</label>
                     <input type="text" value={apiKeys.GLM_API_KEY} onChange={e => setApiKeys(prev => ({...prev, GLM_API_KEY: e.target.value}))} className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 uppercase">NVIDIA API Key (NIM)</label>
+                    <input type="text" value={apiKeys.NVIDIA_API_KEY} onChange={e => setApiKeys(prev => ({...prev, NVIDIA_API_KEY: e.target.value}))} placeholder="nvapi-..." className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-sm" />
                   </div>
                   <button onClick={saveSettings} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg mt-4 transition-colors">
                     Save API Keys

@@ -377,7 +377,8 @@ async def heartbeat():
 async def get_status():
     return {
         "is_strategizing": _state["is_strategizing"],
-        "is_rendering": _state["is_rendering"]
+        "is_rendering": _state["is_rendering"],
+        "current_url": _state.get("current_url") or "",
     }
 
 @app.websocket("/api/logs")
@@ -1035,8 +1036,8 @@ async def download_single(background_tasks: BackgroundTasks, filename: str):
             if clip_data:
                 metadata = {
                     "title": clip_data.get("title", "Clip"),
-                    "rationale": clip_data.get("rationale", ""),
-                    "transcript": clip_data.get("transcript", ""),
+                    "rationale": clip_data.get("virality_reason", ""),
+                    "transcript": clip_data.get("ideal_transcript", ""),
                     "score": clip_data.get("score", 0),
                     "duration": clip_data.get("duration", 0),
                     "persona": clip_data.get("persona", ""),
@@ -1097,14 +1098,25 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
                         base_filename = os.path.basename(filename)
                         metadata = {
                             "title": clip.get("title", f"Clip {idx+1}"),
-                            "rationale": clip.get("rationale", ""),
-                            "transcript": clip.get("transcript", ""),
+                            "rationale": clip.get("virality_reason", ""),
+                            "transcript": clip.get("ideal_transcript", ""),
                             "score": clip.get("score", 0),
                             "duration": clip.get("duration", 0),
                             "persona": clip.get("persona", ""),
                         }
                         meta_filename = f"{os.path.splitext(base_filename)[0]}_metadata.json"
                         zipf.writestr(meta_filename, json.dumps(metadata, indent=4))
+            # Bundle recent session logs (SESSION_NOTES: logs missing from download ZIP)
+            import glob as _glob
+            log_files = _glob.glob(os.path.join(str(LOG_DIR), "**", "*.jsonl"), recursive=True)
+            log_files += _glob.glob(os.path.join(str(LOG_DIR), "**", "*.log"), recursive=True)
+            log_files.sort(key=os.path.getmtime, reverse=True)
+            for log_path in log_files[:3]:
+                arcname = os.path.join("logs", os.path.relpath(log_path, str(LOG_DIR)).replace("\\", "/"))
+                try:
+                    zipf.write(log_path, arcname)
+                except OSError:
+                    pass
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
         
@@ -1340,6 +1352,7 @@ async def get_settings():
             "GROQ_API_KEY": env_vars.get("GROQ_API_KEY", ""),
             "OPENROUTER_API_KEY": env_vars.get("OPENROUTER_API_KEY", ""),
             "GLM_API_KEY": env_vars.get("GLM_API_KEY", ""),
+            "NVIDIA_API_KEY": env_vars.get("NVIDIA_API_KEY", ""),
         }
     }
 

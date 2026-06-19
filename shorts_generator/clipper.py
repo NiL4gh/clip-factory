@@ -181,14 +181,21 @@ def _extract_bg_frame(input_path: str, timestamp: float, output_path: str, sessi
         return False
 
 def _build_layout_filtergraph(bg_style: str, bg_frame_path: str or None, fps: float, clip_duration: float, layout_mode: str = "box"):
-    # VIDEO LAYER
+    # VIDEO LAYER — 5% push-in (scale to 105% then crop to target) + subtle color grade
+    # The push-in adds visual energy without zoompan's frame-by-frame CPU cost.
     if layout_mode == "box":
         video_layer = (
-            "[0:v]scale=1080:1080:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1[video_graded]"
+            "[0:v]scale=1134:1134:flags=lanczos:force_original_aspect_ratio=increase,"
+            "crop=1080:1080,"
+            "eq=contrast=1.08:brightness=0.02:saturation=1.12,"
+            "setsar=1[video_graded]"
         )
     else:
         video_layer = (
-            "[0:v]scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[video_graded]"
+            "[0:v]scale=1134:2016:flags=lanczos:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,"
+            "eq=contrast=1.08:brightness=0.02:saturation=1.12,"
+            "setsar=1[video_graded]"
         )
 
     # BACKGROUND LAYER — five branches on bg_style
@@ -976,7 +983,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             hook_until = 7.0 if hook_display == "full" else (5.0 if hook_display == "5s" else (3.0 if hook_display == "3s" else 7.0))
             hk_png = os.path.join(work_dir, f"hook_{out_id}_{idx}.png")
             _overlays.render_overlay_png(clip_data["hook_text"], header_style, hook_path,
-                                         out_path=hk_png, max_font_size=54, min_font_size=36, opacity=1.0,
+                                         out_path=hk_png, max_font_size=54, min_font_size=36, opacity=0.55,
                                          casing="title")
             inputs.extend(["-loop", "1", "-t", str(clip_duration), "-i", hk_png])
             # Gentle 0.3s fade-in, 0.4s fade-out so the hook is transient, not a hard pop.

@@ -562,19 +562,41 @@ _HOOK_TEXT_POISON_PHRASES = [
     "scroll-stopping", "3-5 words of the segment",
 ]
 
+# Words/phrases that make hooks feel generic clickbait — small models ignore the prompt ban,
+# so we enforce it in code as a post-generation filter.
+_HOOK_FORBIDDEN_PATTERN = re.compile(
+    r"\b(secret|shocking|truth|surprising|unexpected|hidden|nobody tells you|"
+    r"what they hide|the harsh truth|the dark secret|the shocking truth|"
+    r"nobody knows|you won't believe|mind[- ]?blowing|game[- ]?changer)\b",
+    re.IGNORECASE,
+)
+
 
 def _sanitize_hook_text(raw_hook_text: str, fallback_hook_sentence: str) -> str:
-    """Return clean hook_text, falling back to hook_sentence if the LLM
-    output prompt instructions instead of actual content."""
+    """Return clean hook_text.
+
+    Falls back to hook_sentence when the LLM leaked schema instructions or
+    used generic clickbait words that the prompt bans but small models ignore.
+    """
     text = (raw_hook_text or "").strip()
 
     if not text:
         return fallback_hook_sentence
 
-    # Detect prompt instruction leakage
     text_lower = text.lower()
+
+    # Detect prompt instruction leakage
     if any(phrase in text_lower for phrase in _HOOK_TEXT_POISON_PHRASES):
         return fallback_hook_sentence
+
+    # Detect forbidden clickbait words — try hook_sentence first, then strip the offending word
+    if _HOOK_FORBIDDEN_PATTERN.search(text):
+        fallback = (fallback_hook_sentence or "").strip()
+        if fallback and not _HOOK_FORBIDDEN_PATTERN.search(fallback):
+            return fallback
+        # Both are contaminated — strip the forbidden word(s) from the shorter text
+        cleaned = _HOOK_FORBIDDEN_PATTERN.sub("", text).strip(" .,!?-")
+        return cleaned if len(cleaned) > 4 else text  # keep original if stripping made it empty
 
     return text
 
