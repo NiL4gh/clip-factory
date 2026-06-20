@@ -763,6 +763,20 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
     target_w, target_h = 1080, 1920
 
+    # Auto hook-duration: <30s clip → 3s hook; ≥40s clip → 5s hook; 30-39s → keep setting
+    _raw_segs = clip_data.get("segments") or []
+    if _raw_segs:
+        _clip_dur = sum(float(s["end_time"]) - float(s["start_time"]) for s in _raw_segs)
+    elif clip_data.get("end_time") and clip_data.get("start_time"):
+        _clip_dur = float(clip_data["end_time"]) - float(clip_data["start_time"])
+    else:
+        _clip_dur = 0.0
+    if hook_display != "off" and _clip_dur > 0:
+        if _clip_dur < 30:
+            hook_display = "3s"
+        elif _clip_dur >= 40:
+            hook_display = "5s"
+
     # ── Build segments from clip_data ────────────────────────────────────────
     # New schema: all clips have a "segments" array. Legacy clips fall back to start_time/end_time.
     raw_segments = clip_data.get("segments", [])

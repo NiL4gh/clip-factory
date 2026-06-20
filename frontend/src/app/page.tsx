@@ -264,7 +264,7 @@ export default function Dashboard() {
   const [showPreview, setShowPreview] = useState(false);
 
   // Model selectors
-  const [llmLabel, setLlmLabel] = useState("🦙 LLaMA 3.1 8B Instruct Q4");
+  const [llmLabel, setLlmLabel] = useState("🧠 Qwen2.5 14B Instruct Q4");
   const [whisperLabel, setWhisperLabel] = useState("⭐ medium");
   const [catalogData, setCatalogData] = useState<{llm_catalog:{label:string}[], whisper_catalog:{label:string}[], bgm_genres:string[]}>({llm_catalog:[], whisper_catalog:[], bgm_genres:[]});
   const [renderSettings, setRenderSettings] = useState<Record<number, typeof DEFAULT_SETTINGS>>({});
@@ -1320,8 +1320,18 @@ export default function Dashboard() {
                 onChange={(e) => setLlmLabel(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-100 rounded-lg p-2 text-slate-700 text-sm font-medium outline-none cursor-pointer"
               >
-                {catalogData.llm_catalog.map((m: any) => (
-                  <option key={m.label} value={m.label}>{m.label}</option>
+                {Object.entries(
+                  catalogData.llm_catalog.reduce((acc: Record<string, any[]>, m: any) => {
+                    const g = m.group || "Local Models (12-14B)";
+                    (acc[g] = acc[g] || []).push(m);
+                    return acc;
+                  }, {})
+                ).map(([groupName, models]) => (
+                  <optgroup key={groupName} label={groupName}>
+                    {(models as any[]).map((m: any) => (
+                      <option key={m.label} value={m.label}>{m.label}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>

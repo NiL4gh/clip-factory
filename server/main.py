@@ -314,7 +314,7 @@ def _is_gemini_key_valid() -> bool:
 @app.get("/api/config")
 async def get_config():
     return {
-        "llm_catalog": [{"label": e["label"]} for e in LLM_CATALOG],
+        "llm_catalog": [{"label": e["label"], "group": e.get("group", "Local Models (12-14B)")} for e in LLM_CATALOG],
         "whisper_catalog": [{"label": e["label"]} for e in WHISPER_CATALOG],
         "bgm_genres": list(BGM_CATALOG.keys()),
         "gemini_active": _is_gemini_key_valid(),
