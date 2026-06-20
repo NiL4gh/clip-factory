@@ -479,23 +479,23 @@ export default function Dashboard() {
   };
 
   const handleReset = async () => {
-    try {
-      await axios.post(`${API_BASE}/reset`);
-      setUrl("");
-      setStatus("idle");
-      setLogs([]);
-      setResults(null);
-      setSelectedClip(null);
-      setProgress(null);
-      setCardRenderStates({});
-      setSelectedForRender({});
-      setEditedTitles({});
-      setRecoveryBanner(null);
-      setBackendJobRunning({ is_strategizing: false, is_rendering: false });
-      sessionStorage.removeItem(SESSION_URL_KEY);
-      bootstrapDoneRef.current = false;
-      clearAllConnections();
-    } catch {}
+    // Reset UI immediately — don't let a failed backend call leave the UI frozen
+    setUrl("");
+    setStatus("idle");
+    setLogs([]);
+    setResults(null);
+    setSelectedClip(null);
+    setProgress(null);
+    setCardRenderStates({});
+    setSelectedForRender({});
+    setEditedTitles({});
+    setRecoveryBanner(null);
+    setBackendJobRunning({ is_strategizing: false, is_rendering: false });
+    sessionStorage.removeItem(SESSION_URL_KEY);
+    bootstrapDoneRef.current = false;
+    clearAllConnections();
+    // Best-effort backend reset — if the tunnel is down this still won't block
+    try { await axios.post(`${API_BASE}/reset`); } catch {}
   };
 
   const clearAllConnections = () => {
@@ -1203,7 +1203,7 @@ export default function Dashboard() {
                 </button>
               )}
             </div>
-            {(status === "done" || status === "error") && (
+            {status !== "idle" && status !== "loading" && (
               <button
                 onClick={handleReset}
                 className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-sm active:scale-[0.98]"
