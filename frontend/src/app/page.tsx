@@ -257,6 +257,7 @@ export default function Dashboard() {
   const strategizePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const renderPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bootstrapDoneRef = useRef(false);
+  const pendingAutoRenderRef = useRef(false);
   const [progress, setProgress] = useState<{percent: number; message: string; eta?: number | null} | null>(null);
   const [recoveryBanner, setRecoveryBanner] = useState<string | null>(null);
   const [backendJobRunning, setBackendJobRunning] = useState({ is_strategizing: false, is_rendering: false });
@@ -317,6 +318,18 @@ export default function Dashboard() {
     }, 15000);
     return () => clearInterval(check);
   }, []);
+
+  // Hands-free: auto-render as soon as strategy finishes.
+  // Waits 2 s so the user can see the clips found, then fires render_all automatically.
+  // pendingAutoRenderRef is only set when tracking is active — page-refresh recovery to
+  // an already-done session leaves it false and skips this.
+  useEffect(() => {
+    if (status === "done" && pendingAutoRenderRef.current && results?.clips?.length > 0) {
+      pendingAutoRenderRef.current = false;
+      const t = setTimeout(() => renderAllClips(), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [status, results]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveSettings = async () => {
     try {
@@ -665,6 +678,7 @@ export default function Dashboard() {
   };
 
   const beginStrategizeTracking = (targetUrl: string, options?: { clearLogs?: boolean; reconnected?: boolean }) => {
+    pendingAutoRenderRef.current = true;
     const clearLogs = options?.clearLogs !== false;
     const reconnected = options?.reconnected === true;
     if (clearLogs) {

@@ -48,6 +48,7 @@ def get_video_title(url: str, cookie_path: str = None) -> str:
     cmd = [
         'yt-dlp', '--print', 'title', '--skip-download', '--no-warnings',
         '--extractor-args', 'youtube:player_client=web',
+        '--remote-components', 'ejs:github',
     ]
     if cookie_path and os.path.exists(cookie_path):
         cmd += ['--cookies', str(cookie_path)]
@@ -56,8 +57,12 @@ def get_video_title(url: str, cookie_path: str = None) -> str:
     env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
-        return result.stdout.strip()
-    except Exception:
+        title = result.stdout.strip()
+        if not title:
+            ui_logger.log("⚠️ Could not fetch video title from yt-dlp — log folder will be unnamed.")
+        return title
+    except Exception as e:
+        ui_logger.log(f"⚠️ get_video_title failed: {e}")
         return ""
 
 
