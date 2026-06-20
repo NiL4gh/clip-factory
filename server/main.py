@@ -944,6 +944,19 @@ def _run_bulk_render(req: BulkRenderRequest):
                 dst = os.path.join(session_output_dir, os.path.basename(out))
                 if out != dst:
                     shutil.copy2(out, dst)
+                # Write metadata to disk so it survives session restarts
+                clip_meta = {
+                    "title": _state["clips"][idx].get("title", f"Clip {idx+1}"),
+                    "topic": _state["clips"][idx].get("source_topic", ""),
+                    "rationale": _state["clips"][idx].get("virality_reason", ""),
+                    "transcript": _state["clips"][idx].get("ideal_transcript", ""),
+                    "score": _state["clips"][idx].get("score", 0),
+                    "duration": _state["clips"][idx].get("duration", 0),
+                    "persona": _state["clips"][idx].get("persona", ""),
+                }
+                meta_dst = os.path.splitext(dst)[0] + "_metadata.json"
+                with open(meta_dst, "w", encoding="utf-8") as _mf:
+                    json.dump(clip_meta, _mf, indent=4, ensure_ascii=False)
                 ui_logger.log(f"Rendered clip {idx} successfully: {os.path.basename(out)}")
                 ui_logger.log(f"RENDER_STATUS|{idx}|done")
                 
@@ -1040,23 +1053,29 @@ async def download_single(background_tasks: BackgroundTasks, filename: str):
     if not os.path.exists(mp4_path):
         raise HTTPException(status_code=404, detail="Clip not found.")
         
-    clip_data = next((c for c in _state.get("clips", []) if c.get("rendered_filename") == filename), None)
-    
     zip_path = os.path.join(WORK_DIR, f"clip_{int(time.time())}.zip")
     try:
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            zipf.write(mp4_path, filename)
-            if clip_data:
-                metadata = {
-                    "title": clip_data.get("title", "Clip"),
-                    "rationale": clip_data.get("virality_reason", ""),
-                    "transcript": clip_data.get("ideal_transcript", ""),
-                    "score": clip_data.get("score", 0),
-                    "duration": clip_data.get("duration", 0),
-                    "persona": clip_data.get("persona", ""),
-                }
-                meta_filename = f"{os.path.splitext(filename)[0]}_metadata.json"
-                zipf.writestr(meta_filename, json.dumps(metadata, indent=4))
+            zipf.write(mp4_path, os.path.basename(filename))
+            # Prefer on-disk metadata (written at render time, survives session restarts)
+            meta_disk_path = os.path.splitext(mp4_path)[0] + "_metadata.json"
+            if os.path.exists(meta_disk_path):
+                zipf.write(meta_disk_path, os.path.basename(meta_disk_path))
+            else:
+                # Fallback: build from in-memory state if available
+                clip_data = next((c for c in _state.get("clips", []) if c.get("rendered_filename") == filename), None)
+                if clip_data:
+                    metadata = {
+                        "title": clip_data.get("title", "Clip"),
+                        "topic": clip_data.get("source_topic", ""),
+                        "rationale": clip_data.get("virality_reason", ""),
+                        "transcript": clip_data.get("ideal_transcript", ""),
+                        "score": clip_data.get("score", 0),
+                        "duration": clip_data.get("duration", 0),
+                        "persona": clip_data.get("persona", ""),
+                    }
+                    meta_filename = f"{os.path.splitext(os.path.basename(filename))[0]}_metadata.json"
+                    zipf.writestr(meta_filename, json.dumps(metadata, indent=4, ensure_ascii=False))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
         
@@ -1104,27 +1123,16 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file in files:
                 zipf.write(file, os.path.basename(file))
-            if project_only:
-                for idx, clip in enumerate(clips_to_download):
-                    filename = clip.get("rendered_filename")
-                    if filename:
-                        base_filename = os.path.basename(filename)
-                        metadata = {
-                            "title": clip.get("title", f"Clip {idx+1}"),
-                            "rationale": clip.get("virality_reason", ""),
-                            "transcript": clip.get("ideal_transcript", ""),
-                            "score": clip.get("score", 0),
-                            "duration": clip.get("duration", 0),
-                            "persona": clip.get("persona", ""),
-                        }
-                        meta_filename = f"{os.path.splitext(base_filename)[0]}_metadata.json"
-                        zipf.writestr(meta_filename, json.dumps(metadata, indent=4))
-            # Bundle recent session logs (SESSION_NOTES: logs missing from download ZIP)
+                # Always include on-disk metadata if present (survives session restarts)
+                meta_path = os.path.splitext(file)[0] + "_metadata.json"
+                if os.path.exists(meta_path):
+                    zipf.write(meta_path, os.path.basename(meta_path))
+            # Bundle all session logs so LLM strategy logs are always included
             import glob as _glob
             log_files = _glob.glob(os.path.join(str(LOG_DIR), "**", "*.jsonl"), recursive=True)
             log_files += _glob.glob(os.path.join(str(LOG_DIR), "**", "*.log"), recursive=True)
             log_files.sort(key=os.path.getmtime, reverse=True)
-            for log_path in log_files[:3]:
+            for log_path in log_files:
                 arcname = os.path.join("logs", os.path.relpath(log_path, str(LOG_DIR)).replace("\\", "/"))
                 try:
                     zipf.write(log_path, arcname)

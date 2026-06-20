@@ -1151,7 +1151,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
             + f"concat=n={n_segs}:v=1:a=1[v_concat_raw][a_concat_raw];[v_concat_raw]setpts=PTS-STARTPTS[v_concat];[a_concat_raw]asetpts=PTS-STARTPTS[a_concat]"
         )
 
-        concat_enc_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "0"]
+        concat_enc_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "12"]
 
         concat_cmd = ["ffmpeg", "-y"] + fc_inputs + [
             "-filter_complex", fc_str,
