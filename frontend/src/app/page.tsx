@@ -100,18 +100,18 @@ const DEFAULT_SETTINGS = {
 const STYLE_PRESETS: Record<string, { label: string; summary: string; changes: Record<string, string> }> = {
   viral: {
     label: "🔥 Viral",
-    summary: "Bold Pop captions, brand background, hook header for the first 3s. Best for talking-head clips.",
-    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "3s", header_style: "stroke" },
+    summary: "Bold Pop captions, brand background, hook header for the first 5s. Best for talking-head clips.",
+    changes: { layout_mode: "box", bg_style: "brand", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "stroke" },
   },
   clean: {
     label: "✨ Clean",
-    summary: "Classic captions on a white background, simple boxed header, hook for 3s.",
-    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "3s", header_style: "card" },
+    summary: "Classic captions on a white background, simple boxed header, hook for 5s.",
+    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "5s", header_style: "card" },
   },
   cinematic: {
     label: "🎬 Cinematic",
-    summary: "Full-frame blurred background, cinematic captions, hook for 3s.",
-    changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "3s", header_style: "card" },
+    summary: "Full-frame blurred background, cinematic captions, hook for 5s.",
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "5s", header_style: "card" },
   },
 };
 
@@ -152,7 +152,7 @@ const STYLE_SEEDS: StyleSeed[] = [
     id: "clean_white",
     label: "✨ Clean",
     badgeColor: "bg-slate-100 text-slate-700 border-slate-300",
-    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "3s", header_style: "card", header_font: "montserrat-black", caption_font: "poppins", hook_font: "poppins" },
+    changes: { layout_mode: "box", bg_style: "white", caption_style: "Classic", title_style: "Box", hook_display: "5s", header_style: "card", header_font: "montserrat-black", caption_font: "poppins", hook_font: "poppins" },
   },
   {
     id: "brand_minimal",
@@ -170,7 +170,7 @@ const STYLE_SEEDS: StyleSeed[] = [
     id: "cinematic",
     label: "🎬 Cinematic",
     badgeColor: "bg-rose-100 text-rose-700 border-rose-200",
-    changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "3s", header_style: "card", header_font: "inter", caption_font: "poppins", hook_font: "poppins" },
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "5s", header_style: "card", header_font: "inter", caption_font: "poppins", hook_font: "poppins" },
   },
 ];
 
@@ -231,7 +231,6 @@ export default function Dashboard() {
   const [selectedClip, setSelectedClip] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<"workspace" | "gallery">("workspace");
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
-  const [angle, setAngle] = useState("standard");
   const [gallerySessionMode, setGallerySessionMode] = useState<"current" | "all">("current");
   const logEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -801,7 +800,7 @@ export default function Dashboard() {
         url: targetUrl, 
         llm_label: llmLabel, 
         whisper_label: whisperLabel,
-        angle: angle,
+        angle: "multi-angle",
         session_id: sessionId
       });
     } catch (error: any) {
@@ -1281,20 +1280,6 @@ export default function Dashboard() {
                 {catalogData.whisper_catalog.map((m: any) => (
                   <option key={m.label} value={m.label}>{m.label}</option>
                 ))}
-              </select>
-            </div>
-            <div className="flex-1 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <label className="text-[11px] uppercase font-bold text-slate-500 block mb-1">Extraction Angle</label>
-              <select
-                value={angle}
-                onChange={(e) => setAngle(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-100 rounded-lg p-2 text-slate-700 text-sm font-medium outline-none cursor-pointer"
-              >
-                <option value="standard">⚖️ Balanced</option>
-                <option value="contrarian">🔥 Contrarian Hot Takes</option>
-                <option value="educational">💡 Actionable Secrets</option>
-                <option value="story">📖 Emotional Stories</option>
-                <option value="multi-angle">🔀 Multi-Angle Mix</option>
               </select>
             </div>
           </div>
@@ -1874,16 +1859,18 @@ export default function Dashboard() {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
               <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Show Hook Header
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Hook Duration
               </span>
-              <label className="setting-toggle">
-                <input
-                  type="checkbox"
-                  checked={(activeSettings.hook_display || "off") !== "off"}
-                  onChange={(e) => applySetting("hook_display", e.target.checked ? "3s" : "off")}
-                />
-                <div className="toggle-track bg-slate-300 before:bg-white checked:bg-indigo-500" />
-              </label>
+              <select
+                value={activeSettings.hook_display || "5s"}
+                onChange={(e) => applySetting("hook_display", e.target.value)}
+                className="text-xs font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                <option value="off">Off</option>
+                <option value="3s">3 seconds</option>
+                <option value="5s">5 seconds</option>
+                <option value="full">Full clip</option>
+              </select>
             </div>
             <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm">
               <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">

@@ -409,6 +409,7 @@ def _remove_silence_ffmpeg(input_path: str, output_path: str, noise_db: int = -3
 
     trim_cmd.extend([
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+        "-map_metadata", "-1",
         "-movflags", "+faststart",
         output_path
     ])
@@ -1058,6 +1059,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         cmd.extend([
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-map_metadata", "-1",
             "-movflags", "+faststart",
             "-t", str(round(seg_et - seg_st, 3)),  # Explicit duration — prevents looped B-roll inputs from truncating segment
             seg_out
@@ -1163,6 +1165,7 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
 
         concat_cmd.extend([
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-map_metadata", "-1",
             "-movflags", "+faststart",
             final_output
         ])
