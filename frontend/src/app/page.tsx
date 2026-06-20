@@ -144,9 +144,10 @@ const STYLE_SEEDS: StyleSeed[] = [
   },
   {
     id: "viral_dark",
-    label: "🌑 Dark Pop",
+    label: "🌑 Dark Edge",
     badgeColor: "bg-slate-800 text-slate-100 border-slate-700",
-    changes: { layout_mode: "box", bg_style: "black", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "card", header_font: "montserrat-black", caption_font: "montserrat", hook_font: "montserrat" },
+    // Differentiated from viral_stroke: Outline captions + Box title instead of Pop + Impact
+    changes: { layout_mode: "box", bg_style: "black", caption_style: "Outline", title_style: "Box", hook_display: "5s", header_style: "card", header_font: "montserrat-black", caption_font: "montserrat", hook_font: "montserrat" },
   },
   {
     id: "clean_white",
@@ -164,13 +165,32 @@ const STYLE_SEEDS: StyleSeed[] = [
     id: "blur_punch",
     label: "💥 Punch",
     badgeColor: "bg-purple-100 text-purple-700 border-purple-200",
-    changes: { layout_mode: "box", bg_style: "blur", caption_style: "Pop", title_style: "Impact", hook_display: "5s", header_style: "stroke", header_font: "montserrat-black", caption_font: "montserrat", hook_font: "montserrat" },
+    // Differentiated from viral_stroke: Glow captions + Orange title instead of Pop + Impact
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "Glow", title_style: "Orange", hook_display: "5s", header_style: "stroke", header_font: "montserrat-black", caption_font: "montserrat", hook_font: "montserrat" },
   },
   {
     id: "cinematic",
     label: "🎬 Cinematic",
     badgeColor: "bg-rose-100 text-rose-700 border-rose-200",
     changes: { layout_mode: "box", bg_style: "blur", caption_style: "CinematicSlate", title_style: "None", hook_display: "5s", header_style: "card", header_font: "inter", caption_font: "poppins", hook_font: "poppins" },
+  },
+  {
+    id: "neon_energy",
+    label: "⚡ Neon",
+    badgeColor: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
+    changes: { layout_mode: "box", bg_style: "black", caption_style: "NeonGlow", title_style: "Neon", hook_display: "5s", header_style: "stroke", header_font: "poppins", caption_font: "poppins", hook_font: "poppins" },
+  },
+  {
+    id: "podcast_warm",
+    label: "🎙 Podcast",
+    badgeColor: "bg-amber-100 text-amber-700 border-amber-200",
+    changes: { layout_mode: "box", bg_style: "gradient", caption_style: "PodcastPop", title_style: "Yellow", hook_display: "5s", header_style: "card", header_font: "roboto", caption_font: "roboto", hook_font: "roboto" },
+  },
+  {
+    id: "fire_italic",
+    label: "🔴 Fire",
+    badgeColor: "bg-red-100 text-red-700 border-red-200",
+    changes: { layout_mode: "box", bg_style: "blur", caption_style: "Fire", title_style: "ViralItalic", hook_display: "5s", header_style: "stroke", header_font: "inter", caption_font: "inter", hook_font: "inter" },
   },
 ];
 
