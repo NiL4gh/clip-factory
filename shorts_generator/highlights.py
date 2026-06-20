@@ -13,6 +13,19 @@ _llm_cache = {}
 CHUNK_CHARS = 8000
 
 
+def unload_llm():
+    """Free LLM VRAM after extraction so FFmpeg NVENC can use the GPU."""
+    import gc
+    _llm_cache.clear()
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
 def analyze_past_performance(session_logs: list) -> dict:
     """Read past LLM logs to improve future prompts"""
     insights = {
@@ -835,7 +848,7 @@ def get_highlights(
     gpu_layers: int = 35,
     max_clips: int = 30,
     language: str = "",
-    angle: str = "standard",
+    angle: str = "multi-angle",
     topics: list = None,
     energy_peaks: list = None,
     persona: dict = None,

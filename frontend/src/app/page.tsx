@@ -282,6 +282,22 @@ export default function Dashboard() {
     }
   }, [showSettings, settingsTab]);
 
+  // Detect Colab tunnel URL changes and reload so the new API base takes effect.
+  // The watchdog in colab_launcher.ipynb writes /_tunnel_url.json on every restart.
+  useEffect(() => {
+    const knownUrl = (window as any).__NEXT_PUBLIC_API_URL as string | undefined;
+    if (!knownUrl) return; // dev / localhost — skip
+    const check = setInterval(async () => {
+      try {
+        const res = await fetch("/_tunnel_url.json?t=" + Date.now());
+        if (!res.ok) return;
+        const { url } = await res.json();
+        if (url && url !== knownUrl) window.location.reload();
+      } catch {}
+    }, 15000);
+    return () => clearInterval(check);
+  }, []);
+
   const saveSettings = async () => {
     try {
       await axios.post(`${API_BASE}/settings`, { api_keys: apiKeys });

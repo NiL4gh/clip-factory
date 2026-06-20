@@ -30,7 +30,7 @@ from shorts_generator.config import (
 )
 from shorts_generator.downloader import download_video, download_srt, get_video_title
 from shorts_generator.transcriber import transcribe_audio, parse_srt_to_word_timestamps
-from shorts_generator.highlights import get_highlights, get_topic_index, detect_video_persona, estimate_clip_potential
+from shorts_generator.highlights import get_highlights, get_topic_index, detect_video_persona, estimate_clip_potential, unload_llm
 from shorts_generator.clipper import render_short
 from shorts_generator.enhancer import enhance_clip
 from shorts_generator import cache
@@ -577,6 +577,10 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, angle: str = "
         )
 
         clips = result.get("highlights", [])
+
+        # Free LLM VRAM now that all extraction passes are done
+        unload_llm()
+        ui_logger.log("🧹 LLM unloaded — VRAM freed for render.")
 
         # Hard-reject clips that start in the opening segment (intros/outros)
         if clips and _state["word_timestamps"]:
