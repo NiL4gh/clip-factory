@@ -820,6 +820,11 @@ export default function Dashboard() {
         if (!LOG_BLOCKLIST.test(entry.message)) {
           addLog(entry.message);
         }
+        // Surface "Topic N/M: ..." lines in the progress bar so the user can see extraction progress
+        const topicMatch = entry.message?.match(/Topic (\d+)\/(\d+):\s*"?(.+?)"?\s*$/);
+        if (topicMatch) {
+          setProgress(prev => prev ? { ...prev, message: `Extracting Topic ${topicMatch[1]}/${topicMatch[2]}: ${topicMatch[3]}` } : prev);
+        }
       }
     } catch {
       // Legacy fallback — plain string, still filter
