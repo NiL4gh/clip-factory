@@ -888,7 +888,6 @@ def get_highlights(
         '[\n'
         '  {\n'
         '    "title": "SHORT TOPIC TAG (4-7 words). A punchy ALL-CAPS banner label for the clip — readable as a fast scan, NOT a full sentence (e.g. \\"THE MONEY TRAP\\", \\"FIRST JOB MISTAKES\\", \\"WHY YOUR SAVINGS PLAN IS BROKEN\\"). Keep it tight; the viewer hook lives in hook_text.",\n'
-        '    "ideal_transcript": "Copy the exact spoken words from the transcript that make up this clip. Include the full text from start to end.",\n'
         '    "virality_score": 85,\n'
         '    "start_timestamp": 12.4,\n'
         '    "end_timestamp": 54.1,\n'
@@ -961,7 +960,7 @@ Before returning the JSON array, silently verify every item in this list.
 If any check fails, fix the output before returning. Do not explain the
 fix. Simply return the corrected JSON.
 
-□ Every clip has all required fields: title, ideal_transcript, segments,
+□ Every clip has all required fields: title, segments,
   virality_score, start_timestamp, end_timestamp, hook_sentence, hook_text,
   hook_type, virality_reason, theme, music_query, broll_keywords,
   emoji_moments, source_topic
@@ -1016,7 +1015,7 @@ fix. Simply return the corrected JSON.
             )
             try:
                 prompt = build_enhanced_prompt(prompt, session_id)
-                results = _execute_with_fallback(llm, system, prompt, session_id=session_id)
+                results = _execute_with_fallback(llm, system, prompt, max_tokens=1500, session_id=session_id)
                 for clip in results:
                     clip["source_topic"] = topic["topic"]
                     clip["source_topic_idx"] = tidx
@@ -1065,7 +1064,7 @@ fix. Simply return the corrected JSON.
                 )
                 try:
                     prompt = build_enhanced_prompt(prompt, session_id)
-                    results = _execute_with_fallback(llm, system, prompt, session_id=session_id)
+                    results = _execute_with_fallback(llm, system, prompt, max_tokens=1500, session_id=session_id)
                     for clip in results:
                         clip["source_topic"] = topic["topic"]
                         clip["source_topic_idx"] = tidx
@@ -1100,7 +1099,7 @@ fix. Simply return the corrected JSON.
                 )
                 try:
                     prompt = build_enhanced_prompt(prompt, session_id)
-                    results = _execute_with_fallback(llm, system, prompt, session_id=session_id)
+                    results = _execute_with_fallback(llm, system, prompt, max_tokens=1500, session_id=session_id)
                     all_highlights.extend(results)
                 except Exception as e:
                     ui_logger.log(f"Warning: Chunk {idx+1} fallback extraction failed — {e}")
