@@ -143,7 +143,7 @@ LLM_CATALOG = [
      "group": "Local Models (12-14B)"},
     {"label": "🔷 Gemma 3 12B Q4",
      "filename": "gemma-3-12b-it-Q4_K_M.gguf",
-     "repo": "bartowski/google-gemma-3-12b-it-GGUF",
+     "repo": "bartowski/google_gemma-3-12b-it-GGUF",
      "gpu_layers": 40,
      "group": "Local Models (12-14B)"},
     {"label": "🚀 Mistral NeMo 12B Q4",
