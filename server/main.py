@@ -39,6 +39,7 @@ from shorts_generator.audio_analyzer import analyze_audio_energy
 from huggingface_hub import hf_hub_download
 
 import subprocess
+import json
 
 _GPU_ENCODER = "libx264"  # fallback default
 
@@ -54,7 +55,7 @@ def _probe_encoder(codec_name: str) -> bool:
         result = subprocess.run(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.1",
+                "-f", "lavfi", "-i", "color=c=black:s=256x256:r=1:d=0.1",
                 "-c:v", codec_name, "-t", "0.1", "-f", "null", "-"
             ],
             capture_output=True,
