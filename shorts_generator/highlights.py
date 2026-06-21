@@ -152,7 +152,7 @@ def _get_llm(llm_path: str, gpu_layers: int = 35):
         _llm_cache[llm_path] = Llama(
             model_path=llm_path,
             n_gpu_layers=gpu_layers,
-            n_ctx=8192,
+            n_ctx=4096,
             n_batch=1024,  # larger batch = faster prompt evaluation
             verbose=False,
         )
