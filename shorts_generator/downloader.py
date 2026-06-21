@@ -33,9 +33,13 @@ def download_video(url, work_dir, cookie_path=None):
     ]
 
     ui_logger.log(f"Downloading with web client + Deno n-challenge solver (cookies: {cookie_path})...")
-    # Get current environment and ensure Deno is in the PATH for this specific subprocess
+    # On Colab/Linux, prepend the Deno binary directory so yt-dlp can use it for
+    # the n-challenge JavaScript solver. On Windows, leave PATH untouched — Deno
+    # is not at that path and prepending it with ":" (Linux separator) corrupts
+    # the Windows PATH, breaking the subprocess entirely.
     env = os.environ.copy()
-    env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
+    if os.name != "nt":
+        env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
 
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
@@ -91,7 +95,8 @@ def get_video_title(url: str, cookie_path: str = None) -> str:
         cmd += ['--cookies', str(cookie_path)]
     cmd.append(url)
     env = os.environ.copy()
-    env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
+    if os.name != "nt":
+        env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
         title = result.stdout.strip()

@@ -51,11 +51,25 @@ _ENCODER_CANDIDATES = [
 
 def _probe_encoder(codec_name: str) -> bool:
     """Return True if the given encoder is available and functional."""
+    # On Linux (Colab), BtbN's static ffmpeg binary uses dlopen() to find
+    # libnvidia-encode.so.1 at runtime. Add common NVIDIA lib paths so the
+    # probe subprocess can find them even if LD_LIBRARY_PATH is not set.
+    env = None
+    if os.name != "nt":
+        env = os.environ.copy()
+        nvidia_paths = [
+            "/usr/lib/x86_64-linux-gnu",
+            "/usr/local/cuda/lib64",
+            "/usr/local/lib",
+        ]
+        extra = ":".join(p for p in nvidia_paths if os.path.isdir(p))
+        existing = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = f"{extra}:{existing}" if existing else extra
     try:
         # Step 1: check ffmpeg reports the encoder as available (cheap, no GPU needed)
         enc_list = subprocess.run(
             ["ffmpeg", "-hide_banner", "-encoders"],
-            capture_output=True, timeout=10
+            capture_output=True, timeout=10, env=env
         )
         if codec_name not in (enc_list.stdout + enc_list.stderr).decode("utf-8", errors="ignore"):
             return False
@@ -67,7 +81,8 @@ def _probe_encoder(codec_name: str) -> bool:
                 "-frames:v", "5", "-c:v", codec_name, "-f", "null", "-"
             ],
             capture_output=True,
-            timeout=15
+            timeout=15,
+            env=env,
         )
         return result.returncode == 0
     except Exception:

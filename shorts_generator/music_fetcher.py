@@ -42,9 +42,9 @@ def fetch_music(music_query: str, output_path: str) -> str:
         "-o", output_path,
     ]
 
-    # Get current environment and ensure Deno is in the PATH
     env = os.environ.copy()
-    env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
+    if os.name != "nt":
+        env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
 
     ui_logger.log(f"  Searching YouTube for BGM: '{music_query}'...")
 
