@@ -1052,16 +1052,19 @@ def render_short(input_video, clip_data, word_timestamps, output_dir, work_dir,
         cmd.extend(inputs)
         
         encoder = _get_best_encoder()
+        # Intermediate encode (seg_*.mp4) — near-lossless so the trim/silence-removal
+        # re-encode doesn't compound artifacts on a CRF-12 source.
+        # ultrafast preset makes this ~3x faster to write than slower.
         if encoder == "h264_nvenc":
-            enc_args = ["-c:v", "h264_nvenc", "-preset", "p7", "-rc", "vbr", "-cq", "12", "-b:v", "15M", "-maxrate", "20M", "-bufsize", "40M"]
+            enc_args = ["-c:v", "h264_nvenc", "-preset", "p7", "-rc", "vbr", "-cq", "4", "-b:v", "40M", "-maxrate", "60M", "-bufsize", "80M"]
         elif encoder == "h264_amf":
-            enc_args = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "12", "-qp_p", "12"]
+            enc_args = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "4", "-qp_p", "4"]
         elif encoder == "h264_qsv":
-            enc_args = ["-c:v", "h264_qsv", "-preset", "veryslow", "-global_quality", "12"]
+            enc_args = ["-c:v", "h264_qsv", "-preset", "veryslow", "-global_quality", "4"]
         else:
-            enc_args = ["-c:v", "libx264", "-preset", "slower", "-crf", "12"]
+            enc_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "8"]
 
-        # High quality encoding parameters, enforcing a hard end to prevent infinitely hanging processes
+        # Intermediate encoding — high quality source for the trim pass
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", f"[{current_v}]", "-map", audio_map,

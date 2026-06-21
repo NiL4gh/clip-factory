@@ -41,6 +41,20 @@ def download_video(url, work_dir, cookie_path=None):
         raise RuntimeError(f"yt-dlp failed: {stderr_str[-600:]}")
 
     ui_logger.log("Download complete.")
+
+    # Diagnostic: log source format so we can diagnose quality issues
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height,codec_name,bit_rate,r_frame_rate",
+             "-of", "default=noprint_wrappers=1", output_mp4],
+            capture_output=True, text=True, timeout=15
+        )
+        if probe.stdout.strip():
+            ui_logger.log(f"📐 Source video: {probe.stdout.strip().replace(chr(10), ' | ')}")
+    except Exception:
+        pass
+
     return output_mp4
 
 def get_video_title(url: str, cookie_path: str = None) -> str:

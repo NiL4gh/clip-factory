@@ -130,27 +130,17 @@ for name, path in AVAILABLE_FONTS.items():
 # Local models: 12-14B only (T4 16GB sweet spot — big enough to reason, small enough to fit)
 # API models: cloud-hosted, no VRAM cost, require an API key in Settings
 LLM_CATALOG = [
-    # ── Local Models (12-14B, T4 compatible) ──────────────────────
-    {"label": "🧠 Qwen2.5 14B Instruct Q4",
-     "filename": "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
-     "repo": "bartowski/Qwen2.5-14B-Instruct-GGUF",
-     "gpu_layers": 40,
-     "group": "Local Models (12-14B)"},
+    # ── Local Models — Qwen Coder 14B (quality) + Mistral NeMo 12B (speed) ──
     {"label": "💻 Qwen2.5 Coder 14B Q4",
      "filename": "Qwen2.5-Coder-14B-Instruct-Q4_K_M.gguf",
      "repo": "bartowski/Qwen2.5-Coder-14B-Instruct-GGUF",
      "gpu_layers": 40,
-     "group": "Local Models (12-14B)"},
-    {"label": "🔷 Gemma 3 12B Q4",
-     "filename": "gemma-3-12b-it-Q4_K_M.gguf",
-     "repo": "lmstudio-community/gemma-3-12b-it-GGUF",
-     "gpu_layers": 40,
-     "group": "Local Models (12-14B)"},
+     "group": "Local Models"},
     {"label": "🚀 Mistral NeMo 12B Q4",
      "filename": "Mistral-Nemo-Instruct-2407-Q4_K_M.gguf",
      "repo": "bartowski/Mistral-Nemo-Instruct-2407-GGUF",
      "gpu_layers": 40,
-     "group": "Local Models (12-14B)"},
+     "group": "Local Models"},
     # ── API Models (no VRAM, requires API key) ────────────────────
     {"label": "♊ Google Gemini 2.5 Flash (API)",
      "filename": "api:gemini:gemini-2.5-flash",

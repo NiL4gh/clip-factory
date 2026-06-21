@@ -263,7 +263,7 @@ export default function Dashboard() {
   const [showPreview, setShowPreview] = useState(false);
 
   // Model selectors
-  const [llmLabel, setLlmLabel] = useState("🧠 Qwen2.5 14B Instruct Q4");
+  const [llmLabel, setLlmLabel] = useState("💻 Qwen2.5 Coder 14B Q4");
   const [whisperLabel, setWhisperLabel] = useState("⭐ medium");
   const [catalogData, setCatalogData] = useState<{llm_catalog:{label:string}[], whisper_catalog:{label:string}[], bgm_genres:string[]}>({llm_catalog:[], whisper_catalog:[], bgm_genres:[]});
   const [renderSettings, setRenderSettings] = useState<Record<number, typeof DEFAULT_SETTINGS>>({});
