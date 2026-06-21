@@ -13,13 +13,13 @@ def download_video(url, work_dir, cookie_path=None):
         os.remove(f)
 
     # --remote-components ejs:github is MANDATORY: solves YouTube's n-challenge via Deno
-    # Format strategy: VP9 @ 1080p + bestaudio is the YouTube sweet spot.
-    # Avoid [ext=mp4] filter — it restricts to H264 which YouTube caps at 720p on most videos.
-    # ffmpeg (GPU build, installed in Cell 1) handles the VP9→mp4 container mux.
+    # Format strategy: force adaptive streams only (bestvideo+bestaudio).
+    # NO fallback to combined/pre-muxed streams — YouTube serves those at 360p.
+    # -S prefers 1080p VP9; --merge-output-format mp4 wraps the result into mp4 via ffmpeg.
     cmd = [
         'yt-dlp',
-        '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-        '-S', 'res:1080,fps,codec:vp9',   # prefer 1080p, then higher fps, then VP9 over H264
+        '-f', 'bestvideo[height<=1080]+bestaudio',
+        '-S', 'res:1080,fps,codec:vp9',
         '--merge-output-format', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path),
@@ -33,13 +33,18 @@ def download_video(url, work_dir, cookie_path=None):
     # Get current environment and ensure Deno is in the PATH for this specific subprocess
     env = os.environ.copy()
     env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
-    
+
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
-        # Surface any yt-dlp warnings (format fallbacks, geo-blocks, etc.)
+        # Log format selection so we can confirm which stream yt-dlp actually picked
         if result.stderr:
             for line in result.stderr.strip().splitlines():
-                if any(k in line.lower() for k in ["warning", "fallback", "unavailable", "skipping"]):
+                if any(k in line.lower() for k in ["warning", "fallback", "unavailable", "skipping",
+                                                     "downloading 1 format", "merger", "[info]"]):
+                    ui_logger.log(f"yt-dlp: {line.strip()}")
+        if result.stdout:
+            for line in result.stdout.strip().splitlines():
+                if any(k in line.lower() for k in ["format", "merger", "destination", "downloading 1"]):
                     ui_logger.log(f"yt-dlp: {line.strip()}")
     except subprocess.CalledProcessError as e:
         stderr_str = e.stderr or ""
