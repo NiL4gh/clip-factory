@@ -12,20 +12,21 @@ def download_video(url, work_dir, cookie_path=None):
     for f in glob.glob(f"{work_dir}/source.*"):
         os.remove(f)
 
-    # Client selection rationale (confirmed via --verbose diagnostic):
-    # - android: skipped by yt-dlp when cookies are present (confirmed warning)
-    # - web: YouTube forces SABR streaming which needs a PO Token we don't have (confirmed)
-    # - ios: bypasses SABR, supports cookies, returns full DASH adaptive streams
-    # --remux-video mp4: lets yt-dlp pick best quality freely then re-wraps to mp4
-    # --remote-components ejs:github: Deno n-challenge solver (still needed for web fallback)
+    # Client selection rationale (confirmed via --verbose per-client diagnostic):
+    # - android: skipped when cookies present (yt-dlp warning confirmed)
+    # - web/ios/mweb: SABR streaming forced → needs PO Token → HTTPS DASH streams dropped
+    # - tv_embedded: triggers fallback that exposes WEB-S HLS (m3u8) streams at 720p/1080p
+    #   AND ANDR-V DASH video-only streams. HLS streams bypass the SABR/PO Token block.
+    # Format priority: DASH adaptive (best quality) → 1080p HLS combined → best available
+    # --remux-video mp4: handles both DASH and HLS → mp4 container without re-encoding video
     cmd = [
         'yt-dlp',
-        '-f', 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best',
-        '-S', 'res:1080,fps,codec:vp9',
+        '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        '-S', 'res:1080,fps,codec:h264',
         '--remux-video', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path),
-        '--extractor-args', 'youtube:player_client=ios,mweb,web',
+        '--extractor-args', 'youtube:player_client=tv_embedded,web',
         '--remote-components', 'ejs:github',
         '--no-warnings',
         url
