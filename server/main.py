@@ -79,7 +79,7 @@ for encoder_name, encoder_args in _ENCODER_CANDIDATES:
         ui_logger.log(f"⚡ GPU Encoder selected: {encoder_name}")
         break
 else:
-    ui_logger.log("💻 No GPU encoder found — using CPU libx264")
+    ui_logger.error("⚠️ No GPU encoder found — rendering will use CPU (libx264). Expect ~10 min/clip instead of ~2 min. Re-run Cell 1 to install the GPU FFmpeg build.")
 
 # Update the clipper._DETECTED_ENCODER global state
 import shorts_generator.clipper as clipper
@@ -662,10 +662,31 @@ def _run_strategize(url: str, llm_label: str, whisper_label: str, angle: str = "
             log_progress(0, "Analysis was stopped by the user.")
             _state["is_cancelled"] = False
 
+_PROVIDER_KEY_ENV = {
+    "nvidia": "NVIDIA_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "glm": "GLM_API_KEY",
+}
+
 @app.post("/api/strategize")
 async def strategize(req: StrategizeRequest, background_tasks: BackgroundTasks):
     if _state["is_strategizing"] or _state["is_rendering"]:
         raise HTTPException(status_code=400, detail="A task is already running.")
+
+    # Pre-flight: if an API model is selected, verify the key exists before wasting transcription time
+    llm_entry = next((e for e in LLM_CATALOG if e["label"] == req.llm_label), None)
+    if llm_entry and llm_entry["filename"].startswith("api:"):
+        parts = llm_entry["filename"].split(":", 2)
+        provider = parts[1] if len(parts) > 1 else ""
+        env_var = _PROVIDER_KEY_ENV.get(provider)
+        if env_var and not os.getenv(env_var, "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"No API key for {provider.upper()}. Go to Settings → API Keys and add your {env_var}, then retry."
+            )
+
     _state["is_strategizing"] = True
     _state["is_cancelled"] = False
     ui_logger.clear()

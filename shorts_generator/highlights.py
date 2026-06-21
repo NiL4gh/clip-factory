@@ -321,23 +321,34 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
     if selected_provider in fallback_order:
         fallback_order.remove(selected_provider)
     fallback_order.insert(0, selected_provider)
-    
+
+    # Warn immediately if the selected provider has no key configured
+    selected_pconfig = providers_config.get(selected_provider, {})
+    if selected_provider not in ("ollama",) and not selected_pconfig.get("keys"):
+        ui_logger.error(f"⚠️ No API key found for {selected_provider.upper()} — check Settings → API Keys. Trying fallback providers...")
+
+    _warned_fallback = False
+
     for provider_id in fallback_order:
         pconfig = providers_config.get(provider_id)
         if not pconfig or not pconfig["keys"]:
             continue
-            
+
+        if provider_id != selected_provider and not _warned_fallback:
+            ui_logger.log(f"⚠️ {selected_provider.upper()} unavailable — switching to {provider_id.upper()} as fallback")
+            _warned_fallback = True
+
         current_model = model_name if provider_id == selected_provider else pconfig["fallback_model"]
-            
+
         for key_idx, key in enumerate(pconfig["keys"]):
             url = pconfig["url_func"](current_model, key)
             headers = {"Content-Type": "application/json"}
             if pconfig["auth_header"] and key != "local":
                 headers["Authorization"] = f"Bearer {key}"
-                
+
             payload = pconfig["format_payload"](current_model, system, prompt, max_tokens)
             req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-            
+
             try:
                 sleep_sec = _PROVIDER_SLEEP.get(provider_id, 0)
                 if sleep_sec:
@@ -353,11 +364,16 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
                     return []
             except Exception as e:
                 err_code = getattr(e, "code", 500)
-                ui_logger.log(f"{provider_id} API Error (key #{key_idx + 1}): HTTP {err_code}")
+                if err_code == 429:
+                    ui_logger.log(f"⏱️ Rate limit hit on {provider_id.upper()} (429) — trying next provider. If this keeps happening, increase sleep in _PROVIDER_SLEEP.")
+                elif err_code in (401, 403):
+                    ui_logger.error(f"🔑 {provider_id.upper()} API key rejected ({err_code}) — key may be invalid or expired. Update it in Settings → API Keys.")
+                else:
+                    ui_logger.log(f"{provider_id} API Error (key #{key_idx + 1}): HTTP {err_code}")
                 log_llm_call(f"{provider_id}:{current_model}", "", error=str(e))
                 continue
-                
-    ui_logger.log("All API providers and fallback keys failed.")
+
+    ui_logger.error("❌ All LLM providers failed — 0 clips will be generated. Fix: add a working API key in Settings, or switch to a local model (Qwen Coder 14B / Mistral NeMo 12B).")
     return []
 
 

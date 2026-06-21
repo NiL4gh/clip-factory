@@ -52,6 +52,13 @@ def download_video(url, work_dir, cookie_path=None):
         )
         if probe.stdout.strip():
             ui_logger.log(f"📐 Source video: {probe.stdout.strip().replace(chr(10), ' | ')}")
+            # Warn if source is below 720p — output clips will have visible quality issues
+            for line in probe.stdout.strip().splitlines():
+                if line.startswith("height="):
+                    h = int(line.split("=")[1])
+                    if h < 720:
+                        ui_logger.error(f"⚠️ Source video is only {h}p — clips will look poor. Use a 1080p video for best results.")
+                    break
     except Exception:
         pass
 
