@@ -13,14 +13,15 @@ def download_video(url, work_dir, cookie_path=None):
         os.remove(f)
 
     # --remote-components ejs:github is MANDATORY: solves YouTube's n-challenge via Deno
-    # Format strategy: force adaptive streams only (bestvideo+bestaudio).
-    # NO fallback to combined/pre-muxed streams — YouTube serves those at 360p.
-    # -S prefers 1080p VP9; --merge-output-format mp4 wraps the result into mp4 via ffmpeg.
+    # Format strategy: force adaptive streams only (bestvideo+bestaudio — no combined/pre-muxed
+    # fallback, which YouTube serves at 360p). Use --remux-video mp4 NOT --merge-output-format mp4:
+    # the latter biases yt-dlp toward H264 streams that fit natively in mp4, skipping VP9 entirely.
+    # --remux-video lets yt-dlp pick the best quality freely and re-wraps to mp4 afterward.
     cmd = [
         'yt-dlp',
         '-f', 'bestvideo[height<=1080]+bestaudio',
         '-S', 'res:1080,fps,codec:vp9',
-        '--merge-output-format', 'mp4',
+        '--remux-video', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path),
         '--extractor-args', 'youtube:player_client=web',
