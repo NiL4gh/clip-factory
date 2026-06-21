@@ -415,6 +415,7 @@ def _save_session(url: str):
             "clips": _state.get("clips", []),
             "word_timestamps": _state.get("word_timestamps", []),
             "current_url": _state.get("current_url"),
+            "video_title": _state.get("video_title", ""),
             "persona": _state.get("persona", {}),
             "topics": _state.get("topics", []),
             "estimated_clips": _state.get("estimated_clips", 0),
@@ -806,13 +807,31 @@ def _run_render(req: RenderRequest, task_id: str):
                 _f.write(f"Video: {_state['video_title']}\nURL:   {_state.get('current_url','')}\n")
         dst = os.path.join(session_output_dir, os.path.basename(out))
         if out != dst: shutil.copy2(out, dst)
+        # Write per-clip metadata so download_single can use on-disk data (survives session restart)
+        clip_ref = _state["clips"][req.clip_id]
+        clip_meta = {
+            "title": clip_ref.get("title", f"Clip {req.clip_id + 1}"),
+            "source_topic": clip_ref.get("source_topic", ""),
+            "virality_reason": clip_ref.get("virality_reason", ""),
+            "hook_text": clip_ref.get("hook_text", ""),
+            "hook_type": clip_ref.get("hook_type", ""),
+            "theme": clip_ref.get("theme", ""),
+            "transcript": clip_ref.get("ideal_transcript", ""),
+            "score": clip_ref.get("score", 0),
+            "virality_score": clip_ref.get("virality_score", 0),
+            "duration": clip_ref.get("duration", 0),
+            "persona": _state.get("persona", {}),
+        }
+        meta_dst = os.path.splitext(dst)[0] + "_metadata.json"
+        with open(meta_dst, "w", encoding="utf-8") as _mf:
+            json.dump(clip_meta, _mf, indent=4, ensure_ascii=False)
         ui_logger.log(f"Rendered successfully: {os.path.basename(out)}")
-        
+
         rel_fn = f"{video_id}/{os.path.basename(dst)}" if video_id else os.path.basename(dst)
         _render_status[task_id]["filename"] = rel_fn
         _render_status[task_id]["status"] = "done"
         ui_logger.log(f"RENDER_STATUS|{req.clip_id}|done")
-        
+
         # Store rendered filename in the clip state to support CSV export and UI references
         _state["clips"][req.clip_id]["rendered_filename"] = rel_fn
         if _state.get("current_url"):
@@ -1076,12 +1095,16 @@ async def download_single(background_tasks: BackgroundTasks, filename: str):
                 if clip_data:
                     metadata = {
                         "title": clip_data.get("title", "Clip"),
-                        "topic": clip_data.get("source_topic", ""),
-                        "rationale": clip_data.get("virality_reason", ""),
+                        "source_topic": clip_data.get("source_topic", ""),
+                        "virality_reason": clip_data.get("virality_reason", ""),
+                        "hook_text": clip_data.get("hook_text", ""),
+                        "hook_type": clip_data.get("hook_type", ""),
+                        "theme": clip_data.get("theme", ""),
                         "transcript": clip_data.get("ideal_transcript", ""),
                         "score": clip_data.get("score", 0),
+                        "virality_score": clip_data.get("virality_score", 0),
                         "duration": clip_data.get("duration", 0),
-                        "persona": clip_data.get("persona", ""),
+                        "persona": _state.get("persona", {}),
                     }
                     meta_filename = f"{os.path.splitext(os.path.basename(filename))[0]}_metadata.json"
                     zipf.writestr(meta_filename, json.dumps(metadata, indent=4, ensure_ascii=False))
@@ -1200,6 +1223,7 @@ async def restore_session(req: SessionRequest):
         _state["clips"] = data.get("clips", [])
         _state["word_timestamps"] = data.get("word_timestamps", [])
         _state["current_url"] = data.get("current_url", url)
+        _state["video_title"] = data.get("video_title", "")
         _state["persona"] = data.get("persona", {})
         _state["topics"] = data.get("topics", [])
         _state["estimated_clips"] = data.get("estimated_clips", 0)
