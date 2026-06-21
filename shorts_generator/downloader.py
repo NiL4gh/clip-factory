@@ -19,12 +19,12 @@ def download_video(url, work_dir, cookie_path=None):
     # --remux-video lets yt-dlp pick the best quality freely and re-wraps to mp4 afterward.
     cmd = [
         'yt-dlp',
-        '-f', 'bestvideo[height<=1080]+bestaudio',
+        '-f', 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best',
         '-S', 'res:1080,fps,codec:vp9',
         '--remux-video', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path),
-        '--extractor-args', 'youtube:player_client=web',
+        '--extractor-args', 'youtube:player_client=android,web',
         '--remote-components', 'ejs:github',
         '--no-warnings',
         url
