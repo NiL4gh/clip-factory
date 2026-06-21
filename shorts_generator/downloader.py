@@ -13,10 +13,13 @@ def download_video(url, work_dir, cookie_path=None):
         os.remove(f)
 
     # --remote-components ejs:github is MANDATORY: solves YouTube's n-challenge via Deno
+    # Format strategy: VP9 @ 1080p + bestaudio is the YouTube sweet spot.
+    # Avoid [ext=mp4] filter — it restricts to H264 which YouTube caps at 720p on most videos.
+    # ffmpeg (GPU build, installed in Cell 1) handles the VP9→mp4 container mux.
     cmd = [
         'yt-dlp',
-        '-f', 'bestvideo[height<=1440]+bestaudio/best[height<=1440]/best',
-        '-S', 'res:1440,fps',
+        '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        '-S', 'res:1080,fps,codec:vp9',   # prefer 1080p, then higher fps, then VP9 over H264
         '--merge-output-format', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path),
@@ -32,7 +35,12 @@ def download_video(url, work_dir, cookie_path=None):
     env["PATH"] = f"/root/.deno/bin:{env.get('PATH', '')}"
     
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
+        # Surface any yt-dlp warnings (format fallbacks, geo-blocks, etc.)
+        if result.stderr:
+            for line in result.stderr.strip().splitlines():
+                if any(k in line.lower() for k in ["warning", "fallback", "unavailable", "skipping"]):
+                    ui_logger.log(f"yt-dlp: {line.strip()}")
     except subprocess.CalledProcessError as e:
         stderr_str = e.stderr or ""
         ui_logger.log(f"yt-dlp failed: {stderr_str[-600:]}")
