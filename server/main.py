@@ -952,12 +952,16 @@ def _run_bulk_render(req: BulkRenderRequest):
                 # Write metadata to disk so it survives session restarts
                 clip_meta = {
                     "title": _state["clips"][idx].get("title", f"Clip {idx+1}"),
-                    "topic": _state["clips"][idx].get("source_topic", ""),
-                    "rationale": _state["clips"][idx].get("virality_reason", ""),
+                    "source_topic": _state["clips"][idx].get("source_topic", ""),
+                    "virality_reason": _state["clips"][idx].get("virality_reason", ""),
+                    "hook_text": _state["clips"][idx].get("hook_text", ""),
+                    "hook_type": _state["clips"][idx].get("hook_type", ""),
+                    "theme": _state["clips"][idx].get("theme", ""),
                     "transcript": _state["clips"][idx].get("ideal_transcript", ""),
                     "score": _state["clips"][idx].get("score", 0),
+                    "virality_score": _state["clips"][idx].get("virality_score", 0),
                     "duration": _state["clips"][idx].get("duration", 0),
-                    "persona": _state["clips"][idx].get("persona", ""),
+                    "persona": _state.get("persona", {}),
                 }
                 meta_dst = os.path.splitext(dst)[0] + "_metadata.json"
                 with open(meta_dst, "w", encoding="utf-8") as _mf:
@@ -1143,6 +1147,16 @@ async def download_all(background_tasks: BackgroundTasks, project_only: bool = F
                     zipf.write(log_path, arcname)
                 except OSError:
                     pass
+            # Bundle state.json for the active session so clip strategy context survives offline
+            _curr_url = _state.get("current_url")
+            if _curr_url:
+                _sv_id = cache.video_id(_curr_url)
+                _state_path = os.path.join(SESSIONS_DIR, _sv_id, "state.json")
+                if os.path.exists(_state_path):
+                    try:
+                        zipf.write(_state_path, "state.json")
+                    except OSError:
+                        pass
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create ZIP: {str(e)}")
         
