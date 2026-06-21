@@ -50,16 +50,24 @@ _ENCODER_CANDIDATES = [
 ]
 
 def _probe_encoder(codec_name: str) -> bool:
-    """Return True if the given encoder is available on this system."""
+    """Return True if the given encoder is available and functional."""
     try:
+        # Step 1: check ffmpeg reports the encoder as available (cheap, no GPU needed)
+        enc_list = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, timeout=10
+        )
+        if codec_name not in (enc_list.stdout + enc_list.stderr).decode("utf-8", errors="ignore"):
+            return False
+        # Step 2: actually encode a few frames — NVENC needs ≥1 frame to initialize
         result = subprocess.run(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "lavfi", "-i", "color=c=black:s=256x256:r=1:d=0.1",
-                "-c:v", codec_name, "-t", "0.1", "-f", "null", "-"
+                "-f", "lavfi", "-i", "color=c=black:s=256x256:r=25:d=1",
+                "-frames:v", "5", "-c:v", codec_name, "-f", "null", "-"
             ],
             capture_output=True,
-            timeout=10
+            timeout=15
         )
         return result.returncode == 0
     except Exception:

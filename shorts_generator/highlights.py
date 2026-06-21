@@ -152,7 +152,7 @@ def _get_llm(llm_path: str, gpu_layers: int = 35):
         _llm_cache[llm_path] = Llama(
             model_path=llm_path,
             n_gpu_layers=gpu_layers,
-            n_ctx=4096,
+            n_ctx=6144,
             n_batch=1024,  # larger batch = faster prompt evaluation
             verbose=False,
         )
@@ -221,8 +221,12 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
             log_llm_call("local-llama", "", error=str(e))
         return []
 
-    import os, urllib.request, json
-    
+    import os, time, urllib.request, json
+
+    # RPM throttle — sleep before each API call to avoid 429s
+    # NVIDIA NIM: 40 RPM, Groq: 30 RPM, Gemini: 15 RPM (free tier)
+    _PROVIDER_SLEEP = {"nvidia": 1.5, "groq": 2.0, "gemini": 4.0}
+
     parts = llm.split(":", 2)
     selected_provider = parts[1] if len(parts) > 1 else "gemini"
     model_name = parts[2] if len(parts) > 2 else "gemini-2.5-flash"
@@ -335,6 +339,9 @@ def _execute_with_fallback(llm, system: str, prompt: str, max_tokens: int = 3000
             req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
             
             try:
+                sleep_sec = _PROVIDER_SLEEP.get(provider_id, 0)
+                if sleep_sec:
+                    time.sleep(sleep_sec)
                 ui_logger.log(f"Querying {provider_id} API ({current_model}) with key #{key_idx + 1}...")
                 with urllib.request.urlopen(req) as response:
                     res_data = json.loads(response.read().decode("utf-8"))
