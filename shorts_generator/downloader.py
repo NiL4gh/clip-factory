@@ -12,11 +12,12 @@ def download_video(url, work_dir, cookie_path=None):
     for f in glob.glob(f"{work_dir}/source.*"):
         os.remove(f)
 
-    # --remote-components ejs:github is MANDATORY: solves YouTube's n-challenge via Deno
-    # Format strategy: force adaptive streams only (bestvideo+bestaudio — no combined/pre-muxed
-    # fallback, which YouTube serves at 360p). Use --remux-video mp4 NOT --merge-output-format mp4:
-    # the latter biases yt-dlp toward H264 streams that fit natively in mp4, skipping VP9 entirely.
-    # --remux-video lets yt-dlp pick the best quality freely and re-wraps to mp4 afterward.
+    # Client selection rationale (confirmed via --verbose diagnostic):
+    # - android: skipped by yt-dlp when cookies are present (confirmed warning)
+    # - web: YouTube forces SABR streaming which needs a PO Token we don't have (confirmed)
+    # - ios: bypasses SABR, supports cookies, returns full DASH adaptive streams
+    # --remux-video mp4: lets yt-dlp pick best quality freely then re-wraps to mp4
+    # --remote-components ejs:github: Deno n-challenge solver (still needed for web fallback)
     cmd = [
         'yt-dlp',
         '-f', 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best',
@@ -24,7 +25,7 @@ def download_video(url, work_dir, cookie_path=None):
         '--remux-video', 'mp4',
         '-o', output_mp4,
         '--cookies', str(cookie_path),
-        '--extractor-args', 'youtube:player_client=android,web',
+        '--extractor-args', 'youtube:player_client=ios,mweb,web',
         '--remote-components', 'ejs:github',
         '--no-warnings',
         url
